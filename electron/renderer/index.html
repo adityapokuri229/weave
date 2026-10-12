@@ -193,8 +193,31 @@
                   <span>Point your camera at this QR code</span>
                 </div>
               </div>
-              <div class="pt-0.5">
-                <span class="text-[10px] font-mono text-app-dim">Socket session saved locally in auth_info_baileys/</span>
+              <div class="pt-1 flex flex-col gap-2">
+                <button id="btn-toggle-pairing-code" class="text-xs text-app-secondary hover:text-white font-mono underline underline-offset-4 decoration-app-dim hover:decoration-white transition-all text-left flex items-center gap-1.5 cursor-pointer">
+                  <span>Or link using 8-digit Pairing Code</span>
+                  <i class="fa-solid fa-arrow-right text-[10px]"></i>
+                </button>
+
+                <!-- Collapsible Pairing Code Section -->
+                <div id="pairing-code-box" class="hidden flex flex-col gap-2 p-2.5 rounded bg-app-window border border-app-border mt-1">
+                  <label class="text-[10px] font-mono uppercase text-app-tertiary">Phone Number (with Country Code)</label>
+                  <div class="flex items-center gap-1.5">
+                    <input id="pairing-phone-input" type="text" placeholder="e.g. 919876543210" class="bg-app-surface border border-app-border rounded px-2 py-1 text-xs font-mono text-white focus:outline-none w-full"/>
+                    <button id="btn-request-pairing-code" class="px-2.5 py-1 rounded bg-white hover:bg-neutral-200 text-black text-xs font-mono font-semibold shrink-0 cursor-pointer active:scale-95 transition">
+                      Get Code
+                    </button>
+                  </div>
+                  <!-- 8-digit code result display -->
+                  <div id="pairing-code-display" class="hidden flex items-center justify-between p-2 rounded bg-app-surface border border-white/20 mt-1">
+                    <span class="text-[10px] font-mono text-app-tertiary uppercase">Enter in WhatsApp:</span>
+                    <span id="pairing-code-digits" class="text-sm font-mono font-bold tracking-widest text-white select-all"></span>
+                  </div>
+                </div>
+
+                <div class="text-[10px] font-mono text-app-dim">
+                  <span>Socket session saved locally in auth_info_baileys/</span>
+                </div>
               </div>
             </div>
           </div>

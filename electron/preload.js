@@ -17,6 +17,9 @@ contextBridge.exposeInMainWorld('weaveAPI', {
     ipcRenderer.on('weave:qr-update', (_event, data) => callback(data));
   },
 
+  // Pairing code alternative
+  requestPairingCode: (phoneNumber) => ipcRenderer.invoke('weave:request-pairing-code', phoneNumber),
+
   // Google OAuth Flow
   startGoogleLogin: () => ipcRenderer.invoke('weave:google-login'),
 

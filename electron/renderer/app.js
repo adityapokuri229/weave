@@ -257,6 +257,49 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  // Pairing Code Alternative Handler
+  const btnTogglePairingCode = document.getElementById('btn-toggle-pairing-code');
+  const pairingCodeBox = document.getElementById('pairing-code-box');
+  const pairingPhoneInput = document.getElementById('pairing-phone-input');
+  const btnRequestPairingCode = document.getElementById('btn-request-pairing-code');
+  const pairingCodeDisplay = document.getElementById('pairing-code-display');
+  const pairingCodeDigits = document.getElementById('pairing-code-digits');
+
+  if (btnTogglePairingCode && pairingCodeBox) {
+    btnTogglePairingCode.addEventListener('click', () => {
+      pairingCodeBox.classList.toggle('hidden');
+    });
+  }
+
+  if (btnRequestPairingCode) {
+    btnRequestPairingCode.addEventListener('click', async () => {
+      const phone = pairingPhoneInput.value.trim();
+      if (!phone) {
+        appendLog('warn', '⚠️ Please enter your phone number with country code (e.g. 15551234567).');
+        pairingPhoneInput.focus();
+        return;
+      }
+      btnRequestPairingCode.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
+      btnRequestPairingCode.disabled = true;
+
+      try {
+        const res = await api?.requestPairingCode(phone);
+        if (res?.success && res?.code) {
+          pairingCodeDigits.textContent = res.code;
+          pairingCodeDisplay.classList.remove('hidden');
+          appendLog('info', `🔑 Pairing Code generated: ${res.code}`);
+        } else {
+          appendLog('error', `Pairing code error: ${res?.error || 'Failed to request code'}`);
+        }
+      } catch (err) {
+        appendLog('error', err.message);
+      } finally {
+        btnRequestPairingCode.textContent = 'Get Code';
+        btnRequestPairingCode.disabled = false;
+      }
+    });
+  }
+
   // Google Login Click
   btnGoogleLogin.addEventListener('click', async () => {
     if (btnGoogleLogin.textContent.trim() === 'Connected') return;

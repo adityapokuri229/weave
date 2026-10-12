@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
-import { startWhatsAppBot, botEvents, getBotStatus } from '../src/bot.js';
+import { startWhatsAppBot, botEvents, getBotStatus, requestPairingCode } from '../src/bot.js';
 import { CONFIG, loadProjectsState, saveProjectsState, ROOT_DIR } from '../src/config.js';
 import { googleAuth } from '../src/auth.js';
 import { runAntigravityTask, stopActiveTask } from '../src/agent.js';
@@ -157,6 +157,15 @@ ipcMain.handle('weave:google-login', async () => {
       success: false,
       error: err.message,
     };
+  }
+});
+
+ipcMain.handle('weave:request-pairing-code', async (_event, phoneNumber) => {
+  try {
+    const code = await requestPairingCode(phoneNumber);
+    return { success: true, code };
+  } catch (err) {
+    return { success: false, error: err.message };
   }
 });
 

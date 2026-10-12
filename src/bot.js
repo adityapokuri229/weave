@@ -3873,3 +3873,18 @@ export function getBotStatus() {
     activeTask: getActiveTaskInfo(),
   };
 }
+
+/**
+ * Requests an 8-digit pairing code from Baileys for a phone number.
+ */
+export async function requestPairingCode(phoneNumber) {
+  if (!activeSock) {
+    throw new Error('WhatsApp socket is not initialized');
+  }
+  const cleanNumber = (phoneNumber || '').replace(/[^0-9]/g, '');
+  if (!cleanNumber) {
+    throw new Error('Please enter a valid phone number with country code (e.g. 15551234567)');
+  }
+  const code = await activeSock.requestPairingCode(cleanNumber);
+  return code;
+}
