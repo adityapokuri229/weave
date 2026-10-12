@@ -3315,8 +3315,15 @@ export async function startWhatsAppBot() {
           }, 3500);
         } else {
           console.log(
-            `❌ Logged out. Delete '${AUTH_DIR}' and restart to scan QR code again.`
+            `🔄 Session logged out (401). Auto-clearing '${AUTH_DIR}' and generating a fresh QR code...`
           );
+          try {
+            fs.rmSync(AUTH_DIR, { recursive: true, force: true });
+          } catch {}
+          reconnectTimer = setTimeout(() => {
+            reconnectTimer = null;
+            startWhatsAppBot();
+          }, 1500);
         }
       } else if (connection === 'open') {
         botEvents.emit('connection', { status: 'connected', user: sock.user });
