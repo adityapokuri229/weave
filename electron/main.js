@@ -171,18 +171,44 @@ ipcMain.handle('weave:get-status', async () => {
 });
 
 ipcMain.handle('weave:google-login', async () => {
+  let authWindow = null;
   try {
-    if (!process.env.GOOGLE_CLIENT_ID) {
-      throw new Error('GOOGLE_CLIENT_ID is not configured in .env');
-    }
     const tokens = await googleAuth.startLoginFlow((authUrl) => {
-      shell.openExternal(authUrl);
+      authWindow = new BrowserWindow({
+        width: 480,
+        height: 600,
+        parent: mainWindow || undefined,
+        modal: Boolean(mainWindow),
+        backgroundColor: '#09090b',
+        autoHideMenuBar: true,
+        title: 'Sign in with Google — Weave PKCE',
+        webPreferences: {
+          contextIsolation: true,
+          nodeIntegration: false,
+        },
+      });
+      authWindow.loadURL(authUrl);
+      authWindow.on('closed', () => {
+        authWindow = null;
+      });
     });
+
+    if (authWindow && !authWindow.isDestroyed()) {
+      setTimeout(() => {
+        try {
+          if (authWindow && !authWindow.isDestroyed()) authWindow.close();
+        } catch {}
+      }, 600);
+    }
+
     return {
       success: true,
       email: tokens.email,
     };
   } catch (err) {
+    if (authWindow && !authWindow.isDestroyed()) {
+      try { authWindow.close(); } catch {}
+    }
     return {
       success: false,
       error: err.message,

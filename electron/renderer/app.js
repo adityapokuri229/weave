@@ -19,15 +19,37 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnLaunchWorkspace = document.getElementById('btn-launch-workspace');
 
   let isConnected = false;
+  let isGoogleConnected = false;
   const tabWorkspaceIcon = document.getElementById('tab-workspace-icon');
+
+  // Step Indicators
+  const stepBtn1 = document.getElementById('step-btn-1');
+  const stepIcon1 = document.getElementById('step-icon-1');
+  const stepBtn2 = document.getElementById('step-btn-2');
+  const stepIcon2 = document.getElementById('step-icon-2');
+  const stepBtn3 = document.getElementById('step-btn-3');
+
+  // Step Cards
+  const step2Card = document.getElementById('step-2-card');
+  const step3Card = document.getElementById('step-3-card');
+  const step3Badge = document.getElementById('step-3-badge');
 
   function showView(view) {
     if (view === 'workspace') {
       if (!isConnected) {
-        appendLog('warn', '⚠️ Please link WhatsApp first by scanning the QR code before opening the workspace.');
-        // Subtle visual shake or highlight on QR box
-        stepBtn1.classList.add('animate-pulse');
-        setTimeout(() => stepBtn1.classList.remove('animate-pulse'), 1500);
+        appendLog('warn', '⚠️ Complete Step 1 (Link WhatsApp) first before opening the workspace.');
+        if (stepBtn1) {
+          stepBtn1.classList.add('animate-pulse');
+          setTimeout(() => stepBtn1.classList.remove('animate-pulse'), 1500);
+        }
+        return;
+      }
+      if (!isGoogleConnected) {
+        appendLog('warn', '⚠️ Complete Step 2 (Connect Google Account) first before opening the workspace.');
+        if (stepBtn2) {
+          stepBtn2.classList.add('animate-pulse');
+          setTimeout(() => stepBtn2.classList.remove('animate-pulse'), 1500);
+        }
         return;
       }
       viewOnboarding.classList.add('hidden');
@@ -38,7 +60,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       viewWorkspace.classList.add('hidden');
       viewOnboarding.classList.remove('hidden');
       tabOnboarding.className = 'px-2.5 py-0.5 rounded text-[11px] font-medium text-black bg-white transition-all flex items-center gap-1.5 cursor-pointer';
-      if (isConnected) {
+      if (isConnected && isGoogleConnected) {
         tabWorkspace.className = 'px-2.5 py-0.5 rounded text-[11px] font-medium text-app-secondary hover:text-white transition-all flex items-center gap-1.5 cursor-pointer';
       } else {
         tabWorkspace.className = 'px-2.5 py-0.5 rounded text-[11px] font-medium text-app-dim opacity-50 cursor-not-allowed transition-all flex items-center gap-1.5';
@@ -55,12 +77,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   const waHeaderText = document.getElementById('wa-header-text');
   const googleEmail = document.getElementById('google-email');
   const googleAvatarLetter = document.getElementById('google-avatar-letter');
-
-  // Step Indicators
-  const stepBtn1 = document.getElementById('step-btn-1');
-  const stepIcon1 = document.getElementById('step-icon-1');
-  const stepBtn2 = document.getElementById('step-btn-2');
-  const stepIcon2 = document.getElementById('step-icon-2');
 
   // Step 1: QR & WhatsApp
   const qrImage = document.getElementById('qr-image');
@@ -156,13 +172,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       workspaceBotStatusTag.textContent = 'SCAN QR';
     }
 
-    // 1. WhatsApp Bot State (Step 1)
-    if (state.bot?.connected) {
-      isConnected = true;
-      tabWorkspace.className = 'px-2.5 py-0.5 rounded text-[11px] font-medium text-app-secondary hover:text-white transition-all flex items-center gap-1.5 cursor-pointer';
-      tabWorkspace.removeAttribute('title');
-      if (tabWorkspaceIcon) tabWorkspaceIcon.textContent = 'terminal';
+    isConnected = Boolean(state.bot?.connected);
+    isGoogleConnected = Boolean(state.google?.authenticated && state.google?.email);
 
+    // 1. WhatsApp Bot State (Step 1)
+    if (isConnected) {
       waHeaderDot.className = 'w-1.5 h-1.5 rounded-full bg-white inline-block';
       waHeaderText.textContent = 'WhatsApp Connected';
       qrPlaceholder.style.display = 'none';
@@ -174,48 +188,131 @@ document.addEventListener('DOMContentLoaded', async () => {
       qrConnectedNumber.textContent = state.bot.user?.id?.split(':')[0] || 'Active';
       qrLivePulse.className = 'w-1.5 h-1.5 rounded-full bg-white';
 
-      // Update Stepper: Step 1 completed
+      // Step 1 completed
       stepBtn1.className = 'flex items-center justify-center gap-1.5 py-1.5 px-2 rounded bg-app-subtle border border-app-border text-white font-medium';
       stepIcon1.textContent = 'check_circle';
       stepIcon1.className = 'material-symbols-outlined text-[15px] text-white';
 
-      // Advance attention to Step 2 (Google Auth)
-      if (!state.google?.authenticated) {
-        stepBtn2.className = 'flex items-center justify-center gap-1.5 py-1.5 px-2 rounded bg-white text-black font-semibold shadow-sm';
-        stepIcon2.className = 'material-symbols-outlined text-[15px] text-black';
-      }
       workspaceBotStatusTag.textContent = 'ONLINE';
     } else {
-      isConnected = false;
-      tabWorkspace.className = 'px-2.5 py-0.5 rounded text-[11px] font-medium text-app-dim opacity-50 cursor-not-allowed transition-all flex items-center gap-1.5';
-      tabWorkspace.setAttribute('title', 'Link WhatsApp first to unlock Workspace');
-      if (tabWorkspaceIcon) tabWorkspaceIcon.textContent = 'lock';
+      stepBtn1.className = 'flex items-center justify-center gap-1.5 py-1.5 px-2 rounded bg-white text-black font-semibold shadow-sm';
+      stepIcon1.textContent = 'qr_code_scanner';
+      stepIcon1.className = 'material-symbols-outlined text-[15px] text-black';
 
       if (state.bot?.qrData?.dataUrl) {
         setQrDisplay(state.bot.qrData.dataUrl);
       }
     }
 
-    // 2. Google OAuth Status (Step 2)
-    if (state.google?.authenticated && state.google?.email) {
+    // 2. Google OAuth Status (Step 2 — Strictly Gated Behind Step 1)
+    if (!isConnected) {
+      // Locked until Step 1 is done
+      if (step2Card) {
+        step2Card.style.opacity = '0.45';
+      }
+      googleStatusTitle.textContent = 'Step 2: Connect Google Account (PKCE)';
+      googleStatusDesc.textContent = 'Link WhatsApp in Step 1 first to unlock Google PKCE Sign-In';
+      googleVerifiedIcon.classList.add('hidden');
+      btnGoogleLogin.textContent = '🔒 Locked';
+      btnGoogleLogin.className = 'text-xs font-mono font-medium px-3.5 py-1.5 rounded-lg bg-app-subtle text-app-dim border border-app-border transition-all shrink-0 cursor-not-allowed';
+
+      stepBtn2.className = 'flex items-center justify-center gap-1.5 py-1.5 px-2 rounded bg-app-subtle border border-app-border text-app-dim font-medium';
+      stepIcon2.textContent = 'lock';
+      stepIcon2.className = 'material-symbols-outlined text-[15px] text-app-dim';
+    } else if (!isGoogleConnected) {
+      // Step 1 is complete -> Unlock Step 2!
+      if (step2Card) {
+        step2Card.style.opacity = '1';
+      }
+      googleStatusTitle.textContent = 'Step 2: Connect Google Account (PKCE)';
+      googleStatusDesc.textContent = 'Required for Gemini 2.5/3.8 Flash execution & calendar actions';
+      googleVerifiedIcon.classList.add('hidden');
+      if (!btnGoogleLogin.innerHTML.includes('fa-spinner')) {
+        btnGoogleLogin.textContent = 'Sign In';
+      }
+      btnGoogleLogin.className = 'text-xs font-mono font-medium px-3.5 py-1.5 rounded-lg bg-white hover:bg-neutral-200 text-black transition-all shrink-0 active:scale-95 shadow cursor-pointer';
+
+      stepBtn2.className = 'flex items-center justify-center gap-1.5 py-1.5 px-2 rounded bg-white text-black font-semibold shadow-sm';
+      stepIcon2.textContent = 'login';
+      stepIcon2.className = 'material-symbols-outlined text-[15px] text-black';
+    } else {
+      // Both Step 1 & Step 2 completed!
+      if (step2Card) {
+        step2Card.style.opacity = '1';
+      }
       googleEmail.textContent = state.google.email;
       googleAvatarLetter.textContent = (state.google.email[0] || 'G').toUpperCase();
       googleStatusTitle.textContent = `Connected as ${state.google.email}`;
-      googleStatusDesc.textContent = 'Gemini 2.5 Flash, Google Calendar & Gmail active';
+      googleStatusDesc.textContent = 'Gemini 2.5/3.8 Flash, Google Calendar & Gmail active';
       googleVerifiedIcon.classList.remove('hidden');
-      btnGoogleLogin.textContent = 'Connected';
-      btnGoogleLogin.className = 'text-xs font-mono font-medium px-3.5 py-1.5 rounded-lg bg-app-subtle text-white border border-app-border shrink-0 cursor-default';
+      btnGoogleLogin.textContent = 'Connected ✓';
+      btnGoogleLogin.className = 'text-xs font-mono font-medium px-3.5 py-1.5 rounded-lg bg-app-subtle text-white border border-app-border shrink-0 cursor-pointer hover:border-white';
 
-      // Step 2 Completed
       stepBtn2.className = 'flex items-center justify-center gap-1.5 py-1.5 px-2 rounded bg-app-subtle border border-app-border text-white font-medium';
       stepIcon2.textContent = 'check_circle';
       stepIcon2.className = 'material-symbols-outlined text-[15px] text-white';
     }
 
-    // 3. Trigger Handle (Step 3)
+    // 3. Trigger Handle & Workspace (Step 3 — Strictly Gated Behind Step 1 & Step 2)
     const trigger = state.bot?.triggerPrefix || '@agent';
-    botTagInput.value = trigger.replace(/^@/, '');
+    if (document.activeElement !== botTagInput) {
+      botTagInput.value = trigger.replace(/^@/, '');
+    }
     callsignDisplay.textContent = trigger;
+
+    if (isConnected && isGoogleConnected) {
+      // Unlock Step 3 & Workspace
+      if (step3Card) step3Card.style.opacity = '1';
+      if (step3Badge) {
+        step3Badge.textContent = 'In-chat mention';
+        step3Badge.className = 'text-[11px] text-app-secondary font-mono';
+      }
+      botTagInput.disabled = false;
+      botTagInput.className = 'bg-transparent border-none text-white font-mono text-xs focus:outline-none w-full px-1 tracking-tight';
+      btnSaveHandle.disabled = false;
+      if (btnSaveHandle.textContent !== 'Saved') {
+        btnSaveHandle.textContent = 'Save';
+      }
+      btnSaveHandle.className = 'text-xs font-mono px-2.5 py-1 bg-white hover:bg-neutral-200 text-black font-semibold rounded transition-all cursor-pointer';
+
+      if (stepBtn3) {
+        stepBtn3.className = 'flex items-center justify-center gap-1.5 py-1.5 px-2 rounded bg-white text-black font-semibold shadow-sm';
+      }
+
+      // Unlock Launch Workspace Button & Top Tab
+      btnLaunchWorkspace.className = 'w-full py-3 px-6 rounded-lg bg-white hover:bg-neutral-200 text-black text-xs font-mono font-semibold uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg transition-all active:scale-[0.99] cursor-pointer';
+      btnLaunchWorkspace.innerHTML = '<span>Launch Desktop Workspace</span><i class="fa-solid fa-arrow-right text-[11px]"></i>';
+
+      tabWorkspace.className = 'px-2.5 py-0.5 rounded text-[11px] font-medium text-app-secondary hover:text-white transition-all flex items-center gap-1.5 cursor-pointer';
+      tabWorkspace.removeAttribute('title');
+      if (tabWorkspaceIcon) tabWorkspaceIcon.textContent = 'terminal';
+    } else {
+      // Lock Step 3 & Workspace
+      if (step3Card) step3Card.style.opacity = '0.45';
+      if (step3Badge) {
+        step3Badge.textContent = !isConnected ? '🔒 Complete Steps 1 & 2 first' : '🔒 Complete Step 2 first';
+        step3Badge.className = 'text-[11px] text-app-dim font-mono';
+      }
+      botTagInput.disabled = true;
+      botTagInput.className = 'bg-transparent border-none text-app-dim font-mono text-xs focus:outline-none w-full px-1 tracking-tight cursor-not-allowed';
+      btnSaveHandle.disabled = true;
+      btnSaveHandle.textContent = 'Locked';
+      btnSaveHandle.className = 'text-xs font-mono px-2.5 py-1 bg-app-subtle text-app-dim border border-app-border rounded transition-all cursor-not-allowed';
+
+      if (stepBtn3) {
+        stepBtn3.className = 'flex items-center justify-center gap-1.5 py-1.5 px-2 rounded text-app-dim font-medium';
+      }
+
+      const lockMsg = !isConnected
+        ? 'Complete Steps 1 & 2 to Unlock Workspace'
+        : 'Complete Step 2 (Google Auth) to Unlock Workspace';
+      btnLaunchWorkspace.className = 'w-full py-3 px-6 rounded-lg bg-app-subtle text-app-dim border border-app-border text-xs font-mono font-semibold uppercase tracking-wider flex items-center justify-center gap-2 transition-all opacity-50 cursor-not-allowed';
+      btnLaunchWorkspace.innerHTML = `<span class="material-symbols-outlined text-[14px]">lock</span><span>${lockMsg}</span>`;
+
+      tabWorkspace.className = 'px-2.5 py-0.5 rounded text-[11px] font-medium text-app-dim opacity-50 cursor-not-allowed transition-all flex items-center gap-1.5';
+      tabWorkspace.setAttribute('title', lockMsg);
+      if (tabWorkspaceIcon) tabWorkspaceIcon.textContent = 'lock';
+    }
 
     // 4. Projects
     if (state.activeProject && state.projects?.[state.activeProject]) {
@@ -323,9 +420,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // Google Login Click
+  // Google Login Click (Gated behind Step 1)
   btnGoogleLogin.addEventListener('click', async () => {
-    if (btnGoogleLogin.textContent.trim() === 'Connected') return;
+    if (!isConnected) {
+      appendLog('warn', '⚠️ Complete Step 1 (Link WhatsApp) first before connecting your Google Account.');
+      if (stepBtn1) {
+        stepBtn1.classList.add('animate-pulse');
+        setTimeout(() => stepBtn1.classList.remove('animate-pulse'), 1500);
+      }
+      return;
+    }
     btnGoogleLogin.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Opening...';
     const res = await api?.startGoogleLogin();
     if (res?.success) {
@@ -333,12 +437,16 @@ document.addEventListener('DOMContentLoaded', async () => {
       syncStatus();
     } else {
       appendLog('error', `Google login failed: ${res?.error || 'Unknown error'}`);
-      btnGoogleLogin.textContent = 'Sign In';
+      btnGoogleLogin.textContent = isGoogleConnected ? 'Connected ✓' : 'Sign In';
     }
   });
 
-  // Handle Save
+  // Handle Save (Gated behind Step 1 & Step 2)
   btnSaveHandle.addEventListener('click', async () => {
+    if (!isConnected || !isGoogleConnected) {
+      appendLog('warn', '⚠️ Complete Step 1 & Step 2 first before configuring your trigger handle.');
+      return;
+    }
     const handle = botTagInput.value.trim();
     if (!handle) return;
     const res = await api?.updateHandle(handle);
