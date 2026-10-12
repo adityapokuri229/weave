@@ -142,6 +142,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   function renderState(state) {
     if (!state) return;
 
+    function setQrDisplay(dataUrl) {
+      if (!dataUrl) return;
+      qrImage.src = dataUrl;
+      qrImage.style.display = 'block';
+      qrImage.classList.remove('hidden');
+      qrPlaceholder.style.display = 'none';
+      qrPlaceholder.classList.add('hidden');
+      qrConnectedOverlay.style.display = 'none';
+      qrConnectedOverlay.classList.add('hidden');
+      waHeaderDot.className = 'w-1.5 h-1.5 rounded-full bg-neutral-400 animate-pulse inline-block';
+      waHeaderText.textContent = 'Scan QR Code';
+      workspaceBotStatusTag.textContent = 'SCAN QR';
+    }
+
     // 1. WhatsApp Bot State (Step 1)
     if (state.bot?.connected) {
       isConnected = true;
@@ -151,8 +165,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       waHeaderDot.className = 'w-1.5 h-1.5 rounded-full bg-white inline-block';
       waHeaderText.textContent = 'WhatsApp Connected';
+      qrPlaceholder.style.display = 'none';
       qrPlaceholder.classList.add('hidden');
+      qrImage.style.display = 'none';
       qrImage.classList.add('hidden');
+      qrConnectedOverlay.style.display = 'flex';
       qrConnectedOverlay.classList.remove('hidden');
       qrConnectedNumber.textContent = state.bot.user?.id?.split(':')[0] || 'Active';
       qrLivePulse.className = 'w-1.5 h-1.5 rounded-full bg-white';
@@ -175,13 +192,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (tabWorkspaceIcon) tabWorkspaceIcon.textContent = 'lock';
 
       if (state.bot?.qrData?.dataUrl) {
-        waHeaderDot.className = 'w-1.5 h-1.5 rounded-full bg-neutral-400 animate-pulse inline-block';
-        waHeaderText.textContent = 'Scan QR Code';
-        qrImage.src = state.bot.qrData.dataUrl;
-        qrImage.classList.remove('hidden');
-        qrPlaceholder.classList.add('hidden');
-        qrConnectedOverlay.classList.add('hidden');
-        workspaceBotStatusTag.textContent = 'SCAN QR';
+        setQrDisplay(state.bot.qrData.dataUrl);
       }
     }
 
@@ -227,8 +238,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     api.onQrUpdate((qrData) => {
       if (qrData?.dataUrl) {
         qrImage.src = qrData.dataUrl;
+        qrImage.style.display = 'block';
         qrImage.classList.remove('hidden');
+        qrPlaceholder.style.display = 'none';
         qrPlaceholder.classList.add('hidden');
+        qrConnectedOverlay.style.display = 'none';
         qrConnectedOverlay.classList.add('hidden');
         waHeaderDot.className = 'w-1.5 h-1.5 rounded-full bg-neutral-400 animate-pulse inline-block';
         waHeaderText.textContent = 'Scan QR Code';

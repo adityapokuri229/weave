@@ -121,6 +121,22 @@ ipcMain.on('weave:window-close', () => {
 ipcMain.handle('weave:get-status', async () => {
   const botStatus = getBotStatus();
   const state = loadProjectsState();
+
+  let qrToSend = currentQrData;
+  if (!qrToSend && !botStatus.connected) {
+    const qrPath = path.join(ROOT_DIR, 'whatsapp-qr.png');
+    if (fs.existsSync(qrPath)) {
+      try {
+        const imgBuffer = fs.readFileSync(qrPath);
+        qrToSend = {
+          dataUrl: `data:image/png;base64,${imgBuffer.toString('base64')}`,
+          qrPath,
+        };
+        currentQrData = qrToSend;
+      } catch {}
+    }
+  }
+
   return {
     bot: {
       connected: botStatus.connected,
@@ -128,7 +144,7 @@ ipcMain.handle('weave:get-status', async () => {
       registered: botStatus.registered,
       activeTask: botStatus.activeTask,
       triggerPrefix: CONFIG.triggerPrefix,
-      qrData: currentQrData,
+      qrData: qrToSend,
     },
     google: {
       authenticated: googleAuth.isAuthenticated(),
