@@ -664,15 +664,15 @@
           </div>
 
           <div class="space-y-2">
-            <a href="https://github.com/darthnihilius01/weave/releases" target="_blank" rel="noopener noreferrer" class="w-full h-11 rounded bg-white hover:bg-zinc-200 text-black font-mono text-xs font-semibold flex items-center justify-center gap-2 transition active:scale-95 shadow-[0_2px_12px_rgba(255,255,255,0.15)]">
+            <a href="downloads/Weave.dmg" download="Weave.dmg" class="w-full h-11 rounded bg-white hover:bg-zinc-200 text-black font-mono text-xs font-semibold flex items-center justify-center gap-2 transition active:scale-95 shadow-[0_2px_12px_rgba(255,255,255,0.15)]">
               <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2.5">
                 <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
               </svg>
               <span>MAC INSTALLER (.DMG)</span>
             </a>
-            <div class="w-full h-9 rounded border border-white/10 bg-white/[0.02] text-zinc-400 font-mono text-[10px] flex items-center justify-center">
-              <span>Or: brew install darthnihilius01/weave</span>
-            </div>
+            <a href="downloads/Weave-macOS.zip" download="Weave-macOS.zip" class="w-full h-9 rounded border border-white/10 hover:border-white/20 bg-white/[0.03] text-zinc-300 hover:text-white font-mono text-[11px] flex items-center justify-center transition">
+              <span>Portable App Bundle (.zip)</span>
+            </a>
           </div>
         </div>
 
@@ -880,8 +880,8 @@
         heroBtn.setAttribute('download', 'Weave.AppImage');
         heroText.innerText = 'DOWNLOAD FOR LINUX (.APPIMAGE)';
       } else if (/Mac|iPhone|iPad/i.test(ua) || /Mac/i.test(platform)) {
-        heroBtn.href = '#download';
-        heroBtn.removeAttribute('download');
+        heroBtn.href = 'downloads/Weave.dmg';
+        heroBtn.setAttribute('download', 'Weave.dmg');
         heroText.innerText = 'DOWNLOAD FOR MACOS (.DMG)';
       } else {
         // Windows default
