@@ -1959,9 +1959,8 @@ async function processQueueItem(sock, item) {
     const hadPersonalAction = hasOwnerEmailAction || hasCalendarAction;
 
     function isPersonalEcho(text) {
-      if (!text) return true;
       const lower = text.toLowerCase().trim();
-      if (lower.startsWith('hi ramanand') || lower.startsWith('hello ramanand') || lower.startsWith('dear ramanand')) return true;
+      if (/^(hi|hello|hey|dear)\s+[a-z0-9_-]+/i.test(lower)) return true;
       if (lower.includes('here is your google meet link') || lower.includes('here is the google meet link')) return true;
       if (lower.includes('i have sent') || lower.includes("i've sent") || lower.includes('i have drafted')) return true;
       if (lower.includes('added to your calendar') || lower.includes('scheduled on your calendar')) return true;

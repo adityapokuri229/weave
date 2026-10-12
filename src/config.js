@@ -100,6 +100,15 @@ export const CONFIG = {
 
   // GitHub Personal Access Token for repo API & collaborator operations
   githubToken: process.env.GITHUB_TOKEN || '',
+
+  // Google OAuth 2.0 PKCE & APIs
+  googleClientId: process.env.GOOGLE_CLIENT_ID || '',
+  googleClientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
+  googleRedirectPort: parsePositiveInt(process.env.GOOGLE_REDIRECT_PORT, 8085),
+
+  // Direct Gemini API
+  geminiApiKey: process.env.GEMINI_API_KEY || '',
+  geminiModel: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
 };
 
 /**

@@ -2,6 +2,7 @@ import http from 'http';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { fileURLToPath } from 'url';
 import { ROOT_DIR, atomicWriteJson } from './config.js';
 
 const CREDENTIALS_FILE = path.join(ROOT_DIR, '.credentials.json');
@@ -10,7 +11,7 @@ const CREDENTIALS_FILE = path.join(ROOT_DIR, '.credentials.json');
 // Users can provide their own Client ID/Secret via env or Weave app settings
 const DEFAULT_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || '';
 const DEFAULT_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET || '';
-const REDIRECT_PORT = parseInt(process.env.GOOGLE_REDIRECT_PORT || '8085', 10);
+const REDIRECT_PORT = parseInt(process.env.GOOGLE_REDIRECT_PORT || '8085', 10) || 8085;
 const REDIRECT_URI = `http://localhost:${REDIRECT_PORT}/auth/callback`;
 
 // Scopes required for Gemini API, Gmail, and Google Calendar
@@ -44,10 +45,12 @@ class GoogleAuthManager {
   }
 
   isAuthenticated() {
+    if (!this.tokens) this.tokens = this.loadTokens();
     return !!(this.tokens && (this.tokens.access_token || this.tokens.refresh_token));
   }
 
   getUserEmail() {
+    if (!this.tokens) this.tokens = this.loadTokens();
     return this.tokens?.email || null;
   }
 
@@ -226,6 +229,7 @@ class GoogleAuthManager {
    * Retrieves a valid access token, auto-refreshing if expired
    */
   async getValidAccessToken() {
+    if (!this.tokens) this.tokens = this.loadTokens();
     if (!this.tokens) {
       throw new Error('Not logged in. Please connect your Google Account in Weave.');
     }
@@ -274,3 +278,32 @@ class GoogleAuthManager {
 }
 
 export const googleAuth = new GoogleAuthManager();
+
+// CLI Runner: allows running `npm run auth` or `node src/auth.js` directly
+const isDirectRun =
+  process.argv[1] &&
+  path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
+
+if (isDirectRun) {
+  if (!process.env.GOOGLE_CLIENT_ID) {
+    console.error('❌ GOOGLE_CLIENT_ID is not set.');
+    console.error('👉 Please set GOOGLE_CLIENT_ID in your .env file or environment first.\n');
+    process.exit(1);
+  }
+
+  console.log('🔗 Starting Weave Google OAuth 2.0 PKCE flow...');
+  googleAuth
+    .startLoginFlow((url) => {
+      console.log('\n👉 Open the following URL in your browser to sign in with Google:\n');
+      console.log(url + '\n');
+    })
+    .then((tokens) => {
+      console.log(`\n✅ Successfully authenticated as: ${tokens.email || 'Google User'}`);
+      console.log('🔒 Saved credentials to .credentials.json\n');
+      process.exit(0);
+    })
+    .catch((err) => {
+      console.error('❌ Authentication failed:', err.message);
+      process.exit(1);
+    });
+}

@@ -1,17 +1,21 @@
-# Weave — WhatsApp Agent Bridge for Google Antigravity (`agy`)
+# Weave — WhatsApp Agent Bridge for Google Antigravity & Gemini
 
 Bridge your local **Google Antigravity (`agy`) Gemini Coding Agent** directly with WhatsApp. Prompt, review, debug, build websites, inspect screenshots, and schedule meetings from anywhere using WhatsApp group chats or direct messages.
+
+Now also features direct **Google OAuth 2.0 PKCE** and **Direct Gemini API integration** — run tasks with or without the local CLI!
 
 ---
 
 ## ✨ Features
 
-- 💬 **WhatsApp Natural Language Coding**: Chat with your local Antigravity agent using text or voice notes.
+- 💬 **WhatsApp Natural Language Coding**: Chat with your Gemini agent using text or voice notes.
+- 🔑 **Google OAuth 2.0 (PKCE)**: Connect your Google account directly with zero server-side secrets (`npm run auth`) for seamless Calendar, Gmail, and Gemini API access.
+- ⚡ **Direct Gemini API Client**: Use Gemini models directly with an API key (`GEMINI_API_KEY`) or OAuth tokens without needing the `agy` CLI installed.
 - 🔒 **Project Isolation & Group Binding**: Lock specific WhatsApp groups to dedicated project folders (`/bind <project>`) so team members cannot access other directories.
 - 🎙️ **Voice Note Transcription**: Send WhatsApp audio or voice messages — automatically transcribed via Whisper/Groq or local engine.
 - 📸 **Visual QA & Screenshots**: Take automated web snapshots with `@agent /screenshot` or phone-sized viewports (`/screenshot mobile`).
 - 📎 **Direct File Transfers**: Send local files, downloads, or build artifacts straight to WhatsApp or contacts.
-- 📅 **Google Calendar & Email Sync**: Schedule meetings with natural language; the agent prepares and delivers RFC 5545 `.ics` invitations and drafts emails.
+- 📅 **Google Calendar & Email Sync**: Schedule meetings with natural language via OAuth or RFC 5545 `.ics` invitations and draft emails.
 - 🤝 **GitHub Integration**: Manage collaborators and auto-push commits directly via chat commands.
 
 ---
@@ -21,7 +25,10 @@ Bridge your local **Google Antigravity (`agy`) Gemini Coding Agent** directly wi
 ### 1. Prerequisites
 
 - **Node.js** v18.0.0 or higher
-- **Google Antigravity (`agy`) CLI** installed and signed in on your system
+- One of the following AI backends:
+  - **Google Antigravity (`agy`) CLI** installed and signed in on your system, **OR**
+  - **Gemini API Key** from [Google AI Studio](https://aistudio.google.com/app/apikey), **OR**
+  - **Google OAuth Client ID** (for direct Google login)
 - (Optional) **Firefox** installed for headless visual QA screenshots
 - (Optional) **Groq API Key** for ultra-fast Whisper speech-to-text transcription
 
@@ -35,7 +42,17 @@ cd weave
 npm install
 ```
 
-### 3. Start the Bridge
+### 3. Connect Google Account (Optional)
+
+If using Google OAuth for direct Gemini API, Calendar, and Gmail:
+
+```bash
+npm run auth
+```
+
+Open the printed URL in your browser, approve permissions, and Weave will securely save your local tokens in `.credentials.json`.
+
+### 4. Start the Bridge
 
 ```bash
 npm start
@@ -61,7 +78,12 @@ Edit `.env` to configure your environment:
 | `BOT_TRIGGER` | `@agent` | Prefix keyword to trigger the bot in chats |
 | `DEFAULT_PROJECT_DIR` | `./demo-site` | Fallback directory for tasks when no project is specified |
 | `AGY_BIN` | `agy` | Path to the Antigravity CLI binary |
-| `AGY_MODEL` | *(empty)* | Optional model override (e.g. `gemini-3.8-flash-high`) |
+| `AGY_MODEL` | *(empty)* | Optional model override for Antigravity (e.g. `gemini-3.8-flash-high`) |
+| `GEMINI_API_KEY` | *(empty)* | Optional Gemini API key for direct REST API mode |
+| `GEMINI_MODEL` | `gemini-2.5-flash` | Model for direct Gemini API client |
+| `GOOGLE_CLIENT_ID` | *(empty)* | Google Cloud OAuth Client ID for PKCE sign-in |
+| `GOOGLE_CLIENT_SECRET` | *(empty)* | Optional OAuth Client Secret (not required for public PKCE clients) |
+| `GOOGLE_REDIRECT_PORT` | `8085` | Local loopback port for OAuth redirect callback |
 | `ALLOWED_SENDERS` | `*` | Comma-separated phone numbers allowed to trigger tasks (`*` = anyone) |
 | `ADMIN_NUMBERS` | *(empty)* | Phone numbers granted owner permissions across devices |
 | `ALLOW_FROM_ME` | `true` | Allows triggering the bot from your own linked WhatsApp account |
@@ -108,7 +130,7 @@ Edit `.env` to configure your environment:
 
 ## 🔒 Security & Privacy
 
-- **Session Isolation**: Baileys session keys, credentials, and state databases are strictly ignored by `.gitignore` and never committed to version control.
+- **Session & Token Isolation**: Baileys session keys, OAuth tokens (`.credentials.json`), runtime databases, and `.env` are strictly excluded in `.gitignore` and never committed.
 - **Group Sandbox**: Group members in bound groups are strictly isolated to their assigned folder and cannot traverse directories or run commands on other host paths.
 
 ---

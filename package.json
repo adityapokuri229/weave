@@ -8,6 +8,7 @@
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "test:agent": "node src/test-agent.js",
+    "auth": "node src/auth.js",
     "bundle": "git archive --format=zip --output=weave.zip HEAD"
   },
   "keywords": [
