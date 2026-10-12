@@ -1,70 +1,34 @@
-// Wait for DOM to load
+// Weave Desktop Monochrome Controller
 document.addEventListener('DOMContentLoaded', async () => {
   const api = window.weaveAPI;
 
-  // DOM Elements - Window controls
+  // Window Controls
   const btnClose = document.getElementById('btn-close');
   const btnMinimize = document.getElementById('btn-minimize');
   const btnMaximize = document.getElementById('btn-maximize');
 
-  // Views & Tabs
+  if (btnClose) btnClose.addEventListener('click', () => api?.close());
+  if (btnMinimize) btnMinimize.addEventListener('click', () => api?.minimize());
+  if (btnMaximize) btnMaximize.addEventListener('click', () => api?.maximize());
+
+  // Navigation Tabs
   const tabOnboarding = document.getElementById('tab-onboarding');
   const tabWorkspace = document.getElementById('tab-workspace');
   const viewOnboarding = document.getElementById('view-onboarding');
   const viewWorkspace = document.getElementById('view-workspace');
   const btnLaunchWorkspace = document.getElementById('btn-launch-workspace');
 
-  // Status Elements
-  const statusDot = document.getElementById('status-dot');
-  const statusText = document.getElementById('status-text');
-  const googleEmail = document.getElementById('google-email');
-  const googlePill = document.getElementById('google-pill');
-  const googleStatusTitle = document.getElementById('google-status-title');
-  const googleStatusDesc = document.getElementById('google-status-desc');
-  const googleVerifiedIcon = document.getElementById('google-verified-icon');
-  const btnGoogleLogin = document.getElementById('btn-google-login');
-
-  // QR Elements
-  const qrImage = document.getElementById('qr-image');
-  const qrPlaceholder = document.getElementById('qr-placeholder');
-  const qrConnectedOverlay = document.getElementById('qr-connected-overlay');
-  const qrConnectedNumber = document.getElementById('qr-connected-number');
-  const qrLivePulse = document.getElementById('qr-live-pulse');
-
-  // Bot Handle
-  const botTagInput = document.getElementById('bot-tag-input');
-  const btnSaveHandle = document.getElementById('btn-save-handle');
-  const userTriggerPill = document.getElementById('user-trigger-pill');
-
-  // Workspace
-  const projectsList = document.getElementById('projects-list');
-  const activeProjectPath = document.getElementById('active-project-path');
-  const promptInput = document.getElementById('prompt-input');
-  const btnRunPrompt = document.getElementById('btn-run-prompt');
-  const btnQuickStop = document.getElementById('btn-quick-stop');
-  const terminalBody = document.getElementById('terminal-body');
-  const btnClearLogs = document.getElementById('btn-clear-logs');
-  const logCount = document.getElementById('log-count');
-
-  let entryCounter = 0;
-
-  // --- WINDOW CONTROLS ---
-  if (btnClose) btnClose.addEventListener('click', () => api?.close());
-  if (btnMinimize) btnMinimize.addEventListener('click', () => api?.minimize());
-  if (btnMaximize) btnMaximize.addEventListener('click', () => api?.maximize());
-
-  // --- TAB NAVIGATION ---
   function showView(view) {
     if (view === 'workspace') {
       viewOnboarding.classList.add('hidden');
       viewWorkspace.classList.remove('hidden');
-      tabWorkspace.className = 'px-3 py-1 rounded-md font-medium text-[#f1f5f9] bg-[#243247] transition-all flex items-center gap-1.5';
-      tabOnboarding.className = 'px-3 py-1 rounded-md font-medium text-[#94a3b8] hover:text-white transition-all flex items-center gap-1.5';
+      tabWorkspace.className = 'px-2.5 py-0.5 rounded text-[11px] font-medium text-black bg-white transition-all flex items-center gap-1.5';
+      tabOnboarding.className = 'px-2.5 py-0.5 rounded text-[11px] font-medium text-app-secondary hover:text-white transition-all flex items-center gap-1.5';
     } else {
       viewWorkspace.classList.add('hidden');
       viewOnboarding.classList.remove('hidden');
-      tabOnboarding.className = 'px-3 py-1 rounded-md font-medium text-[#f1f5f9] bg-[#243247] transition-all flex items-center gap-1.5';
-      tabWorkspace.className = 'px-3 py-1 rounded-md font-medium text-[#94a3b8] hover:text-white transition-all flex items-center gap-1.5';
+      tabOnboarding.className = 'px-2.5 py-0.5 rounded text-[11px] font-medium text-black bg-white transition-all flex items-center gap-1.5';
+      tabWorkspace.className = 'px-2.5 py-0.5 rounded text-[11px] font-medium text-app-secondary hover:text-white transition-all flex items-center gap-1.5';
     }
   }
 
@@ -72,31 +36,78 @@ document.addEventListener('DOMContentLoaded', async () => {
   tabWorkspace.addEventListener('click', () => showView('workspace'));
   btnLaunchWorkspace.addEventListener('click', () => showView('workspace'));
 
-  // --- LOGGING HELPER ---
-  function appendLog(level, text, time = new Date().toLocaleTimeString()) {
-    entryCounter += 1;
-    logCount.textContent = `${entryCounter} entries`;
+  // Header Elements
+  const waHeaderDot = document.getElementById('wa-header-dot');
+  const waHeaderText = document.getElementById('wa-header-text');
+  const googleEmail = document.getElementById('google-email');
+  const googleAvatarLetter = document.getElementById('google-avatar-letter');
 
+  // Step Indicators
+  const stepBtn1 = document.getElementById('step-btn-1');
+  const stepIcon1 = document.getElementById('step-icon-1');
+  const stepBtn2 = document.getElementById('step-btn-2');
+  const stepIcon2 = document.getElementById('step-icon-2');
+
+  // Step 1: QR & WhatsApp
+  const qrImage = document.getElementById('qr-image');
+  const qrPlaceholder = document.getElementById('qr-placeholder');
+  const qrConnectedOverlay = document.getElementById('qr-connected-overlay');
+  const qrConnectedNumber = document.getElementById('qr-connected-number');
+  const qrLivePulse = document.getElementById('qr-live-pulse');
+
+  // Step 2: Google PKCE
+  const btnGoogleLogin = document.getElementById('btn-google-login');
+  const googleStatusTitle = document.getElementById('google-status-title');
+  const googleStatusDesc = document.getElementById('google-status-desc');
+  const googleVerifiedIcon = document.getElementById('google-verified-icon');
+
+  // Step 3: Trigger Handle
+  const botTagInput = document.getElementById('bot-tag-input');
+  const btnSaveHandle = document.getElementById('btn-save-handle');
+  const callsignDisplay = document.getElementById('callsign-display');
+  const btnCopyCallsign = document.getElementById('btn-copy-callsign');
+
+  // Workspace Feed & Elements
+  const terminalBody = document.getElementById('terminal-body');
+  const btnClearLogs = document.getElementById('btn-clear-logs');
+  const promptInput = document.getElementById('prompt-input');
+  const btnRunPrompt = document.getElementById('btn-run-prompt');
+  const btnQuickStop = document.getElementById('btn-quick-stop');
+  const workspaceBotStatusTag = document.getElementById('workspace-bot-status-tag');
+  const activeProjectPath = document.getElementById('active-project-path');
+
+  // Copy callsign helper
+  if (btnCopyCallsign) {
+    btnCopyCallsign.addEventListener('click', () => {
+      const text = callsignDisplay.textContent || '@agent';
+      navigator.clipboard.writeText(text);
+      btnCopyCallsign.innerHTML = '<span class="text-white">✓</span><span>Copied</span>';
+      setTimeout(() => {
+        btnCopyCallsign.innerHTML = '<span class="text-app-tertiary">⌘C</span><span>Copy</span>';
+      }, 1500);
+    });
+  }
+
+  // Terminal logging
+  function appendLog(level, text, time = new Date().toLocaleTimeString()) {
     const row = document.createElement('div');
-    row.className = 'flex items-start gap-2 text-[11px] leading-relaxed';
+    row.className = 'flex items-start gap-2 leading-relaxed';
 
     const timeSpan = document.createElement('span');
-    timeSpan.className = 'text-[#475569] shrink-0 font-mono';
-    timeSpan.textContent = time;
+    timeSpan.className = 'text-app-dim shrink-0';
+    timeSpan.textContent = `[${time}]`;
 
     const content = document.createElement('span');
-    content.className = 'font-mono break-all';
+    content.className = 'break-all';
 
     if (level === 'error') {
-      content.className += ' text-[#ef4444]';
+      content.className += ' text-neutral-300 font-semibold';
     } else if (level === 'warn') {
-      content.className += ' text-[#f59e0b]';
-    } else if (text.includes('✅') || text.includes('ONLINE')) {
-      content.className += ' text-[#10b981] font-semibold';
-    } else if (text.includes('📱') || text.includes('QR')) {
-      content.className += ' text-[#38bdf8]';
+      content.className += ' text-neutral-400';
+    } else if (text.includes('ONLINE') || text.includes('Connected') || text.includes('✅')) {
+      content.className += ' text-white font-semibold';
     } else {
-      content.className += ' text-[#cbd5e1]';
+      content.className += ' text-app-secondary';
     }
 
     content.textContent = text;
@@ -107,82 +118,85 @@ document.addEventListener('DOMContentLoaded', async () => {
     terminalBody.scrollTop = terminalBody.scrollHeight;
   }
 
-  btnClearLogs.addEventListener('click', () => {
-    terminalBody.innerHTML = '<div class="text-[#64748b]">// Console cleared.</div>';
-    entryCounter = 0;
-    logCount.textContent = '0 entries';
-  });
+  if (btnClearLogs) {
+    btnClearLogs.addEventListener('click', () => {
+      terminalBody.innerHTML = '<div class="text-app-dim">// Stream cleared.</div>';
+    });
+  }
 
-  // --- INITIAL STATUS SYNC ---
+  // State Synchronizer
+  function renderState(state) {
+    if (!state) return;
+
+    // 1. WhatsApp Bot State (Step 1)
+    if (state.bot?.connected) {
+      waHeaderDot.className = 'w-1.5 h-1.5 rounded-full bg-white inline-block';
+      waHeaderText.textContent = 'WhatsApp Connected';
+      qrPlaceholder.classList.add('hidden');
+      qrImage.classList.add('hidden');
+      qrConnectedOverlay.classList.remove('hidden');
+      qrConnectedNumber.textContent = state.bot.user?.id?.split(':')[0] || 'Active';
+      qrLivePulse.className = 'w-1.5 h-1.5 rounded-full bg-white';
+
+      // Update Stepper: Step 1 completed
+      stepBtn1.className = 'flex items-center justify-center gap-1.5 py-1.5 px-2 rounded bg-app-subtle border border-app-border text-white font-medium';
+      stepIcon1.textContent = 'check_circle';
+      stepIcon1.className = 'material-symbols-outlined text-[15px] text-white';
+
+      // Advance attention to Step 2 (Google Auth)
+      if (!state.google?.authenticated) {
+        stepBtn2.className = 'flex items-center justify-center gap-1.5 py-1.5 px-2 rounded bg-white text-black font-semibold shadow-sm';
+        stepIcon2.className = 'material-symbols-outlined text-[15px] text-black';
+      }
+      workspaceBotStatusTag.textContent = 'ONLINE';
+    } else if (state.bot?.qrData?.dataUrl) {
+      waHeaderDot.className = 'w-1.5 h-1.5 rounded-full bg-neutral-400 animate-pulse inline-block';
+      waHeaderText.textContent = 'Scan QR Code';
+      qrImage.src = state.bot.qrData.dataUrl;
+      qrImage.classList.remove('hidden');
+      qrPlaceholder.classList.add('hidden');
+      qrConnectedOverlay.classList.add('hidden');
+      workspaceBotStatusTag.textContent = 'SCAN QR';
+    }
+
+    // 2. Google OAuth Status (Step 2)
+    if (state.google?.authenticated && state.google?.email) {
+      googleEmail.textContent = state.google.email;
+      googleAvatarLetter.textContent = (state.google.email[0] || 'G').toUpperCase();
+      googleStatusTitle.textContent = `Connected as ${state.google.email}`;
+      googleStatusDesc.textContent = 'Gemini 2.5 Flash, Google Calendar & Gmail active';
+      googleVerifiedIcon.classList.remove('hidden');
+      btnGoogleLogin.textContent = 'Connected';
+      btnGoogleLogin.className = 'text-xs font-mono font-medium px-3.5 py-1.5 rounded-lg bg-app-subtle text-white border border-app-border shrink-0 cursor-default';
+
+      // Step 2 Completed
+      stepBtn2.className = 'flex items-center justify-center gap-1.5 py-1.5 px-2 rounded bg-app-subtle border border-app-border text-white font-medium';
+      stepIcon2.textContent = 'check_circle';
+      stepIcon2.className = 'material-symbols-outlined text-[15px] text-white';
+    }
+
+    // 3. Trigger Handle (Step 3)
+    const trigger = state.bot?.triggerPrefix || '@agent';
+    botTagInput.value = trigger.replace(/^@/, '');
+    callsignDisplay.textContent = trigger;
+
+    // 4. Projects
+    if (state.activeProject && state.projects?.[state.activeProject]) {
+      activeProjectPath.textContent = state.projects[state.activeProject];
+    }
+  }
+
   async function syncStatus() {
     if (!api) return;
     try {
       const state = await api.getStatus();
       renderState(state);
     } catch (err) {
-      appendLog('error', `Failed to query initial status: ${err.message}`);
+      appendLog('error', `Status sync error: ${err.message}`);
     }
   }
 
-  function renderState(state) {
-    if (!state) return;
-
-    // 1. Google OAuth Status
-    if (state.google?.authenticated && state.google?.email) {
-      googleEmail.textContent = state.google.email;
-      googlePill.classList.remove('hidden');
-      googleStatusTitle.textContent = `Connected as ${state.google.email}`;
-      googleStatusDesc.textContent = 'Gemini 2.5 Flash, Google Calendar & Gmail active';
-      googleVerifiedIcon.classList.remove('hidden');
-      btnGoogleLogin.textContent = 'Connected';
-      btnGoogleLogin.className = 'text-xs font-medium px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 shrink-0';
-    }
-
-    // 2. Trigger Handle
-    const trigger = state.bot?.triggerPrefix || '@agent';
-    botTagInput.value = trigger.replace(/^@/, '');
-    userTriggerPill.textContent = trigger;
-
-    // 3. Projects List
-    if (state.projects) {
-      projectsList.innerHTML = '';
-      for (const [alias, folder] of Object.entries(state.projects)) {
-        const item = document.createElement('div');
-        item.className = 'flex items-center justify-between p-1.5 rounded hover:bg-[#161f30] transition-colors';
-        item.innerHTML = `
-          <span class="font-mono text-[#38bdf8] truncate">${alias}</span>
-          <span class="text-[#64748b] text-[10px] truncate max-w-[120px]">${folder.split('/').pop()}</span>
-        `;
-        projectsList.appendChild(item);
-      }
-    }
-    if (state.activeProject && state.projects?.[state.activeProject]) {
-      activeProjectPath.textContent = state.projects[state.activeProject];
-    }
-
-    // 4. WhatsApp Bot State
-    if (state.bot?.connected) {
-      statusDot.className = 'w-2 h-2 rounded-full bg-emerald-400 glow-emerald';
-      statusText.textContent = 'WhatsApp Online';
-      qrPlaceholder.classList.add('hidden');
-      qrImage.classList.add('hidden');
-      qrConnectedOverlay.classList.remove('hidden');
-      qrConnectedNumber.textContent = state.bot.user?.id?.split(':')[0] || 'Active';
-      qrLivePulse.className = 'w-2 h-2 rounded-full bg-emerald-400';
-    } else if (state.bot?.qrData?.dataUrl) {
-      statusDot.className = 'w-2 h-2 rounded-full bg-amber-400 animate-pulse';
-      statusText.textContent = 'Scan QR Code';
-      qrImage.src = state.bot.qrData.dataUrl;
-      qrImage.classList.remove('hidden');
-      qrPlaceholder.classList.add('hidden');
-      qrConnectedOverlay.classList.add('hidden');
-    } else {
-      statusDot.className = 'w-2 h-2 rounded-full bg-amber-400 animate-pulse';
-      statusText.textContent = 'Initializing...';
-    }
-  }
-
-  // --- EVENT LISTENERS (PUSH STREAMS) ---
+  // IPC Event Streams
   if (api) {
     api.onQrUpdate((qrData) => {
       if (qrData?.dataUrl) {
@@ -190,21 +204,25 @@ document.addEventListener('DOMContentLoaded', async () => {
         qrImage.classList.remove('hidden');
         qrPlaceholder.classList.add('hidden');
         qrConnectedOverlay.classList.add('hidden');
-        statusDot.className = 'w-2 h-2 rounded-full bg-amber-400 animate-pulse';
-        statusText.textContent = 'Scan QR Code';
+        waHeaderDot.className = 'w-1.5 h-1.5 rounded-full bg-neutral-400 animate-pulse inline-block';
+        waHeaderText.textContent = 'Scan QR Code';
+        appendLog('info', '📱 Fresh WhatsApp QR generated. Ready to scan.');
       }
     });
 
     api.onStatusUpdate((update) => {
       if (update.status === 'connected') {
-        statusDot.className = 'w-2 h-2 rounded-full bg-emerald-400 glow-emerald';
-        statusText.textContent = 'WhatsApp Online';
+        waHeaderDot.className = 'w-1.5 h-1.5 rounded-full bg-white inline-block';
+        waHeaderText.textContent = 'WhatsApp Connected';
         qrConnectedOverlay.classList.remove('hidden');
         qrImage.classList.add('hidden');
         qrPlaceholder.classList.add('hidden');
+        appendLog('info', '✅ WhatsApp connection established and linked.');
+        syncStatus();
       } else if (update.status === 'disconnected') {
-        statusDot.className = 'w-2 h-2 rounded-full bg-red-400';
-        statusText.textContent = 'Disconnected';
+        waHeaderDot.className = 'w-1.5 h-1.5 rounded-full bg-neutral-600 inline-block';
+        waHeaderText.textContent = 'Disconnected';
+        appendLog('warn', '⚠️ WhatsApp connection closed.');
       }
     });
 
@@ -213,12 +231,13 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  // --- ACTIONS ---
+  // Google Login Click
   btnGoogleLogin.addEventListener('click', async () => {
-    btnGoogleLogin.innerHTML = '<span class="material-symbols-outlined text-[14px] animate-spin">sync</span> Signing in...';
+    if (btnGoogleLogin.textContent.trim() === 'Connected') return;
+    btnGoogleLogin.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Opening...';
     const res = await api?.startGoogleLogin();
     if (res?.success) {
-      appendLog('info', `✅ Successfully connected to Google as: ${res.email}`);
+      appendLog('info', `✅ Google OAuth (PKCE) verified: ${res.email}`);
       syncStatus();
     } else {
       appendLog('error', `Google login failed: ${res?.error || 'Unknown error'}`);
@@ -226,54 +245,56 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
+  // Handle Save
   btnSaveHandle.addEventListener('click', async () => {
     const handle = botTagInput.value.trim();
     if (!handle) return;
     const res = await api?.updateHandle(handle);
     if (res?.success) {
-      userTriggerPill.textContent = res.triggerPrefix;
-      appendLog('info', `Updated assistant trigger to: ${res.triggerPrefix}`);
-      btnSaveHandle.textContent = 'Saved!';
+      callsignDisplay.textContent = res.triggerPrefix;
+      appendLog('info', `Trigger prefix configured: ${res.triggerPrefix}`);
+      btnSaveHandle.textContent = 'Saved';
       setTimeout(() => { btnSaveHandle.textContent = 'Save'; }, 1500);
     }
   });
 
-  // Prompt Execution
-  async function triggerPrompt() {
+  // Direct Prompt Runner in Workspace
+  async function runPrompt() {
     const prompt = promptInput.value.trim();
     if (!prompt) return;
 
-    appendLog('info', `🚀 Running prompt: "${prompt}"`);
+    appendLog('info', `> ${prompt}`);
     promptInput.value = '';
-    btnRunPrompt.innerHTML = '<span class="material-symbols-outlined text-[14px] animate-spin">sync</span> Running...';
+    btnRunPrompt.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i>';
     btnRunPrompt.disabled = true;
 
     try {
       const res = await api?.runPrompt(prompt);
       if (res?.success) {
-        appendLog('info', `✅ Task Completed! Result:`);
-        appendLog('info', res.result?.response || 'Done');
+        appendLog('info', `Task completed.`);
       } else {
-        appendLog('error', `Task failed: ${res?.error || 'Unknown error'}`);
+        appendLog('error', `Task failed: ${res?.error || 'Unknown'}`);
       }
     } catch (err) {
-      appendLog('error', `Execution error: ${err.message}`);
+      appendLog('error', err.message);
     } finally {
-      btnRunPrompt.innerHTML = '<span>Run</span><i class="fa-solid fa-arrow-right text-[11px]"></i>';
+      btnRunPrompt.innerHTML = 'Run';
       btnRunPrompt.disabled = false;
     }
   }
 
-  btnRunPrompt.addEventListener('click', triggerPrompt);
+  btnRunPrompt.addEventListener('click', runPrompt);
   promptInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') triggerPrompt();
+    if (e.key === 'Enter') runPrompt();
   });
 
-  btnQuickStop.addEventListener('click', async () => {
-    await api?.stopTask();
-    appendLog('warn', '⏹️ Stopped active task process.');
-  });
+  if (btnQuickStop) {
+    btnQuickStop.addEventListener('click', async () => {
+      await api?.stopTask();
+      appendLog('warn', 'Task abort requested.');
+    });
+  }
 
-  // Start initial sync
+  // Initial Sync
   syncStatus();
 });
