@@ -19,7 +19,7 @@ function createWindow() {
     height: 780,
     minWidth: 900,
     minHeight: 650,
-    backgroundColor: '#050811',
+    backgroundColor: '#09090b',
     frame: false,
     titleBarStyle: 'hidden',
     webPreferences: {
@@ -31,6 +31,34 @@ function createWindow() {
   });
 
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+
+  mainWindow.webContents.on('did-finish-load', () => {
+    // If QR data is already generated, immediately push it to the renderer
+    if (currentQrData) {
+      mainWindow.webContents.send('weave:qr-update', currentQrData);
+    } else {
+      // Check if whatsapp-qr.png exists on disk as fallback
+      const qrPath = path.join(ROOT_DIR, 'whatsapp-qr.png');
+      if (fs.existsSync(qrPath)) {
+        try {
+          const imgBuffer = fs.readFileSync(qrPath);
+          const dataUrl = `data:image/png;base64,${imgBuffer.toString('base64')}`;
+          currentQrData = { dataUrl, qrPath };
+          mainWindow.webContents.send('weave:qr-update', currentQrData);
+        } catch {}
+      }
+    }
+  });
+
+  // Live reload renderer files in development
+  try {
+    const rendererDir = path.join(__dirname, 'renderer');
+    fs.watch(rendererDir, { recursive: true }, (_eventType, filename) => {
+      if (mainWindow && !mainWindow.isDestroyed() && filename) {
+        mainWindow.webContents.reloadIgnoringCache();
+      }
+    });
+  } catch {}
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);

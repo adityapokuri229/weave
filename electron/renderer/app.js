@@ -18,17 +18,31 @@ document.addEventListener('DOMContentLoaded', async () => {
   const viewWorkspace = document.getElementById('view-workspace');
   const btnLaunchWorkspace = document.getElementById('btn-launch-workspace');
 
+  let isConnected = false;
+  const tabWorkspaceIcon = document.getElementById('tab-workspace-icon');
+
   function showView(view) {
     if (view === 'workspace') {
+      if (!isConnected) {
+        appendLog('warn', '⚠️ Please link WhatsApp first by scanning the QR code before opening the workspace.');
+        // Subtle visual shake or highlight on QR box
+        stepBtn1.classList.add('animate-pulse');
+        setTimeout(() => stepBtn1.classList.remove('animate-pulse'), 1500);
+        return;
+      }
       viewOnboarding.classList.add('hidden');
       viewWorkspace.classList.remove('hidden');
-      tabWorkspace.className = 'px-2.5 py-0.5 rounded text-[11px] font-medium text-black bg-white transition-all flex items-center gap-1.5';
-      tabOnboarding.className = 'px-2.5 py-0.5 rounded text-[11px] font-medium text-app-secondary hover:text-white transition-all flex items-center gap-1.5';
+      tabWorkspace.className = 'px-2.5 py-0.5 rounded text-[11px] font-medium text-black bg-white transition-all flex items-center gap-1.5 cursor-pointer';
+      tabOnboarding.className = 'px-2.5 py-0.5 rounded text-[11px] font-medium text-app-secondary hover:text-white transition-all flex items-center gap-1.5 cursor-pointer';
     } else {
       viewWorkspace.classList.add('hidden');
       viewOnboarding.classList.remove('hidden');
-      tabOnboarding.className = 'px-2.5 py-0.5 rounded text-[11px] font-medium text-black bg-white transition-all flex items-center gap-1.5';
-      tabWorkspace.className = 'px-2.5 py-0.5 rounded text-[11px] font-medium text-app-secondary hover:text-white transition-all flex items-center gap-1.5';
+      tabOnboarding.className = 'px-2.5 py-0.5 rounded text-[11px] font-medium text-black bg-white transition-all flex items-center gap-1.5 cursor-pointer';
+      if (isConnected) {
+        tabWorkspace.className = 'px-2.5 py-0.5 rounded text-[11px] font-medium text-app-secondary hover:text-white transition-all flex items-center gap-1.5 cursor-pointer';
+      } else {
+        tabWorkspace.className = 'px-2.5 py-0.5 rounded text-[11px] font-medium text-app-dim opacity-50 cursor-not-allowed transition-all flex items-center gap-1.5';
+      }
     }
   }
 
@@ -130,6 +144,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // 1. WhatsApp Bot State (Step 1)
     if (state.bot?.connected) {
+      isConnected = true;
+      tabWorkspace.className = 'px-2.5 py-0.5 rounded text-[11px] font-medium text-app-secondary hover:text-white transition-all flex items-center gap-1.5 cursor-pointer';
+      tabWorkspace.removeAttribute('title');
+      if (tabWorkspaceIcon) tabWorkspaceIcon.textContent = 'terminal';
+
       waHeaderDot.className = 'w-1.5 h-1.5 rounded-full bg-white inline-block';
       waHeaderText.textContent = 'WhatsApp Connected';
       qrPlaceholder.classList.add('hidden');
@@ -149,14 +168,21 @@ document.addEventListener('DOMContentLoaded', async () => {
         stepIcon2.className = 'material-symbols-outlined text-[15px] text-black';
       }
       workspaceBotStatusTag.textContent = 'ONLINE';
-    } else if (state.bot?.qrData?.dataUrl) {
-      waHeaderDot.className = 'w-1.5 h-1.5 rounded-full bg-neutral-400 animate-pulse inline-block';
-      waHeaderText.textContent = 'Scan QR Code';
-      qrImage.src = state.bot.qrData.dataUrl;
-      qrImage.classList.remove('hidden');
-      qrPlaceholder.classList.add('hidden');
-      qrConnectedOverlay.classList.add('hidden');
-      workspaceBotStatusTag.textContent = 'SCAN QR';
+    } else {
+      isConnected = false;
+      tabWorkspace.className = 'px-2.5 py-0.5 rounded text-[11px] font-medium text-app-dim opacity-50 cursor-not-allowed transition-all flex items-center gap-1.5';
+      tabWorkspace.setAttribute('title', 'Link WhatsApp first to unlock Workspace');
+      if (tabWorkspaceIcon) tabWorkspaceIcon.textContent = 'lock';
+
+      if (state.bot?.qrData?.dataUrl) {
+        waHeaderDot.className = 'w-1.5 h-1.5 rounded-full bg-neutral-400 animate-pulse inline-block';
+        waHeaderText.textContent = 'Scan QR Code';
+        qrImage.src = state.bot.qrData.dataUrl;
+        qrImage.classList.remove('hidden');
+        qrPlaceholder.classList.add('hidden');
+        qrConnectedOverlay.classList.add('hidden');
+        workspaceBotStatusTag.textContent = 'SCAN QR';
+      }
     }
 
     // 2. Google OAuth Status (Step 2)

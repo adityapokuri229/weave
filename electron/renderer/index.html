@@ -74,11 +74,11 @@
 
       <!-- Center: View Switcher Tabs -->
       <div class="flex items-center gap-1 bg-app-surface p-1 rounded-md border border-app-border no-drag text-xs font-mono">
-        <button id="tab-onboarding" class="px-2.5 py-0.5 rounded text-[11px] font-medium text-black bg-white transition-all flex items-center gap-1.5">
+        <button id="tab-onboarding" class="px-2.5 py-0.5 rounded text-[11px] font-medium text-black bg-white transition-all flex items-center gap-1.5 cursor-pointer">
           <span class="material-symbols-outlined text-[13px]">qr_code_2</span> Setup &amp; Link
         </button>
-        <button id="tab-workspace" class="px-2.5 py-0.5 rounded text-[11px] font-medium text-app-secondary hover:text-white transition-all flex items-center gap-1.5">
-          <span class="material-symbols-outlined text-[13px]">terminal</span> Workspace
+        <button id="tab-workspace" class="px-2.5 py-0.5 rounded text-[11px] font-medium text-app-dim opacity-50 cursor-not-allowed transition-all flex items-center gap-1.5" title="Link WhatsApp first to unlock Workspace">
+          <span id="tab-workspace-icon" class="material-symbols-outlined text-[13px]">lock</span> Workspace
         </button>
       </div>
 
