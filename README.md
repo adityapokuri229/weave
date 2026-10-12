@@ -52,11 +52,21 @@ npm run auth
 
 Open the printed URL in your browser, approve permissions, and Weave will securely save your local tokens in `.credentials.json`.
 
-### 4. Start the Bridge
+### 4. Launch Desktop App
+
+Run the standalone Electron desktop window:
 
 ```bash
-npm start
+npm run desktop
 ```
+
+To package a standalone executable installer (`.AppImage`, `.deb`, `.dmg`, `.exe`):
+
+```bash
+npm run dist
+```
+
+*(Alternatively, to run only the background headless CLI bridge without the UI, run `npm start`.)*
 
 On first run, the bridge automatically initializes `.env` from `.env.example`.
 

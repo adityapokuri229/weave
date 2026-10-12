@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Weave.ai — WhatsApp AI Agent Bridge for Google Antigravity & Gemini</title>
+  <meta name="description" content="Minimal, local-first bridge connecting your local Gemini coding agent directly to WhatsApp. Code, inspect, and run tasks with zero cloud friction." />
+
+  <!-- Fonts: Inter, Geist Mono, Newsreader -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&family=Inter:wght@300;400;500;600;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400&family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&display=swap" rel="stylesheet" />
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              black: '#09090b',
+              canvas: '#000000',
+              surface: '#0f0f11',
+              card: '#141416',
+              border: '#27272a',
+              subtle: '#18181b',
+              muted: '#71717a',
+              secondary: '#a1a1aa',
+              light: '#f4f4f5',
+              white: '#ffffff',
+              accent: '#ffffff'
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'sans-serif'],
+            mono: ['"Geist Mono"', 'JetBrains Mono', 'ui-monospace', 'monospace'],
+            serif: ['Newsreader', 'Georgia', 'serif']
+          }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    ::selection {
+      background: #ffffff;
+      color: #000000;
+    }
+    /* Subtle custom scrollbar */
+    ::-webkit-scrollbar {
+      width: 5px;
+      height: 5px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #000000;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #27272a;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #3f3f46;
+    }
+
+    /* Subtle grid pattern background */
+    .bg-grid-pattern {
+      background-size: 32px 32px;
+      background-image: 
+        linear-gradient(to right, rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+    }
+    .bg-dots {
+      background-image: radial-gradient(rgba(255, 255, 255, 0.12) 1px, transparent 1px);
+      background-size: 24px 24px;
+    }
+
+    /* Live terminal pulsing caret */
+    .terminal-cursor {
+      display: inline-block;
+      width: 8px;
+      height: 15px;
+      background: #ffffff;
+      vertical-align: middle;
+      animation: blink 1s step-end infinite;
+    }
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0; }
+    }
+  </style>
+</head>
+<body class="bg-black text-brand-light font-sans antialiased selection:bg-white selection:text-black min-h-screen flex flex-col justify-between">
+
+  <!-- ================= TOP NAVIGATION BAR ================= -->
+  <header class="sticky top-0 z-50 w-full border-b border-brand-border/60 bg-black/85 backdrop-blur-md">
+    <div class="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+      <!-- Logo & Identity -->
+      <a href="#" class="flex items-center gap-3 group">
+        <div class="w-8 h-8 rounded-lg bg-white text-black flex items-center justify-center font-bold shadow-sm transition-transform group-hover:scale-105">
+          <span class="material-symbols-outlined text-[20px]" style="font-variation-settings: 'FILL' 1;">all_inclusive</span>
+        </div>
+        <div class="flex items-baseline gap-2">
+          <span class="font-mono text-lg font-semibold tracking-tight text-white">weave<span class="text-neutral-500 text-sm">.ai</span></span>
+          <span class="hidden sm:inline-block font-mono text-[10px] uppercase tracking-wider px-2 py-0.5 rounded border border-neutral-800 text-neutral-400 bg-neutral-900/60">v1.4.2</span>
+        </div>
+      </a>
+
+      <!-- Center Links -->
+      <nav class="hidden md:flex items-center gap-8 text-sm font-medium text-brand-secondary">
+        <a href="#overview" class="hover:text-white transition-colors">Overview</a>
+        <a href="#stitch-gallery" class="hover:text-white transition-colors flex items-center gap-1.5">
+          <span>Stitch Designs</span>
+          <span class="text-[10px] font-mono px-1.5 py-0.2 rounded bg-neutral-800 text-neutral-300">7 screens</span>
+        </a>
+        <a href="#interactive-preview" class="hover:text-white transition-colors">Live Simulation</a>
+        <a href="#features" class="hover:text-white transition-colors">Architecture</a>
+        <a href="#quickstart" class="hover:text-white transition-colors">Quickstart</a>
+      </nav>
+
+      <!-- Right CTAs -->
+      <div class="flex items-center gap-3">
+        <a href="https://github.com/darthnihilius01/weave" target="_blank" rel="noopener noreferrer" class="hidden sm:flex items-center gap-2 px-3.5 py-1.5 rounded-md border border-neutral-800 bg-neutral-950 text-xs font-mono text-neutral-300 hover:text-white hover:border-neutral-700 transition">
+          <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+          <span>Star on GitHub</span>
+        </a>
+        <a href="#quickstart" class="px-4 py-1.5 rounded-md bg-white text-black text-xs font-semibold hover:bg-neutral-200 transition shadow-sm active:scale-95">
+          Deploy Local Bridge
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- ================= HERO SECTION ================= -->
+  <section class="relative pt-24 pb-20 border-b border-brand-border/40 overflow-hidden bg-grid-pattern">
+    <!-- Gradient radial spotlight -->
+    <div class="pointer-events-none absolute inset-0 bg-radial-gradient from-white/[0.07] via-transparent to-transparent"></div>
+    <div class="pointer-events-none absolute -top-40 left-1/2 -translate-x-1/2 w-[800px] h-[400px] bg-white/[0.03] blur-[120px] rounded-full"></div>
+
+    <div class="max-w-7xl mx-auto px-6 relative z-10 text-center">
+      <!-- Status pill -->
+      <div class="inline-flex items-center gap-2.5 px-3 py-1 rounded-full border border-neutral-800 bg-neutral-950/80 backdrop-blur mb-8 text-xs font-mono text-neutral-300">
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span>Google Antigravity &amp; Gemini 3.8 / 2.5 Bridge</span>
+        <span class="text-neutral-600">|</span>
+        <span class="text-neutral-400">Pure Local Security</span>
+      </div>
+
+      <!-- Main Headline -->
+      <h1 class="text-4xl sm:text-6xl lg:text-7xl font-bold tracking-tight text-white max-w-4xl mx-auto leading-[1.08]">
+        Your coding agent,<br />
+        in your WhatsApp chat.
+      </h1>
+
+      <!-- Subtitle -->
+      <p class="mt-6 text-lg sm:text-xl text-neutral-400 max-w-2xl mx-auto font-light leading-relaxed">
+        Prompt, review, debug, build websites, take headless browser QA screenshots, and schedule meetings from anywhere. Local-first, zero telemetry, Google Stitch designed.
+      </p>
+
+      <!-- Action Buttons -->
+      <div class="mt-10 flex flex-wrap items-center justify-center gap-4">
+        <a href="#quickstart" class="px-6 py-3 rounded-lg bg-white text-black font-semibold text-sm hover:bg-neutral-200 transition shadow-[0_0_25px_rgba(255,255,255,0.15)] flex items-center gap-2">
+          <span>Get Started in 3 Steps</span>
+          <span class="material-symbols-outlined text-[18px]">arrow_forward</span>
+        </a>
+        <a href="#stitch-gallery" class="px-6 py-3 rounded-lg border border-neutral-800 bg-neutral-900/60 hover:bg-neutral-800/80 text-white font-medium text-sm transition flex items-center gap-2">
+          <span class="material-symbols-outlined text-[18px] text-neutral-400">design_services</span>
+          <span>Explore Stitch UI Catalog</span>
+        </a>
+      </div>
+
+      <!-- Quick Command Bar -->
+      <div class="mt-8 flex items-center justify-center">
+        <div class="inline-flex items-center gap-3 px-4 py-2 rounded-lg bg-neutral-950 border border-neutral-800 font-mono text-xs text-neutral-300">
+          <span class="text-neutral-500">$</span>
+          <span id="clone-cmd">git clone https://github.com/darthnihilius01/weave.git &amp;&amp; cd weave &amp;&amp; npm i</span>
+          <button onclick="navigator.clipboard.writeText('git clone https://github.com/darthnihilius01/weave.git && cd weave && npm i'); this.innerText='Copied!'; setTimeout(()=>this.innerText='Copy', 2000)" class="text-neutral-400 hover:text-white px-2 py-0.5 rounded bg-neutral-900 border border-neutral-800 text-[11px] transition">
+            Copy
+          </button>
+        </div>
+      </div>
+
+      <!-- Trust signals / metrics -->
+      <div class="mt-14 pt-8 border-t border-neutral-900 max-w-4xl mx-auto grid grid-cols-2 sm:grid-cols-4 gap-6 text-left">
+        <div>
+          <div class="text-2xl font-mono font-bold text-white tracking-tight">0 ms</div>
+          <div class="text-xs text-neutral-500 mt-1 uppercase tracking-wider font-mono">Cloud Middleman</div>
+        </div>
+        <div>
+          <div class="text-2xl font-mono font-bold text-white tracking-tight">100%</div>
+          <div class="text-xs text-neutral-500 mt-1 uppercase tracking-wider font-mono">Local Isolation</div>
+        </div>
+        <div>
+          <div class="text-2xl font-mono font-bold text-white tracking-tight">PKCE</div>
+          <div class="text-xs text-neutral-500 mt-1 uppercase tracking-wider font-mono">Google OAuth 2.0</div>
+        </div>
+        <div>
+          <div class="text-2xl font-mono font-bold text-white tracking-tight">7 UI</div>
+          <div class="text-xs text-neutral-500 mt-1 uppercase tracking-wider font-mono">Google Stitch Screens</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= LIVE TWO-WAY CHAT & DESKTOP SIMULATOR ================= -->
+  <section id="interactive-preview" class="py-24 border-b border-brand-border/40 bg-neutral-950">
+    <div class="max-w-7xl mx-auto px-6">
+      <div class="text-center max-w-2xl mx-auto mb-14">
+        <span class="font-mono text-xs uppercase tracking-widest text-neutral-400 border border-neutral-800 px-2.5 py-1 rounded bg-neutral-900/60">Live Bridge Simulation</span>
+        <h2 class="text-3xl sm:text-4xl font-bold tracking-tight text-white mt-4">WhatsApp meets Antigravity CLI</h2>
+        <p class="text-neutral-400 mt-3 text-sm">Experience how Weave bridges natural language WhatsApp instructions to real local execution with visual verification.</p>
+      </div>
+
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        <!-- WhatsApp Phone Mockup (Left 5 cols) -->
+        <div class="lg:col-span-5 bg-black border border-neutral-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col h-[580px]">
+          <!-- WhatsApp Header -->
+          <div class="bg-[#121214] border-b border-neutral-800 px-4 py-3 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <div class="w-9 h-9 rounded-full bg-white text-black flex items-center justify-center font-bold text-sm">
+                <span class="material-symbols-outlined text-[20px]">code</span>
+              </div>
+              <div>
+                <div class="text-sm font-semibold text-white flex items-center gap-1.5">
+                  <span>Weave Agent Bridge</span>
+                  <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                </div>
+                <div class="text-[11px] text-neutral-400 font-mono">@agent · online (port 7442)</div>
+              </div>
+            </div>
+            <div class="flex items-center gap-2 text-neutral-400">
+              <span class="material-symbols-outlined text-[20px] cursor-pointer hover:text-white">videocam</span>
+              <span class="material-symbols-outlined text-[20px] cursor-pointer hover:text-white">call</span>
+              <span class="material-symbols-outlined text-[20px] cursor-pointer hover:text-white">more_vert</span>
+            </div>
+          </div>
+
+          <!-- Chat Messages Canvas -->
+          <div id="chat-messages" class="flex-1 overflow-y-auto p-4 space-y-3.5 bg-dots text-xs">
+            <!-- Timestamp badge -->
+            <div class="text-center">
+              <span class="px-2 py-0.5 rounded bg-neutral-900/80 border border-neutral-800 text-[10px] font-mono text-neutral-500">TODAY · SECURE E2E</span>
+            </div>
+
+            <!-- Bot welcome message -->
+            <div class="flex flex-col items-start max-w-[85%]">
+              <div class="bg-[#18181b] border border-neutral-800 rounded-lg rounded-tl-none p-3 text-neutral-200">
+                <p class="font-medium text-white mb-1">Weave Bridge connected.</p>
+                <p>Bound to project folder: <code class="font-mono text-[11px] bg-black/60 px-1 py-0.5 rounded text-neutral-300">./demo-site</code></p>
+                <p class="mt-1 text-neutral-400">Send me coding tasks, voice notes, or try <code class="text-white">@agent /screenshot</code>.</p>
+              </div>
+              <span class="text-[10px] font-mono text-neutral-600 mt-1 pl-1">04:32 AM</span>
+            </div>
+
+            <!-- User request -->
+            <div class="flex flex-col items-end ml-auto max-w-[85%]">
+              <div class="bg-white text-black rounded-lg rounded-tr-none p-3 font-medium">
+                @agent update the hero title to "Next-Gen AI Systems" and take a mobile screenshot
+              </div>
+              <span class="text-[10px] font-mono text-neutral-500 mt-1 pr-1">04:33 AM · Read ✓✓</span>
+            </div>
+
+            <!-- Bot response with task execution -->
+            <div class="flex flex-col items-start max-w-[85%]">
+              <div class="bg-[#18181b] border border-neutral-800 rounded-lg rounded-tl-none p-3 text-neutral-200 space-y-2">
+                <div class="flex items-center gap-1.5 text-emerald-400 font-mono text-[11px]">
+                  <span class="material-symbols-outlined text-[14px]">check_circle</span>
+                  <span>Antigravity task completed</span>
+                </div>
+                <p class="text-neutral-300">Updated <code class="font-mono bg-black/60 px-1 rounded">demo-site/index.html</code> (line 54). Hot reload verified.</p>
+                <!-- Rendered simulated screenshot preview -->
+                <div class="rounded border border-neutral-700 overflow-hidden bg-black p-2 mt-2">
+                  <div class="flex items-center justify-between text-[10px] font-mono text-neutral-400 mb-1">
+                    <span>📱 screenshot_mobile.png</span>
+                    <span>375x812</span>
+                  </div>
+                  <div class="h-24 bg-neutral-900 border border-neutral-800 rounded flex flex-col items-center justify-center p-2 text-center">
+                    <span class="text-white font-semibold text-xs">Next-Gen AI Systems</span>
+                    <span class="text-[10px] text-neutral-400">Minimal Mobile Snapshot</span>
+                  </div>
+                </div>
+              </div>
+              <span class="text-[10px] font-mono text-neutral-600 mt-1 pl-1">04:33 AM</span>
+            </div>
+          </div>
+
+          <!-- Chat Input Bar -->
+          <div class="bg-[#121214] border-t border-neutral-800 p-3 flex items-center gap-2">
+            <span class="material-symbols-outlined text-neutral-400 text-[20px] cursor-pointer hover:text-white">sentiment_satisfied</span>
+            <span class="material-symbols-outlined text-neutral-400 text-[20px] cursor-pointer hover:text-white">attach_file</span>
+            <input id="user-input" type="text" placeholder="Type @agent task..." class="flex-1 bg-black border border-neutral-800 rounded-full px-3.5 py-1.5 text-xs text-white focus:outline-none focus:border-neutral-600 placeholder:text-neutral-600" />
+            <button id="send-btn" class="w-8 h-8 rounded-full bg-white text-black flex items-center justify-center hover:bg-neutral-200 transition shrink-0">
+              <span class="material-symbols-outlined text-[16px]">send</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Terminal & Local State Console (Right 7 cols) -->
+        <div class="lg:col-span-7 bg-black border border-neutral-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col h-[580px]">
+          <!-- Terminal Titlebar -->
+          <div class="bg-[#121214] border-b border-neutral-800 px-4 py-3 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="w-3 h-3 rounded-full bg-neutral-700"></span>
+              <span class="w-3 h-3 rounded-full bg-neutral-700"></span>
+              <span class="w-3 h-3 rounded-full bg-neutral-700"></span>
+              <span class="ml-2 font-mono text-xs text-neutral-400">bash — weave-daemon: stdout/stderr</span>
+            </div>
+            <div class="flex items-center gap-2 text-xs font-mono text-neutral-500">
+              <span class="w-2 h-2 rounded-full bg-white"></span>
+              <span>LISTENING</span>
+            </div>
+          </div>
+
+          <!-- Terminal Content Body -->
+          <div id="terminal-body" class="flex-1 p-5 font-mono text-[11px] leading-relaxed overflow-y-auto text-neutral-300 space-y-2 bg-black select-text">
+            <p class="text-neutral-500">// Weave Local Daemon — Google Antigravity & Direct Gemini Bridge</p>
+            <p><span class="text-neutral-500">[04:30:11]</span> <span class="text-white font-semibold">INFO:</span> Initializing Baileys WhatsApp Multi-Device client...</p>
+            <p><span class="text-neutral-500">[04:30:12]</span> <span class="text-white font-semibold">INFO:</span> Loaded Google OAuth 2.0 PKCE tokens from <code class="text-neutral-300">.credentials.json</code></p>
+            <p><span class="text-neutral-500">[04:30:13]</span> <span class="text-white font-semibold">SUCCESS:</span> WhatsApp socket linked. Phone session valid (Device ID: Lin-64-x86).</p>
+            <p><span class="text-neutral-500">[04:30:14]</span> <span class="text-white font-semibold">INFO:</span> Antigravity CLI binary found at <code class="text-neutral-400">/usr/local/bin/agy</code></p>
+            <p class="text-neutral-500">------------------------------------------------------------------------</p>
+            <p><span class="text-neutral-500">[04:33:02]</span> <span class="text-neutral-400">EVENT:</span> Message received from sender <code class="text-white">+1 (555) 019-2834</code></p>
+            <p class="text-neutral-400">&gt; Prompt: "@agent update the hero title to 'Next-Gen AI Systems' and take a mobile screenshot"</p>
+            <p><span class="text-neutral-500">[04:33:03]</span> <span class="text-white">EXEC:</span> agy --workspace ./demo-site --prompt "update hero title..."</p>
+            <p><span class="text-neutral-500">[04:33:05]</span> <span class="text-white">DIFF:</span> 1 file changed, 1 insertion(+), 1 deletion(-)</p>
+            <p><span class="text-neutral-500">[04:33:07]</span> <span class="text-white">HEADLESS:</span> Firefox captured viewport 375x812 -&gt; mediaBuffer (42.8 KB)</p>
+            <p><span class="text-neutral-500">[04:33:08]</span> <span class="text-white font-semibold">SOCKET:</span> Dispatched reply &amp; photo attachment back to WhatsApp chat.</p>
+            <p id="term-live-line" class="text-neutral-400 pt-2"><span class="text-white font-mono">$</span> daemon idle. Ready for next prompt<span class="terminal-cursor"></span></p>
+          </div>
+
+          <!-- Bottom Status Bar -->
+          <div class="bg-[#121214] border-t border-neutral-800 px-4 py-2 flex items-center justify-between text-[11px] font-mono text-neutral-400">
+            <div class="flex items-center gap-3">
+              <span>CWD: <code class="text-white">/home/tinchu/weave</code></span>
+              <span>Model: <code class="text-white">gemini-3.8-flash</code></span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+              <span>Bridge Online</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= GOOGLE STITCH MCP DESIGNS GALLERY ================= -->
+  <section id="stitch-gallery" class="py-24 border-b border-brand-border/40 bg-black">
+    <div class="max-w-7xl mx-auto px-6">
+      <div class="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-12">
+        <div>
+          <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded border border-neutral-800 bg-neutral-950 font-mono text-xs text-neutral-300">
+            <span class="material-symbols-outlined text-[15px] text-white">grid_view</span>
+            <span>Generated with Google Stitch MCP</span>
+            <span class="text-neutral-600">|</span>
+            <span class="text-neutral-400">projects/1632920664443458533</span>
+          </div>
+          <h2 class="text-3xl sm:text-4xl font-bold tracking-tight text-white mt-4">Architected &amp; Designed in Google Stitch</h2>
+          <p class="text-neutral-400 mt-2 max-w-xl text-sm">Every companion window, menu tray popover, and setup screen was generated directly through the Google Stitch MCP server. No vibecoded mockups — real precision interfaces.</p>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button onclick="filterScreens('all')" class="stitch-tab px-3 py-1.5 rounded text-xs font-mono font-medium bg-white text-black">All 7 Screens</button>
+          <button onclick="filterScreens('desktop')" class="stitch-tab px-3 py-1.5 rounded text-xs font-mono font-medium bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white">Desktop Windows</button>
+          <button onclick="filterScreens('companion')" class="stitch-tab px-3 py-1.5 rounded text-xs font-mono font-medium bg-neutral-900 border border-neutral-800 text-neutral-400 hover:text-white">Companions</button>
+        </div>
+      </div>
+
+      <!-- Stitch Screens Grid -->
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+
+        <!-- Screen 07: 3-Step Setup -->
+        <div class="screen-card group bg-[#111113] border border-neutral-800 hover:border-neutral-600 rounded-xl overflow-hidden transition-all duration-300 flex flex-col" data-cat="companion">
+          <div class="relative aspect-video bg-neutral-950 overflow-hidden border-b border-neutral-800">
+            <img src="assets/screenshots/07_weave_3_step_setup_whatsapp_link.png" alt="Weave 3-Step Setup & WhatsApp Link" class="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-500" />
+            <div class="absolute top-3 left-3 px-2 py-0.5 rounded bg-black/80 backdrop-blur border border-neutral-700 font-mono text-[10px] text-white">
+              Screen 07 · Onboarding
+            </div>
+            <a href="assets/html/07_weave_3_step_setup_whatsapp_link.html" target="_blank" class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 text-xs font-semibold text-white backdrop-blur-[2px]">
+              <span class="material-symbols-outlined text-[18px]">open_in_new</span>
+              <span>Open Raw HTML Screen</span>
+            </a>
+          </div>
+          <div class="p-5 flex-1 flex flex-col justify-between">
+            <div>
+              <h3 class="text-base font-semibold text-white group-hover:text-white transition">3-Step Setup &amp; WhatsApp Link</h3>
+              <p class="text-xs text-neutral-400 mt-2 leading-relaxed">Complete onboarding wizard: Google OAuth token exchange, instant terminal QR scan, and custom bot tag handle configuration.</p>
+            </div>
+            <div class="mt-4 pt-3 border-t border-neutral-800/80 flex items-center justify-between text-[11px] font-mono text-neutral-500">
+              <span>Google OAuth + QR Sync</span>
+              <a href="assets/html/07_weave_3_step_setup_whatsapp_link.html" target="_blank" class="text-neutral-300 hover:text-white underline">Inspect Code &rarr;</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Screen 05: Desktop App Monochrome -->
+        <div class="screen-card group bg-[#111113] border border-neutral-800 hover:border-neutral-600 rounded-xl overflow-hidden transition-all duration-300 flex flex-col" data-cat="desktop">
+          <div class="relative aspect-video bg-neutral-950 overflow-hidden border-b border-neutral-800">
+            <img src="assets/screenshots/05_weave_desktop_app_monochrome.png" alt="Weave Desktop App Monochrome" class="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-500" />
+            <div class="absolute top-3 left-3 px-2 py-0.5 rounded bg-black/80 backdrop-blur border border-neutral-700 font-mono text-[10px] text-white">
+              Screen 05 · Power Desktop
+            </div>
+            <a href="assets/html/05_weave_desktop_app_monochrome.html" target="_blank" class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 text-xs font-semibold text-white backdrop-blur-[2px]">
+              <span class="material-symbols-outlined text-[18px]">open_in_new</span>
+              <span>Open Raw HTML Screen</span>
+            </a>
+          </div>
+          <div class="p-5 flex-1 flex flex-col justify-between">
+            <div>
+              <h3 class="text-base font-semibold text-white group-hover:text-white transition">Desktop App (Monochrome)</h3>
+              <p class="text-xs text-neutral-400 mt-2 leading-relaxed">High-contrast dark monochrome desktop window with active channels, live tool calls, git commit history, and terminal inspector.</p>
+            </div>
+            <div class="mt-4 pt-3 border-t border-neutral-800/80 flex items-center justify-between text-[11px] font-mono text-neutral-500">
+              <span>Dark Minimalist Workspace</span>
+              <a href="assets/html/05_weave_desktop_app_monochrome.html" target="_blank" class="text-neutral-300 hover:text-white underline">Inspect Code &rarr;</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Screen 04: Editorial Paper & Stone -->
+        <div class="screen-card group bg-[#111113] border border-neutral-800 hover:border-neutral-600 rounded-xl overflow-hidden transition-all duration-300 flex flex-col" data-cat="desktop">
+          <div class="relative aspect-video bg-neutral-950 overflow-hidden border-b border-neutral-800">
+            <img src="assets/screenshots/04_weave_editorial_paper_stone.png" alt="Weave Editorial Paper & Stone" class="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-500" />
+            <div class="absolute top-3 left-3 px-2 py-0.5 rounded bg-black/80 backdrop-blur border border-neutral-700 font-mono text-[10px] text-white">
+              Screen 04 · Editorial Light
+            </div>
+            <a href="assets/html/04_weave_editorial_paper_stone.html" target="_blank" class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 text-xs font-semibold text-white backdrop-blur-[2px]">
+              <span class="material-symbols-outlined text-[18px]">open_in_new</span>
+              <span>Open Raw HTML Screen</span>
+            </a>
+          </div>
+          <div class="p-5 flex-1 flex flex-col justify-between">
+            <div>
+              <h3 class="text-base font-semibold text-white group-hover:text-white transition">Editorial Paper &amp; Stone</h3>
+              <p class="text-xs text-neutral-400 mt-2 leading-relaxed">A tactile, unhurried light stone desktop interface styled with Newsreader serif typography and quiet status indicators.</p>
+            </div>
+            <div class="mt-4 pt-3 border-t border-neutral-800/80 flex items-center justify-between text-[11px] font-mono text-neutral-500">
+              <span>Tactile Light Aesthetic</span>
+              <a href="assets/html/04_weave_editorial_paper_stone.html" target="_blank" class="text-neutral-300 hover:text-white underline">Inspect Code &rarr;</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Screen 01: Compact Menu Companion -->
+        <div class="screen-card group bg-[#111113] border border-neutral-800 hover:border-neutral-600 rounded-xl overflow-hidden transition-all duration-300 flex flex-col" data-cat="companion">
+          <div class="relative aspect-video bg-neutral-950 overflow-hidden border-b border-neutral-800">
+            <img src="assets/screenshots/01_weave_compact_menu_companion.png" alt="Weave Compact Menu Companion" class="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-500" />
+            <div class="absolute top-3 left-3 px-2 py-0.5 rounded bg-black/80 backdrop-blur border border-neutral-700 font-mono text-[10px] text-white">
+              Screen 01 · Menu Bar
+            </div>
+            <a href="assets/html/01_weave_compact_menu_companion.html" target="_blank" class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 text-xs font-semibold text-white backdrop-blur-[2px]">
+              <span class="material-symbols-outlined text-[18px]">open_in_new</span>
+              <span>Open Raw HTML Screen</span>
+            </a>
+          </div>
+          <div class="p-5 flex-1 flex flex-col justify-between">
+            <div>
+              <h3 class="text-base font-semibold text-white group-hover:text-white transition">Compact Menu Companion</h3>
+              <p class="text-xs text-neutral-400 mt-2 leading-relaxed">Lightweight status tray companion for macOS menu bar and Linux panel. Displays active tasks, connected phone number, and fast toggles.</p>
+            </div>
+            <div class="mt-4 pt-3 border-t border-neutral-800/80 flex items-center justify-between text-[11px] font-mono text-neutral-500">
+              <span>System Tray Popover</span>
+              <a href="assets/html/01_weave_compact_menu_companion.html" target="_blank" class="text-neutral-300 hover:text-white underline">Inspect Code &rarr;</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Screen 03: Voice & Intelligence Companion -->
+        <div class="screen-card group bg-[#111113] border border-neutral-800 hover:border-neutral-600 rounded-xl overflow-hidden transition-all duration-300 flex flex-col" data-cat="companion">
+          <div class="relative aspect-video bg-neutral-950 overflow-hidden border-b border-neutral-800">
+            <img src="assets/screenshots/03_weave_voice_intelligence_companion.png" alt="Weave Voice & Intelligence Companion" class="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-500" />
+            <div class="absolute top-3 left-3 px-2 py-0.5 rounded bg-black/80 backdrop-blur border border-neutral-700 font-mono text-[10px] text-white">
+              Screen 03 · Audio Feed
+            </div>
+            <a href="assets/html/03_weave_voice_intelligence_companion.html" target="_blank" class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 text-xs font-semibold text-white backdrop-blur-[2px]">
+              <span class="material-symbols-outlined text-[18px]">open_in_new</span>
+              <span>Open Raw HTML Screen</span>
+            </a>
+          </div>
+          <div class="p-5 flex-1 flex flex-col justify-between">
+            <div>
+              <h3 class="text-base font-semibold text-white group-hover:text-white transition">Voice &amp; Intelligence Companion</h3>
+              <p class="text-xs text-neutral-400 mt-2 leading-relaxed">Live audio waveform visualizer and speech-to-text feed for incoming WhatsApp voice notes transcribed via Whisper or Groq.</p>
+            </div>
+            <div class="mt-4 pt-3 border-t border-neutral-800/80 flex items-center justify-between text-[11px] font-mono text-neutral-500">
+              <span>Voice Note Waveform</span>
+              <a href="assets/html/03_weave_voice_intelligence_companion.html" target="_blank" class="text-neutral-300 hover:text-white underline">Inspect Code &rarr;</a>
+            </div>
+          </div>
+        </div>
+
+        <!-- Screen 06: Quiet Desktop Companion -->
+        <div class="screen-card group bg-[#111113] border border-neutral-800 hover:border-neutral-600 rounded-xl overflow-hidden transition-all duration-300 flex flex-col" data-cat="companion">
+          <div class="relative aspect-video bg-neutral-950 overflow-hidden border-b border-neutral-800">
+            <img src="assets/screenshots/06_weave_quiet_desktop_companion.png" alt="Weave Quiet Desktop Companion" class="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-500" />
+            <div class="absolute top-3 left-3 px-2 py-0.5 rounded bg-black/80 backdrop-blur border border-neutral-700 font-mono text-[10px] text-white">
+              Screen 06 · Zen Widget
+            </div>
+            <a href="assets/html/06_weave_quiet_desktop_companion.html" target="_blank" class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 text-xs font-semibold text-white backdrop-blur-[2px]">
+              <span class="material-symbols-outlined text-[18px]">open_in_new</span>
+              <span>Open Raw HTML Screen</span>
+            </a>
+          </div>
+          <div class="p-5 flex-1 flex flex-col justify-between">
+            <div>
+              <h3 class="text-base font-semibold text-white group-hover:text-white transition">Quiet Desktop Companion</h3>
+              <p class="text-xs text-neutral-400 mt-2 leading-relaxed">Distraction-free floating status pill with silent execution counters, CPU throttles, and zero-intrusive alert badges.</p>
+            </div>
+            <div class="mt-4 pt-3 border-t border-neutral-800/80 flex items-center justify-between text-[11px] font-mono text-neutral-500">
+              <span>Ambient Zen Widget</span>
+              <a href="assets/html/06_weave_quiet_desktop_companion.html" target="_blank" class="text-neutral-300 hover:text-white underline">Inspect Code &rarr;</a>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Stitch Catalog Link Out -->
+      <div class="mt-12 text-center">
+        <a href="assets/html/02_weave_desktop_app_window.html" target="_blank" class="inline-flex items-center gap-2 text-xs font-mono text-neutral-400 hover:text-white border border-neutral-800 hover:border-neutral-700 px-4 py-2 rounded-lg bg-neutral-950 transition">
+          <span>View Screen 02 (Full Workspace App Window)</span>
+          <span class="material-symbols-outlined text-[16px]">arrow_forward</span>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= CORE ARCHITECTURE & CAPABILITIES ================= -->
+  <section id="features" class="py-24 border-b border-brand-border/40 bg-neutral-950">
+    <div class="max-w-7xl mx-auto px-6">
+      <div class="text-center max-w-2xl mx-auto mb-16">
+        <span class="font-mono text-xs uppercase tracking-widest text-neutral-400 border border-neutral-800 px-2.5 py-1 rounded bg-neutral-900/60">Under The Hood</span>
+        <h2 class="text-3xl sm:text-4xl font-bold tracking-tight text-white mt-4">Built for Engineers Who Care About Privacy</h2>
+        <p class="text-neutral-400 mt-3 text-sm">Weave does not relay your chats or source code to third-party cloud servers. Everything executes on your workstation.</p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <!-- Feature 1: Dual Execution Engine -->
+        <div class="bg-black border border-neutral-800 rounded-xl p-6 flex flex-col justify-between">
+          <div>
+            <div class="w-10 h-10 rounded-lg bg-neutral-900 border border-neutral-800 flex items-center justify-center text-white mb-5">
+              <span class="material-symbols-outlined text-[20px]">terminal</span>
+            </div>
+            <h3 class="text-lg font-semibold text-white mb-2">Dual Execution Mode</h3>
+            <p class="text-neutral-400 text-xs leading-relaxed">
+              Run through your local Google Antigravity (<code class="text-neutral-300 font-mono">agy</code>) CLI with persistent project context, or connect directly to Google AI Studio with your Gemini API key.
+            </p>
+          </div>
+          <div class="mt-6 pt-4 border-t border-neutral-900 font-mono text-[11px] text-neutral-500">
+            <code>AGY_BIN=agy / GEMINI_API_KEY</code>
+          </div>
+        </div>
+
+        <!-- Feature 2: Google OAuth 2.0 PKCE -->
+        <div class="bg-black border border-neutral-800 rounded-xl p-6 flex flex-col justify-between">
+          <div>
+            <div class="w-10 h-10 rounded-lg bg-neutral-900 border border-neutral-800 flex items-center justify-center text-white mb-5">
+              <span class="material-symbols-outlined text-[20px]">key</span>
+            </div>
+            <h3 class="text-lg font-semibold text-white mb-2">Google OAuth 2.0 (PKCE)</h3>
+            <p class="text-neutral-400 text-xs leading-relaxed">
+              Connect your Google account with zero server secrets using standard loopback PKCE. Safely read and draft Gmail messages, schedule Google Calendar events, and access Gemini models.
+            </p>
+          </div>
+          <div class="mt-6 pt-4 border-t border-neutral-900 font-mono text-[11px] text-neutral-500">
+            <code>npm run auth (Port 8085)</code>
+          </div>
+        </div>
+
+        <!-- Feature 3: WhatsApp Group Binding -->
+        <div class="bg-black border border-neutral-800 rounded-xl p-6 flex flex-col justify-between">
+          <div>
+            <div class="w-10 h-10 rounded-lg bg-neutral-900 border border-neutral-800 flex items-center justify-center text-white mb-5">
+              <span class="material-symbols-outlined text-[20px]">lock</span>
+            </div>
+            <h3 class="text-lg font-semibold text-white mb-2">Workspace Isolation</h3>
+            <p class="text-neutral-400 text-xs leading-relaxed">
+              Bind WhatsApp groups to specific project directories with <code class="text-neutral-300 font-mono">/bind &lt;path&gt;</code>. Senders in team chats can never touch unauthorized directories on your hard drive.
+            </p>
+          </div>
+          <div class="mt-6 pt-4 border-t border-neutral-900 font-mono text-[11px] text-neutral-500">
+            <code>Directory sandbox jail</code>
+          </div>
+        </div>
+
+        <!-- Feature 4: Visual Headless QA -->
+        <div class="bg-black border border-neutral-800 rounded-xl p-6 flex flex-col justify-between">
+          <div>
+            <div class="w-10 h-10 rounded-lg bg-neutral-900 border border-neutral-800 flex items-center justify-center text-white mb-5">
+              <span class="material-symbols-outlined text-[20px]">screenshot_monitor</span>
+            </div>
+            <h3 class="text-lg font-semibold text-white mb-2">Headless Visual QA</h3>
+            <p class="text-neutral-400 text-xs leading-relaxed">
+              Ask for visual verification on any mobile or desktop screen. Weave spins up headless Firefox, renders the local dev server, and replies directly to WhatsApp with the screenshot.
+            </p>
+          </div>
+          <div class="mt-6 pt-4 border-t border-neutral-900 font-mono text-[11px] text-neutral-500">
+            <code>/screenshot [desktop|mobile]</code>
+          </div>
+        </div>
+
+        <!-- Feature 5: Voice Notes to Code -->
+        <div class="bg-black border border-neutral-800 rounded-xl p-6 flex flex-col justify-between">
+          <div>
+            <div class="w-10 h-10 rounded-lg bg-neutral-900 border border-neutral-800 flex items-center justify-center text-white mb-5">
+              <span class="material-symbols-outlined text-[20px]">mic</span>
+            </div>
+            <h3 class="text-lg font-semibold text-white mb-2">Voice Note Speech-to-Code</h3>
+            <p class="text-neutral-400 text-xs leading-relaxed">
+              Walking or commuting? Send a WhatsApp voice memo. Weave transcribes the audio via Groq Whisper or local engine and forwards the extracted instructions straight to Gemini.
+            </p>
+          </div>
+          <div class="mt-6 pt-4 border-t border-neutral-900 font-mono text-[11px] text-neutral-500">
+            <code>GROQ_API_KEY / Whisper STT</code>
+          </div>
+        </div>
+
+        <!-- Feature 6: RFC 5545 Calendar & Email -->
+        <div class="bg-black border border-neutral-800 rounded-xl p-6 flex flex-col justify-between">
+          <div>
+            <div class="w-10 h-10 rounded-lg bg-neutral-900 border border-neutral-800 flex items-center justify-center text-white mb-5">
+              <span class="material-symbols-outlined text-[20px]">calendar_month</span>
+            </div>
+            <h3 class="text-lg font-semibold text-white mb-2">Calendar Invites &amp; SMTP</h3>
+            <p class="text-neutral-400 text-xs leading-relaxed">
+              Schedule meetings with natural language. Weave creates calendar events directly via Google Calendar API or generates RFC 5545 compliant <code class="text-neutral-300 font-mono">.ics</code> files attached to WhatsApp messages.
+            </p>
+          </div>
+          <div class="mt-6 pt-4 border-t border-neutral-900 font-mono text-[11px] text-neutral-500">
+            <code>Direct Google Calendar API</code>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= STEP-BY-STEP QUICKSTART ================= -->
+  <section id="quickstart" class="py-24 border-b border-brand-border/40 bg-black">
+    <div class="max-w-4xl mx-auto px-6">
+      <div class="text-center mb-16">
+        <span class="font-mono text-xs uppercase tracking-widest text-neutral-400 border border-neutral-800 px-2.5 py-1 rounded bg-neutral-900/60">3-Step Setup</span>
+        <h2 class="text-3xl sm:text-4xl font-bold tracking-tight text-white mt-4">Up and Running in 60 Seconds</h2>
+        <p class="text-neutral-400 mt-2 text-sm">Clone the repo, pair your WhatsApp session via QR code, and prompt your agent.</p>
+      </div>
+
+      <div class="space-y-6">
+        <!-- Step 1 -->
+        <div class="bg-[#0f0f11] border border-neutral-800 rounded-xl p-6">
+          <div class="flex items-center gap-3 mb-4">
+            <span class="w-7 h-7 rounded-full bg-white text-black font-mono font-bold text-xs flex items-center justify-center">1</span>
+            <h3 class="text-base font-semibold text-white">Install Dependencies</h3>
+          </div>
+          <p class="text-xs text-neutral-400 mb-3">Ensure Node.js 18+ is installed on your Linux or macOS machine:</p>
+          <div class="bg-black border border-neutral-800 rounded-lg p-3 font-mono text-xs text-neutral-300 flex items-center justify-between">
+            <code>git clone https://github.com/darthnihilius01/weave.git &amp;&amp; cd weave &amp;&amp; npm install</code>
+          </div>
+        </div>
+
+        <!-- Step 2 -->
+        <div class="bg-[#0f0f11] border border-neutral-800 rounded-xl p-6">
+          <div class="flex items-center gap-3 mb-4">
+            <span class="w-7 h-7 rounded-full bg-white text-black font-mono font-bold text-xs flex items-center justify-center">2</span>
+            <h3 class="text-base font-semibold text-white">Connect Google Services (Optional PKCE)</h3>
+          </div>
+          <p class="text-xs text-neutral-400 mb-3">Authorize your Google account for Gemini API, Calendar &amp; Gmail access without any secret keys:</p>
+          <div class="bg-black border border-neutral-800 rounded-lg p-3 font-mono text-xs text-neutral-300 flex items-center justify-between">
+            <code>npm run auth</code>
+          </div>
+        </div>
+
+        <!-- Step 3 -->
+        <div class="bg-[#0f0f11] border border-neutral-800 rounded-xl p-6">
+          <div class="flex items-center gap-3 mb-4">
+            <span class="w-7 h-7 rounded-full bg-white text-black font-mono font-bold text-xs flex items-center justify-center">3</span>
+            <h3 class="text-base font-semibold text-white">Launch the Bridge &amp; Scan QR</h3>
+          </div>
+          <p class="text-xs text-neutral-400 mb-3">Start the daemon. Scan the QR code with WhatsApp (Linked Devices &rarr; Link a Device):</p>
+          <div class="bg-black border border-neutral-800 rounded-lg p-3 font-mono text-xs text-neutral-300 flex items-center justify-between">
+            <code>npm start</code>
+          </div>
+          <p class="text-[11px] text-neutral-500 mt-2 font-mono">You're ready. Message <code class="text-white">@agent Hello!</code> in any solo chat or group.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= MINIMAL FOOTER ================= -->
+  <footer class="border-t border-brand-border/60 bg-black py-12">
+    <div class="max-w-7xl mx-auto px-6 flex flex-col sm:flex-row items-center justify-between gap-6">
+      <div class="flex items-center gap-3">
+        <div class="w-6 h-6 rounded bg-white text-black flex items-center justify-center font-bold text-xs">
+          <span class="material-symbols-outlined text-[16px]" style="font-variation-settings: 'FILL' 1;">all_inclusive</span>
+        </div>
+        <span class="font-mono text-sm font-semibold text-white">weave.ai</span>
+        <span class="text-neutral-600 text-sm">/</span>
+        <span class="text-xs text-neutral-400 font-mono">Google Antigravity &amp; Stitch Native</span>
+      </div>
+
+      <div class="flex items-center gap-6 text-xs text-neutral-400 font-mono">
+        <a href="https://github.com/darthnihilius01/weave" target="_blank" class="hover:text-white transition">GitHub Repo</a>
+        <a href="#stitch-gallery" class="hover:text-white transition">Stitch Catalog</a>
+        <a href="#quickstart" class="hover:text-white transition">Documentation</a>
+        <span>Apache 2.0 License</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- ================= INTERACTIVE JAVASCRIPT ================= -->
+  <script>
+    // Live simulator prompt interaction
+    const userInput = document.getElementById('user-input');
+    const sendBtn = document.getElementById('send-btn');
+    const chatMessages = document.getElementById('chat-messages');
+    const terminalBody = document.getElementById('terminal-body');
+
+    function executeSimulatedTask() {
+      const val = userInput.value.trim();
+      if (!val) return;
+
+      // Add user message to chat
+      const time = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const userMsgDiv = document.createElement('div');
+      userMsgDiv.className = 'flex flex-col items-end ml-auto max-w-[85%] animate-fade-in';
+      userMsgDiv.innerHTML = `
+        <div class="bg-white text-black rounded-lg rounded-tr-none p-3 font-medium">
+          ${escapeHtml(val)}
+        </div>
+        <span class="text-[10px] font-mono text-neutral-500 mt-1 pr-1">${time} · Sent</span>
+      `;
+      chatMessages.appendChild(userMsgDiv);
+      userInput.value = '';
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+
+      // Update terminal with execution log
+      const p1 = document.createElement('p');
+      p1.className = 'text-neutral-400';
+      p1.innerHTML = `<span class="text-neutral-500">[${time}]</span> <span class="text-neutral-300">RECEIVE:</span> "${escapeHtml(val)}"`;
+      terminalBody.appendChild(p1);
+
+      const p2 = document.createElement('p');
+      p2.className = 'text-white';
+      p2.innerHTML = `<span class="text-neutral-500">[${time}]</span> <span class="text-emerald-400">DISPATCH:</span> Gemini 3.8 Flash model processing task...`;
+      terminalBody.appendChild(p2);
+      terminalBody.scrollTop = terminalBody.scrollHeight;
+
+      // Simulated agent response after 1.2s
+      setTimeout(() => {
+        const botMsgDiv = document.createElement('div');
+        botMsgDiv.className = 'flex flex-col items-start max-w-[85%]';
+        botMsgDiv.innerHTML = `
+          <div class="bg-[#18181b] border border-neutral-800 rounded-lg rounded-tl-none p-3 text-neutral-200 space-y-1.5">
+            <div class="flex items-center gap-1.5 text-emerald-400 font-mono text-[11px]">
+              <span class="material-symbols-outlined text-[14px]">check_circle</span>
+              <span>Executed successfully</span>
+            </div>
+            <p class="text-neutral-300">Task completed in 1.1s. Workspace is in sync with latest changes.</p>
+          </div>
+          <span class="text-[10px] font-mono text-neutral-600 mt-1 pl-1">${time}</span>
+        `;
+        chatMessages.appendChild(botMsgDiv);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+
+        const p3 = document.createElement('p');
+        p3.className = 'text-neutral-500';
+        p3.innerHTML = `------------------------------------------------------------------------`;
+        terminalBody.appendChild(p3);
+        terminalBody.scrollTop = terminalBody.scrollHeight;
+      }, 1200);
+    }
+
+    sendBtn.addEventListener('click', executeSimulatedTask);
+    userInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') executeSimulatedTask();
+    });
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.innerText = text;
+      return div.innerHTML;
+    }
+
+    // Filter screens in Stitch gallery
+    function filterScreens(category) {
+      const cards = document.querySelectorAll('.screen-card');
+      const tabs = document.querySelectorAll('.stitch-tab');
+
+      tabs.forEach(tab => {
+        tab.classList.remove('bg-white', 'text-black');
+        tab.classList.add('bg-neutral-900', 'text-neutral-400');
+      });
+
+      event.target.classList.remove('bg-neutral-900', 'text-neutral-400');
+      event.target.classList.add('bg-white', 'text-black');
+
+      cards.forEach(card => {
+        if (category === 'all' || card.getAttribute('data-cat') === category) {
+          card.style.display = 'flex';
+        } else {
+          card.style.display = 'none';
+        }
+      });
+    }
+  </script>
+</body>
+</html>

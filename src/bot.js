@@ -9,10 +9,13 @@ import {
 import qrcode from 'qrcode-terminal';
 import QRCodeImage from 'qrcode';
 import nodemailer from 'nodemailer';
+import { EventEmitter } from 'events';
 import pino from 'pino';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
+
+export const botEvents = new EventEmitter();
 import {
   CONFIG,
   ROOT_DIR,
@@ -3278,12 +3281,21 @@ export async function startWhatsAppBot() {
         qrcode.generate(qr, { small: true });
         const qrPath = path.join(ROOT_DIR, 'whatsapp-qr.png');
         QRCodeImage.toFile(qrPath, qr, { width: 400, margin: 2 }).catch(() => {});
+        QRCodeImage.toDataURL(qr, { width: 300, margin: 2 })
+          .then((dataUrl) => {
+            botEvents.emit('qr', { qr, dataUrl, qrPath });
+          })
+          .catch(() => {
+            botEvents.emit('qr', { qr, qrPath });
+          });
+        botEvents.emit('connection', { status: 'qr_ready', qr });
         console.log(`🖼️ QR Code image generated at: ${qrPath}`);
       }
 
       if (connection === 'close') {
         const statusCode = lastDisconnect?.error?.output?.statusCode;
         const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+        botEvents.emit('connection', { status: 'disconnected', statusCode, shouldReconnect });
         console.log(
           `⚠️ Connection closed (status: ${statusCode}). Reconnecting: ${shouldReconnect}`
         );
@@ -3306,6 +3318,7 @@ export async function startWhatsAppBot() {
           );
         }
       } else if (connection === 'open') {
+        botEvents.emit('connection', { status: 'connected', user: sock.user });
         if (reconnectTimer) {
           clearTimeout(reconnectTimer);
           reconnectTimer = null;
@@ -3847,4 +3860,16 @@ async function handleIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfte
         }
         await sendReply(sock, jid, `⚠️ ${err.message}`, msg);
       }
+}
+
+/**
+ * Returns the current live status of the WhatsApp bot socket and task execution.
+ */
+export function getBotStatus() {
+  return {
+    connected: Boolean(activeSock && activeSock.user),
+    user: activeSock?.user || null,
+    registered: Boolean(activeSock?.authState?.creds?.registered),
+    activeTask: getActiveTaskInfo(),
+  };
 }

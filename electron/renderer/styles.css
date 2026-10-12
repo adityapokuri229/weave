@@ -1,0 +1,50 @@
+/* Custom Desktop Titlebar Drag Regions */
+.draggable {
+  -webkit-app-region: drag;
+}
+
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(11, 15, 25, 0.5);
+}
+
+::-webkit-scrollbar-thumb {
+  background: #243247;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #38bdf8;
+}
+
+/* Traffic Dots */
+.traffic-dot {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  display: inline-block;
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+
+.traffic-dot:hover {
+  transform: scale(1.18);
+  filter: brightness(1.2);
+}
+
+/* Ambient glow accents */
+.glow-cyan {
+  box-shadow: 0 0 16px -2px rgba(56, 189, 248, 0.3);
+}
+
+.glow-emerald {
+  box-shadow: 0 0 14px -1px rgba(16, 185, 129, 0.4);
+}

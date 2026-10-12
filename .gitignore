@@ -50,7 +50,11 @@ Thumbs.db
 *.swp
 *.swo
 
-# Archives
+# Archives & Distribution Builds
 *.zip
 *.tar.gz
+dist/
+build/
+out/
+
 
