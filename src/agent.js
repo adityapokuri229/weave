@@ -718,200 +718,405 @@ export async function runAntigravityTask({
     Number.isFinite(CONFIG.taskTimeoutMs) && CONFIG.taskTimeoutMs > 0
       ? Math.min(CONFIG.taskTimeoutMs, 180000)
       : 180000;
-  const timeoutMinutes = Math.max(1, Math.ceil(timeoutMs / 60000));
-  const args = [
-    '-p',
+
+  return runWithWarmWorker({
+    projectAlias,
+    projectDir,
+    taskPrompt,
     systemWrapperPrompt,
+    ownerAllowedToMessage,
+    timeoutMs,
+    allowRetry: true,
+  });
+}
+
+const MAX_WARM_WORKERS = 4;
+const MAX_TURNS_PER_WORKER = 6;
+const warmPool = new Map(); // projectDir -> WarmWorker
+
+function retireWarmWorker(worker) {
+  if (!worker) return;
+  worker.dead = true;
+  if (warmPool.get(worker.projectDir) === worker) {
+    warmPool.delete(worker.projectDir);
+  }
+  try {
+    worker.child.stdin?.end();
+  } catch {
+    // ignore
+  }
+  try {
+    if (worker.child.pid) process.kill(-worker.child.pid, 'SIGTERM');
+    else worker.child.kill('SIGTERM');
+  } catch {
+    // ignore
+  }
+}
+
+function evictOldestIdleWorkerIfNeeded(excludeProjectDir) {
+  if (warmPool.size < MAX_WARM_WORKERS) return;
+  let oldestKey = null;
+  let oldestTime = Infinity;
+  for (const [dir, w] of warmPool.entries()) {
+    if (dir === excludeProjectDir || w.currentTurn) continue;
+    if (w.lastUsedAt < oldestTime) {
+      oldestTime = w.lastUsedAt;
+      oldestKey = dir;
+    }
+  }
+  if (oldestKey) {
+    retireWarmWorker(warmPool.get(oldestKey));
+  }
+}
+
+function createWarmWorker(projectDir) {
+  evictOldestIdleWorkerIfNeeded(projectDir);
+
+  const args = [
+    '--input-format',
+    'stream-json',
+    '--output-format',
+    'stream-json',
     '--dangerously-skip-permissions',
     '--disable-slash-commands',
-    '--output-format',
-    'json',
-    '--print-timeout',
-    `${timeoutMinutes}m0s`,
+    '--effort',
+    process.env.AGY_EFFORT || 'low',
   ];
 
   if (CONFIG.agyModel) {
     args.push('--model', CONFIG.agyModel);
   }
 
-  if (continueSession && previousConvId) {
-    args.push('--conversation', previousConvId);
-  }
+  args.push('-p=');
 
-  return new Promise((resolve, reject) => {
-    const startTime = Date.now();
-    const child = spawn(CONFIG.agyBin, args, {
-      cwd: projectDir,
-      env: { ...process.env, PAGER: 'cat' },
-      stdio: ['ignore', 'pipe', 'pipe'],
-      detached: true,
-    });
+  const child = spawn(CONFIG.agyBin, args, {
+    cwd: projectDir,
+    env: { ...process.env, PAGER: 'cat' },
+    stdio: ['pipe', 'pipe', 'pipe'],
+    detached: true,
+  });
 
-    activeChildProcess = child;
-    currentTaskInfo = {
-      projectAlias,
-      projectDir,
-      taskPrompt,
-      startedAt: new Date().toISOString(),
-    };
+  const worker = {
+    projectDir,
+    child,
+    ready: false,
+    dead: false,
+    conversationId: null,
+    turnsCompleted: 0,
+    lastOwnerMode: null,
+    lastUsedAt: Date.now(),
+    stdoutBuffer: '',
+    stderrBuffer: '',
+    initWaiters: [],
+    currentTurn: null,
+  };
 
-    const timer = setTimeout(() => {
-      if (activeChildProcess === child) {
-        try {
-          if (child.pid) process.kill(-child.pid, 'SIGTERM');
-          else child.kill('SIGTERM');
-        } catch {
-          // Ignore
+  warmPool.set(projectDir, worker);
+
+  child.stdout.on('data', (chunk) => {
+    worker.stdoutBuffer += chunk.toString();
+    let newlineIdx;
+    while ((newlineIdx = worker.stdoutBuffer.indexOf('\n')) !== -1) {
+      const line = worker.stdoutBuffer.slice(0, newlineIdx).trim();
+      worker.stdoutBuffer = worker.stdoutBuffer.slice(newlineIdx + 1);
+      if (!line || !line.startsWith('{')) continue;
+
+      let evt;
+      try {
+        evt = JSON.parse(line);
+      } catch {
+        continue;
+      }
+
+      if (evt.event === 'init') {
+        worker.ready = true;
+        if (evt.conversation_id) {
+          worker.conversationId = evt.conversation_id;
         }
-        killFallbackTimer = setTimeout(() => {
+        const waiters = worker.initWaiters.splice(0);
+        for (const w of waiters) w.resolve();
+      } else if (
+        evt.event === 'step_update' &&
+        evt.step_update?.step_type === 'agent_response' &&
+        evt.step_update?.text_delta
+      ) {
+        if (worker.currentTurn) {
+          worker.currentTurn.streamedText += evt.step_update.text_delta;
+        }
+      } else if (evt.event === 'result' && worker.currentTurn) {
+        const turn = worker.currentTurn;
+        worker.currentTurn = null;
+        clearTimeout(turn.timer);
+        if (activeChildProcess === child) {
+          activeChildProcess = null;
+          currentTaskInfo = null;
+        }
+
+        const resObj = evt.result || {};
+        if (resObj.conversation_id) {
+          worker.conversationId = resObj.conversation_id;
+        }
+        worker.turnsCompleted += 1;
+        worker.lastUsedAt = Date.now();
+
+        const elapsedSeconds = (Date.now() - turn.startTime) / 1000;
+        const agentError =
+          resObj.error ||
+          (typeof resObj.status === 'string' && resObj.status.toUpperCase() === 'ERROR'
+            ? `Agent reported status: ${resObj.status}`
+            : null);
+
+        const rawResponse = resObj.response || turn.streamedText || '';
+
+        if (agentError && !rawResponse) {
+          retireWarmWorker(worker);
+          prewarmAgentSession(projectDir);
+          turn.reject(
+            new Error(
+              `Agent failed: ${String(agentError).slice(0, 800)}${
+                worker.stderrBuffer ? `\n${worker.stderrBuffer.slice(-400)}` : ''
+              }`
+            )
+          );
+          continue;
+        }
+
+        if (worker.conversationId) {
           try {
-            if (child.exitCode === null) {
-              if (child.pid) process.kill(-child.pid, 'SIGKILL');
-              else child.kill('SIGKILL');
-            }
+            const updatedState = loadProjectsState();
+            updatedState.conversations = updatedState.conversations || {};
+            updatedState.conversations[turn.projectAlias] = worker.conversationId;
+            saveProjectsState(updatedState);
           } catch {
-            // Already exited
+            // ignore state save error
           }
-        }, 5000);
+        }
+
+        const gitSummary = getGitChangesSummary(projectDir);
+
+        // Rotate worker after MAX_TURNS_PER_WORKER so context never gets bloated
+        if (worker.turnsCompleted >= MAX_TURNS_PER_WORKER) {
+          retireWarmWorker(worker);
+          prewarmAgentSession(projectDir);
+        }
+
+        turn.resolve({
+          response: formatForWhatsApp(rawResponse || 'Task completed (no text output).'),
+          conversationId: worker.conversationId,
+          durationSeconds: resObj.duration_seconds || elapsedSeconds,
+          numTurns: resObj.num_turns || 1,
+          gitSummary,
+        });
+      }
+    }
+  });
+
+  child.stderr.on('data', (chunk) => {
+    worker.stderrBuffer = (worker.stderrBuffer + chunk.toString()).slice(-2000);
+  });
+
+  const handleExit = (code, signal) => {
+    worker.dead = true;
+    if (warmPool.get(projectDir) === worker) {
+      warmPool.delete(projectDir);
+    }
+
+    const waiters = worker.initWaiters.splice(0);
+    for (const w of waiters) {
+      w.reject(
+        new Error(
+          `Agent process exited before init (code=${code}, signal=${signal}). ${worker.stderrBuffer.slice(-400)}`
+        )
+      );
+    }
+
+    if (worker.currentTurn) {
+      const turn = worker.currentTurn;
+      worker.currentTurn = null;
+      clearTimeout(turn.timer);
+      if (activeChildProcess === child) {
         activeChildProcess = null;
         currentTaskInfo = null;
       }
-      reject(
-        new Error(
-          `Task timed out after ${Math.round(timeoutMs / 1000)} seconds.`
-        )
-      );
-    }, timeoutMs);
-
-    let stdout = '';
-    let stderr = '';
-
-    child.stdout.on('data', (chunk) => {
-      stdout += chunk.toString();
-    });
-
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk.toString();
-    });
-
-    child.on('error', (err) => {
-      clearTimeout(timer);
-      if (killFallbackTimer) {
-        clearTimeout(killFallbackTimer);
-        killFallbackTimer = null;
-      }
-      activeChildProcess = null;
-      currentTaskInfo = null;
-      reject(new Error(`Failed to launch '${CONFIG.agyBin}': ${err.message}`));
-    });
-
-    child.on('close', (code, signal) => {
-      clearTimeout(timer);
-      if (killFallbackTimer) {
-        clearTimeout(killFallbackTimer);
-        killFallbackTimer = null;
-      }
-      activeChildProcess = null;
-      currentTaskInfo = null;
 
       if (signal === 'SIGTERM' || signal === 'SIGKILL' || child._cancelledByUser) {
         const cancelErr = new Error('Task was cancelled by user.');
         cancelErr.cancelled = true;
-        reject(cancelErr);
+        turn.reject(cancelErr);
+        setTimeout(() => prewarmAgentSession(projectDir), 500).unref?.();
         return;
       }
 
-      const elapsedSeconds = (Date.now() - startTime) / 1000;
-      const trimmedOut = stdout.trim();
+      const exitErr = new Error(
+        `Agent exited unexpectedly (code ${code}). ${worker.stderrBuffer.slice(-600)}`
+      );
+      exitErr.workerDied = true;
+      turn.reject(exitErr);
+    }
+  };
 
-      // Try parsing the JSON output from agy --output-format json.
-      // Handles: whole-stdout JSON (single- or multi-line), trailing JSON line,
-      // or a JSON block embedded in prefix text.
-      let parsed = null;
-      if (trimmedOut) {
-        try {
-          parsed = JSON.parse(trimmedOut);
-        } catch {
-          // Not whole-stdout JSON — fall through to block extraction
-        }
-      }
-      if (!parsed && trimmedOut) {
-        try {
-          const firstBrace = trimmedOut.indexOf('{');
-          const lastBrace = trimmedOut.lastIndexOf('}');
-          if (firstBrace !== -1 && lastBrace > firstBrace) {
-            parsed = JSON.parse(trimmedOut.slice(firstBrace, lastBrace + 1));
-          }
-        } catch {
-          parsed = null;
-        }
-      }
-      if (!parsed && trimmedOut) {
-        try {
-          // Last resort: find the last single-line JSON object
-          const lines = trimmedOut.split('\n').filter(Boolean);
-          for (let i = lines.length - 1; i >= 0; i--) {
-            if (lines[i].trim().startsWith('{')) {
-              parsed = JSON.parse(lines[i].trim());
-              break;
-            }
-          }
-        } catch {
-          parsed = null;
-        }
-      }
-
-      if (code !== 0 && !parsed) {
-        reject(
-          new Error(
-            `Agent exited with code ${code}.\n${(stderr || stdout || 'No output').slice(0, 1000)}`
-          )
-        );
-        return;
-      }
-
-      const gitSummary = getGitChangesSummary(projectDir);
-
-      if (parsed) {
-        // The CLI can exit non-zero yet still emit JSON, or exit 0 with an
-        // error payload (e.g. status: ERROR on auth failure). Never report
-        // those as success — surface the real error instead.
-        const agentError =
-          parsed.error ||
-          (typeof parsed.status === 'string' && parsed.status.toUpperCase() === 'ERROR'
-            ? `Agent reported status: ${parsed.status}`
-            : null);
-        if (agentError && !parsed.response) {
-          reject(
-            new Error(
-              `Agent failed: ${String(agentError).slice(0, 800)}${stderr ? `\n${stderr.slice(0, 400)}` : ''}`
-            )
-          );
-          return;
-        }
-
-        // Save conversation_id for this project so user can continue if desired
-        if (parsed.conversation_id) {
-          const updatedState = loadProjectsState();
-          updatedState.conversations = updatedState.conversations || {};
-          updatedState.conversations[projectAlias] = parsed.conversation_id;
-          saveProjectsState(updatedState);
-        }
-
-        resolve({
-          response: formatForWhatsApp(parsed.response || 'Task completed (no text output).'),
-          conversationId: parsed.conversation_id,
-          durationSeconds: parsed.duration_seconds || elapsedSeconds,
-          numTurns: parsed.num_turns || 1,
-          gitSummary,
-        });
-      } else {
-        resolve({
-          response: formatForWhatsApp(trimmedOut || 'Task completed.'),
-          durationSeconds: elapsedSeconds,
-          gitSummary,
-        });
-      }
-    });
+  child.on('error', (err) => {
+    worker.stderrBuffer += `\n${err.message}`;
+    handleExit(1, null);
   });
+
+  child.on('close', handleExit);
+
+  return worker;
+}
+
+/**
+ * Pre-warms an Antigravity CLI process for `projectDir` in the background
+ * so the next message in that project has zero cold-start latency (~2s response).
+ */
+export function prewarmAgentSession(projectDir) {
+  try {
+    if (!projectDir || !fs.existsSync(projectDir)) return;
+    const existing = warmPool.get(projectDir);
+    if (existing && !existing.dead) return;
+    createWarmWorker(projectDir);
+  } catch {
+    // Ignore prewarm errors
+  }
+}
+
+/**
+ * Pre-warms the default project and bound group projects at startup.
+ */
+export function prewarmAllBoundProjects() {
+  try {
+    const state = loadProjectsState();
+    const dirs = new Set();
+    const activeAlias = state.activeProject || 'demo';
+    if (state.projects?.[activeAlias]) {
+      dirs.add(state.projects[activeAlias]);
+    }
+    if (CONFIG.defaultProjectDir) {
+      dirs.add(CONFIG.defaultProjectDir);
+    }
+    for (const alias of Object.values(state.groupBindings || {})) {
+      if (state.projects?.[alias]) {
+        dirs.add(state.projects[alias]);
+      }
+      if (dirs.size >= MAX_WARM_WORKERS) break;
+    }
+    let delay = 0;
+    for (const dir of dirs) {
+      setTimeout(() => prewarmAgentSession(dir), delay).unref?.();
+      delay += 1500;
+    }
+  } catch {
+    // Ignore
+  }
+}
+
+async function runWithWarmWorker({
+  projectAlias,
+  projectDir,
+  taskPrompt,
+  systemWrapperPrompt,
+  ownerAllowedToMessage,
+  timeoutMs,
+  allowRetry = true,
+}) {
+  let worker = warmPool.get(projectDir);
+  const wasPreexisting = Boolean(worker && !worker.dead);
+
+  // Never share conversation history between owner and non-owner
+  if (
+    worker &&
+    !worker.dead &&
+    !worker.currentTurn &&
+    worker.lastOwnerMode !== null &&
+    worker.lastOwnerMode !== ownerAllowedToMessage
+  ) {
+    retireWarmWorker(worker);
+    worker = null;
+  }
+
+  if (!worker || worker.dead || worker.currentTurn) {
+    worker = createWarmWorker(projectDir);
+  }
+
+  activeChildProcess = worker.child;
+  currentTaskInfo = {
+    projectAlias,
+    projectDir,
+    taskPrompt,
+    startedAt: new Date().toISOString(),
+  };
+
+  try {
+    if (!worker.ready) {
+      await new Promise((resolve, reject) => {
+        worker.initWaiters.push({ resolve, reject });
+      });
+    }
+
+    worker.lastOwnerMode = ownerAllowedToMessage;
+    worker.lastUsedAt = Date.now();
+
+    return await new Promise((resolve, reject) => {
+      const startTime = Date.now();
+      const timer = setTimeout(() => {
+        if (worker.currentTurn) {
+          worker.currentTurn = null;
+        }
+        if (activeChildProcess === worker.child) {
+          activeChildProcess = null;
+          currentTaskInfo = null;
+        }
+        retireWarmWorker(worker);
+        prewarmAgentSession(projectDir);
+        reject(
+          new Error(`Task timed out after ${Math.round(timeoutMs / 1000)} seconds.`)
+        );
+      }, timeoutMs);
+
+      worker.currentTurn = {
+        projectAlias,
+        startTime,
+        timer,
+        streamedText: '',
+        resolve,
+        reject,
+      };
+
+      const payload = JSON.stringify({
+        event: 'user',
+        message: {
+          role: 'user',
+          content: systemWrapperPrompt,
+        },
+      });
+
+      worker.child.stdin.write(`${payload}\n`, (err) => {
+        if (err && worker.currentTurn) {
+          const turn = worker.currentTurn;
+          worker.currentTurn = null;
+          clearTimeout(turn.timer);
+          retireWarmWorker(worker);
+          const writeErr = new Error(`Failed to write to warm worker: ${err.message}`);
+          writeErr.workerDied = true;
+          turn.reject(writeErr);
+        }
+      });
+    });
+  } catch (err) {
+    if (err.cancelled) throw err;
+    // If a pre-warmed standby process died while idle before finishing the turn, retry once cleanly
+    if (allowRetry && wasPreexisting) {
+      retireWarmWorker(worker);
+      return runWithWarmWorker({
+        projectAlias,
+        projectDir,
+        taskPrompt,
+        systemWrapperPrompt,
+        ownerAllowedToMessage,
+        timeoutMs,
+        allowRetry: false,
+      });
+    }
+    throw err;
+  }
 }

@@ -32,6 +32,8 @@ import {
   addGitHubCollaborator,
   removeGitHubCollaborator,
   listGitHubCollaborators,
+  prewarmAgentSession,
+  prewarmAllBoundProjects,
 } from './agent.js';
 
 const AUTH_DIR = path.join(ROOT_DIR, 'auth_info_baileys');
@@ -2084,7 +2086,7 @@ async function handleSlashCommand(sock, jid, msg, commandBody) {
     return true;
   }
 
-  if (cmd === '/shutdown') {
+  if (cmd === '/shutdown' || cmd === 'shutdown' || cmd === '/shtudown' || cmd === 'shtudown') {
     if (!owner) {
       await sendReply(
         sock,
@@ -2123,7 +2125,14 @@ async function handleSlashCommand(sock, jid, msg, commandBody) {
     return true;
   }
 
-  if (cmd === '/wakeup' || cmd === '/resume' || cmd === '/start') {
+  if (
+    cmd === '/wakeup' ||
+    cmd === 'wakeup' ||
+    cmd === '/resume' ||
+    cmd === 'resume' ||
+    cmd === '/start' ||
+    cmd === 'start'
+  ) {
     if (!owner) {
       await sendReply(
         sock,
@@ -3178,6 +3187,30 @@ let activeSock = null;
 let reconnectTimer = null;
 let isStartingBot = false;
 const BOT_START_TIME_SEC = Math.floor(Date.now() / 1000);
+let serverTimeOffsetSec = 0;
+let hasCalibratedClock = false;
+
+async function syncNetworkClock() {
+  try {
+    const res = await fetch('https://web.whatsapp.com', {
+      method: 'HEAD',
+      signal: AbortSignal.timeout(5000),
+    });
+    const dateHeader = res.headers.get('date');
+    if (dateHeader) {
+      const networkTimeSec = Math.floor(new Date(dateHeader).getTime() / 1000);
+      serverTimeOffsetSec = Math.floor(Date.now() / 1000) - networkTimeSec;
+      hasCalibratedClock = true;
+      if (Math.abs(serverTimeOffsetSec) > 10) {
+        console.log(
+          `⏱️ Clock sync: Detected ${serverTimeOffsetSec}s skew between PC and WhatsApp server. Calibrated.`
+        );
+      }
+    }
+  } catch {
+    // Dynamic fallback on message arrival will calibrate if fetch is unreachable
+  }
+}
 
 /**
  * Starts the Baileys WhatsApp client and listens for group/direct messages.
@@ -3185,6 +3218,8 @@ const BOT_START_TIME_SEC = Math.floor(Date.now() / 1000);
 export async function startWhatsAppBot() {
   if (isStartingBot) return;
   isStartingBot = true;
+
+  syncNetworkClock().catch(() => {});
 
   if (activeSock) {
     try { activeSock.ev.removeAllListeners(); } catch {}
@@ -3289,6 +3324,7 @@ export async function startWhatsAppBot() {
 
         // Ensure server has fresh pre-keys so incoming messages from all group members decrypt cleanly
         sock.uploadPreKeysToServerIfRequired().catch(() => {});
+        prewarmAllBoundProjects();
       }
     });
 
@@ -3333,10 +3369,23 @@ async function handleIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfte
       }
 
       // Only ignore stale backlog messages from before this bot process was started (with 60s grace window)
-      // Never drop messages sent while the bot was running or reconnecting!
+      // Account for PC clock skew (e.g. dual-boot or RTC drift) by comparing against calibrated server time.
       const msgTime = Number(msg.messageTimestamp || 0);
-      if (msgTime > 0 && msgTime < BOT_START_TIME_SEC - 60) {
-        return;
+      if (msgTime > 0) {
+        // Fallback: If not calibrated yet and clock discrepancy is large (>300s), calibrate from incoming message
+        const rawDiff = Math.floor(Date.now() / 1000) - msgTime;
+        if (!hasCalibratedClock && Math.abs(rawDiff) > 300) {
+          serverTimeOffsetSec = rawDiff;
+          hasCalibratedClock = true;
+          console.log(
+            `⏱️ Clock sync (dynamic): Calibrated ${serverTimeOffsetSec}s skew from incoming message.`
+          );
+        }
+
+        const effectiveBotStartSec = BOT_START_TIME_SEC - serverTimeOffsetSec;
+        if (effectiveBotStartSec > 0 && msgTime < effectiveBotStartSec - 60) {
+          return;
+        }
       }
 
       // Never process messages sent by the bot itself or already processed
@@ -3731,8 +3780,9 @@ async function handleIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfte
         }
       }
 
-      // Check if it's a slash command
-      if (rawBody.startsWith('/') || rawBody.toLowerCase() === 'help') {
+      // Check if it's a slash command or control command
+      const isControlCmd = ['help', 'shutdown', 'shtudown', 'wakeup', 'resume', 'start'].includes(rawBody.toLowerCase().trim());
+      if (rawBody.startsWith('/') || isControlCmd) {
         const handled = await handleSlashCommand(sock, jid, msg, rawBody);
         if (handled) return;
       }
