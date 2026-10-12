@@ -13,6 +13,7 @@ whatsapp-qr.png
 .env
 .env.local
 .env.*.local
+.credentials.json
 *.pem
 *.key
 
