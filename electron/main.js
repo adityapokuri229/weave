@@ -3,9 +3,13 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { startWhatsAppBot, botEvents, getBotStatus, requestPairingCode } from '../src/bot.js';
-import { CONFIG, loadProjectsState, saveProjectsState, ROOT_DIR } from '../src/config.js';
+import { CONFIG, loadProjectsState, saveProjectsState, ROOT_DIR, DATA_DIR } from '../src/config.js';
 import { googleAuth } from '../src/auth.js';
 import { runAntigravityTask, stopActiveTask } from '../src/agent.js';
+
+if (process.platform === 'linux') {
+  app.disableHardwareAcceleration();
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -23,7 +27,9 @@ function createWindow() {
     frame: false,
     titleBarStyle: 'hidden',
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: fs.existsSync(path.join(__dirname, 'preload.cjs'))
+        ? path.join(__dirname, 'preload.cjs')
+        : path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
@@ -32,18 +38,24 @@ function createWindow() {
 
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
+  mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+    console.log(`[Renderer] [${level}] ${message} (${sourceId}:${line})`);
+  });
+
   mainWindow.webContents.on('did-finish-load', () => {
     // If QR data is already generated, immediately push it to the renderer
     if (currentQrData) {
       mainWindow.webContents.send('weave:qr-update', currentQrData);
     } else {
-      // Check if whatsapp-qr.png exists on disk as fallback
-      const qrPath = path.join(ROOT_DIR, 'whatsapp-qr.png');
-      if (fs.existsSync(qrPath)) {
+      // Check if whatsapp-qr.png exists on disk in DATA_DIR or ROOT_DIR as fallback
+      const qrPath = path.join(DATA_DIR, 'whatsapp-qr.png');
+      const fallbackPath = path.join(ROOT_DIR, 'whatsapp-qr.png');
+      const targetPath = fs.existsSync(qrPath) ? qrPath : fs.existsSync(fallbackPath) ? fallbackPath : null;
+      if (targetPath) {
         try {
-          const imgBuffer = fs.readFileSync(qrPath);
+          const imgBuffer = fs.readFileSync(targetPath);
           const dataUrl = `data:image/png;base64,${imgBuffer.toString('base64')}`;
-          currentQrData = { dataUrl, qrPath };
+          currentQrData = { dataUrl, qrPath: targetPath };
           mainWindow.webContents.send('weave:qr-update', currentQrData);
         } catch {}
       }
@@ -124,13 +136,15 @@ ipcMain.handle('weave:get-status', async () => {
 
   let qrToSend = currentQrData;
   if (!qrToSend && !botStatus.connected) {
-    const qrPath = path.join(ROOT_DIR, 'whatsapp-qr.png');
-    if (fs.existsSync(qrPath)) {
+    const qrPath = path.join(DATA_DIR, 'whatsapp-qr.png');
+    const fallbackPath = path.join(ROOT_DIR, 'whatsapp-qr.png');
+    const targetPath = fs.existsSync(qrPath) ? qrPath : fs.existsSync(fallbackPath) ? fallbackPath : null;
+    if (targetPath) {
       try {
-        const imgBuffer = fs.readFileSync(qrPath);
+        const imgBuffer = fs.readFileSync(targetPath);
         qrToSend = {
           dataUrl: `data:image/png;base64,${imgBuffer.toString('base64')}`,
-          qrPath,
+          qrPath: targetPath,
         };
         currentQrData = qrToSend;
       } catch {}
@@ -192,7 +206,7 @@ ipcMain.handle('weave:update-handle', async (_event, newHandle) => {
 
   // Persist into .env file
   try {
-    const envPath = path.join(ROOT_DIR, '.env');
+    const envPath = path.join(DATA_DIR, '.env');
     if (fs.existsSync(envPath)) {
       let content = fs.readFileSync(envPath, 'utf8');
       if (content.includes('BOT_TRIGGER=')) {

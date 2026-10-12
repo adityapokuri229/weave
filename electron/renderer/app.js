@@ -286,6 +286,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   if (btnRequestPairingCode) {
+    pairingPhoneInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        btnRequestPairingCode.click();
+      }
+    });
+
     btnRequestPairingCode.addEventListener('click', async () => {
       const phone = pairingPhoneInput.value.trim();
       if (!phone) {
@@ -297,11 +303,14 @@ document.addEventListener('DOMContentLoaded', async () => {
       btnRequestPairingCode.disabled = true;
 
       try {
+        appendLog('info', `📡 Requesting WhatsApp pairing code for ${phone}...`);
         const res = await api?.requestPairingCode(phone);
         if (res?.success && res?.code) {
-          pairingCodeDigits.textContent = res.code;
+          const rawCode = String(res.code).replace(/[^a-zA-Z0-9]/g, '');
+          const formatted = rawCode.length === 8 ? `${rawCode.slice(0, 4)}-${rawCode.slice(4)}` : res.code;
+          pairingCodeDigits.textContent = formatted;
           pairingCodeDisplay.classList.remove('hidden');
-          appendLog('info', `🔑 Pairing Code generated: ${res.code}`);
+          appendLog('info', `🔑 Pairing Code: ${formatted}. On WhatsApp: Settings -> Linked Devices -> Link with phone number -> Enter this code.`);
         } else {
           appendLog('error', `Pairing code error: ${res?.error || 'Failed to request code'}`);
         }
@@ -380,4 +389,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Initial Sync
   syncStatus();
+
+  // Periodic status check every 3s to guarantee QR and connection updates
+  setInterval(() => {
+    if (!isConnected) {
+      syncStatus();
+    }
+  }, 3000);
 });

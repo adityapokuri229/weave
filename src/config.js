@@ -8,20 +8,55 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 export const ROOT_DIR = path.resolve(__dirname, '..');
 
-const envPath = path.join(ROOT_DIR, '.env');
-const envExamplePath = path.join(ROOT_DIR, '.env.example');
-if (!fs.existsSync(envPath) && fs.existsSync(envExamplePath)) {
+/**
+ * Returns a guaranteed writable directory for app data (session auth, qr image, projects).
+ * In development checkout, uses ROOT_DIR.
+ * In packaged AppImage/binary where ROOT_DIR is read-only, uses ~/.weave or WEAVE_DATA_DIR.
+ */
+export function getWritableDataDir() {
+  if (process.env.WEAVE_DATA_DIR) {
+    try {
+      fs.mkdirSync(process.env.WEAVE_DATA_DIR, { recursive: true });
+      return process.env.WEAVE_DATA_DIR;
+    } catch {}
+  }
   try {
-    fs.copyFileSync(envExamplePath, envPath);
-    console.log('✨ Initialized new .env file from .env.example');
+    const testFile = path.join(ROOT_DIR, `.write_test_${process.pid}`);
+    fs.writeFileSync(testFile, 'ok');
+    fs.unlinkSync(testFile);
+    return ROOT_DIR;
   } catch {
-    // ignore
+    const userDir = path.join(os.homedir(), '.weave');
+    try {
+      fs.mkdirSync(userDir, { recursive: true });
+    } catch {}
+    return userDir;
+  }
+}
+
+export const DATA_DIR = getWritableDataDir();
+
+const envPath = path.join(DATA_DIR, '.env');
+const rootEnvPath = path.join(ROOT_DIR, '.env');
+const envExamplePath = path.join(ROOT_DIR, '.env.example');
+
+if (!fs.existsSync(envPath)) {
+  if (fs.existsSync(rootEnvPath)) {
+    try { fs.copyFileSync(rootEnvPath, envPath); } catch {}
+  } else if (fs.existsSync(envExamplePath)) {
+    try { fs.copyFileSync(envExamplePath, envPath); } catch {}
   }
 }
 
 dotenv.config({ path: envPath });
 
-const PROJECTS_FILE = path.join(ROOT_DIR, 'projects.json');
+const PROJECTS_FILE = path.join(DATA_DIR, 'projects.json');
+if (DATA_DIR !== ROOT_DIR && !fs.existsSync(PROJECTS_FILE)) {
+  const rootProjects = path.join(ROOT_DIR, 'projects.json');
+  if (fs.existsSync(rootProjects)) {
+    try { fs.copyFileSync(rootProjects, PROJECTS_FILE); } catch {}
+  }
+}
 const HOME_DIR = process.env.HOME || os.homedir();
 
 // Standard OS folders that should not be treated as coding projects themselves

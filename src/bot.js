@@ -19,6 +19,7 @@ export const botEvents = new EventEmitter();
 import {
   CONFIG,
   ROOT_DIR,
+  DATA_DIR,
   loadProjectsState,
   saveProjectsState,
   resolveProjectAndTask,
@@ -39,10 +40,10 @@ import {
   prewarmAllBoundProjects,
 } from './agent.js';
 
-const AUTH_DIR = path.join(ROOT_DIR, 'auth_info_baileys');
-const CONTACTS_FILE = path.join(ROOT_DIR, 'contacts.json');
-const PROCESSED_MSGS_FILE = path.join(ROOT_DIR, '.processed-msgs.json');
-const SENT_MSGS_FILE = path.join(ROOT_DIR, '.sent-msgs.json');
+const AUTH_DIR = path.join(DATA_DIR, 'auth_info_baileys');
+const CONTACTS_FILE = path.join(DATA_DIR, 'contacts.json');
+const PROCESSED_MSGS_FILE = path.join(DATA_DIR, '.processed-msgs.json');
+const SENT_MSGS_FILE = path.join(DATA_DIR, '.sent-msgs.json');
 
 function readIdArrayFile(filePath) {
   try {
@@ -3279,7 +3280,7 @@ export async function startWhatsAppBot() {
       if (qr) {
         console.log('\n📱 Scan this QR code with WhatsApp (Linked Devices -> Link a Device):\n');
         qrcode.generate(qr, { small: true });
-        const qrPath = path.join(ROOT_DIR, 'whatsapp-qr.png');
+        const qrPath = path.join(DATA_DIR, 'whatsapp-qr.png');
         QRCodeImage.toFile(qrPath, qr, { width: 400, margin: 2 }).catch(() => {});
         QRCodeImage.toDataURL(qr, { width: 300, margin: 2 })
           .then((dataUrl) => {

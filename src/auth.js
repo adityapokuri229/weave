@@ -3,9 +3,9 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
-import { ROOT_DIR, atomicWriteJson } from './config.js';
+import { ROOT_DIR, DATA_DIR, atomicWriteJson } from './config.js';
 
-const CREDENTIALS_FILE = path.join(ROOT_DIR, '.credentials.json');
+const CREDENTIALS_FILE = path.join(DATA_DIR, '.credentials.json');
 
 // Default Google OAuth Client parameters
 // Users can provide their own Client ID/Secret via env or Weave app settings
