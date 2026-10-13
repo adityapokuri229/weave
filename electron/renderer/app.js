@@ -2,14 +2,20 @@
 document.addEventListener('DOMContentLoaded', async () => {
   const api = window.weaveAPI;
 
-  // Window Controls
+  // Window Controls (Top-Left & Top-Right)
   const btnClose = document.getElementById('btn-close');
   const btnMinimize = document.getElementById('btn-minimize');
   const btnMaximize = document.getElementById('btn-maximize');
+  const btnCloseRight = document.getElementById('btn-close-right');
+  const btnMinimizeRight = document.getElementById('btn-minimize-right');
+  const btnMaximizeRight = document.getElementById('btn-maximize-right');
 
   if (btnClose) btnClose.addEventListener('click', () => api?.close());
   if (btnMinimize) btnMinimize.addEventListener('click', () => api?.minimize());
   if (btnMaximize) btnMaximize.addEventListener('click', () => api?.maximize());
+  if (btnCloseRight) btnCloseRight.addEventListener('click', () => api?.close());
+  if (btnMinimizeRight) btnMinimizeRight.addEventListener('click', () => api?.minimize());
+  if (btnMaximizeRight) btnMaximizeRight.addEventListener('click', () => api?.maximize());
 
   // Navigation Tabs
   const tabOnboarding = document.getElementById('tab-onboarding');
@@ -109,7 +115,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Copy callsign helper
   if (btnCopyCallsign) {
     btnCopyCallsign.addEventListener('click', () => {
-      const text = callsignDisplay.textContent || '@agent';
+      const text = callsignDisplay.textContent || '@weave';
       navigator.clipboard.writeText(text);
       btnCopyCallsign.innerHTML = '<span class="text-white">✓</span><span>Copied</span>';
       setTimeout(() => {
@@ -253,8 +259,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       stepIcon2.className = 'material-symbols-outlined text-[15px] text-white';
     }
 
-    // 3. Trigger Handle & Workspace (Step 3 — Strictly Gated Behind Step 1 & Step 2)
-    const trigger = state.bot?.triggerPrefix || '@agent';
+    // 3. Trigger Handle & Workspace
+    const rawTrigger = state.bot?.triggerPrefix || '@weave';
+    const trigger = rawTrigger === '@agent' ? '@weave' : rawTrigger;
     if (document.activeElement !== botTagInput) {
       botTagInput.value = trigger.replace(/^@/, '');
     }
@@ -287,17 +294,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       tabWorkspace.removeAttribute('title');
       if (tabWorkspaceIcon) tabWorkspaceIcon.textContent = 'terminal';
     } else {
-      // Lock Step 3 & Workspace
-      if (step3Card) step3Card.style.opacity = '0.45';
-      if (step3Badge) {
-        step3Badge.textContent = !isConnected ? '🔒 Complete Steps 1 & 2 first' : '🔒 Complete Step 2 first';
-        step3Badge.className = 'text-[11px] text-app-dim font-mono';
+      // Keep Step 3 call-sign editable anytime, lock only Workspace launch
+      if (step3Card) step3Card.style.opacity = '1';
+      botTagInput.disabled = false;
+      botTagInput.className = 'bg-transparent border-none text-white font-mono text-xs focus:outline-none w-full px-1 tracking-tight';
+      btnSaveHandle.disabled = false;
+      if (btnSaveHandle.textContent !== 'Saved') {
+        btnSaveHandle.textContent = 'Save';
       }
-      botTagInput.disabled = true;
-      botTagInput.className = 'bg-transparent border-none text-app-dim font-mono text-xs focus:outline-none w-full px-1 tracking-tight cursor-not-allowed';
-      btnSaveHandle.disabled = true;
-      btnSaveHandle.textContent = 'Locked';
-      btnSaveHandle.className = 'text-xs font-mono px-2.5 py-1 bg-app-subtle text-app-dim border border-app-border rounded transition-all cursor-not-allowed';
+      btnSaveHandle.className = 'text-xs font-mono px-2.5 py-1 bg-white hover:bg-neutral-200 text-black font-semibold rounded transition-all cursor-pointer';
 
       if (stepBtn3) {
         stepBtn3.className = 'flex items-center justify-center gap-1.5 py-1.5 px-2 rounded text-app-dim font-medium';
@@ -441,20 +446,28 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
-  // Handle Save (Gated behind Step 1 & Step 2)
+  // Handle Save (Unique Call-Sign)
   btnSaveHandle.addEventListener('click', async () => {
-    if (!isConnected || !isGoogleConnected) {
-      appendLog('warn', '⚠️ Complete Step 1 & Step 2 first before configuring your trigger handle.');
-      return;
-    }
     const handle = botTagInput.value.trim();
     if (!handle) return;
     const res = await api?.updateHandle(handle);
     if (res?.success) {
       callsignDisplay.textContent = res.triggerPrefix;
-      appendLog('info', `Trigger prefix configured: ${res.triggerPrefix}`);
+      botTagInput.value = res.triggerPrefix.replace(/^@/, '');
+      if (step3Badge) {
+        step3Badge.textContent = `Active: ${res.triggerPrefix}`;
+        step3Badge.className = 'text-[11px] text-white font-mono';
+      }
+      appendLog('info', `✅ Unique call-sign configured: ${res.triggerPrefix}`);
       btnSaveHandle.textContent = 'Saved';
       setTimeout(() => { btnSaveHandle.textContent = 'Save'; }, 1500);
+    } else {
+      const errMsg = res?.error || 'Invalid call-sign';
+      if (step3Badge) {
+        step3Badge.textContent = `⚠️ ${errMsg}`;
+        step3Badge.className = 'text-[11px] text-neutral-300 font-mono';
+      }
+      appendLog('warn', `⚠️ ${errMsg}`);
     }
   });
 

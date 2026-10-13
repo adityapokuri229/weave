@@ -58,5 +58,5 @@ build/
 out/
 site/downloads/
 site/screenshots/
-
-
+extracted_app/
+squashfs-root/

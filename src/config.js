@@ -77,9 +77,67 @@ function parsePositiveInt(raw, fallback) {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
+export const DEFAULT_CALLSIGN = '@weave';
+export const RESERVED_CALLSIGNS = new Set(['@agent', 'agent']);
+
+function normalizeCallsign(raw) {
+  const cleaned = String(raw || '').trim().toLowerCase();
+  if (!cleaned) return DEFAULT_CALLSIGN;
+  const withAt = cleaned.startsWith('@') ? cleaned : `@${cleaned}`;
+  if (RESERVED_CALLSIGNS.has(withAt) || RESERVED_CALLSIGNS.has(cleaned)) {
+    return DEFAULT_CALLSIGN;
+  }
+  return withAt;
+}
+
+function persistTriggerToEnvFile(filePath, handle) {
+  try {
+    if (!fs.existsSync(filePath)) return;
+    let content = fs.readFileSync(filePath, 'utf8');
+    if (/^BOT_TRIGGER=/m.test(content)) {
+      content = content.replace(/^BOT_TRIGGER=.*$/m, `BOT_TRIGGER=${handle}`);
+    } else {
+      content += `\nBOT_TRIGGER=${handle}\n`;
+    }
+    fs.writeFileSync(filePath, content, 'utf8');
+  } catch {}
+}
+
+export function updateTriggerPrefix(newHandle) {
+  const raw = String(newHandle || '').trim().toLowerCase().replace(/\s+/g, '');
+  if (!raw) {
+    return { success: false, error: 'Call-sign cannot be empty.' };
+  }
+  const withAt = raw.startsWith('@') ? raw : `@${raw}`;
+  if (RESERVED_CALLSIGNS.has(withAt) || RESERVED_CALLSIGNS.has(raw)) {
+    return {
+      success: false,
+      error: '"@agent" is reserved / already in use. Please choose a unique call-sign (e.g. @weave).',
+    };
+  }
+  CONFIG.triggerPrefix = withAt;
+  process.env.BOT_TRIGGER = withAt;
+  persistTriggerToEnvFile(envPath, withAt);
+  if (rootEnvPath !== envPath) {
+    persistTriggerToEnvFile(rootEnvPath, withAt);
+  }
+  return { success: true, triggerPrefix: withAt };
+}
+
+// Automatically migrate legacy @agent trigger in .env to @weave so it never collides with existing @agent bots
+const rawEnvTrigger = (process.env.BOT_TRIGGER || '').trim().toLowerCase();
+const resolvedInitialTrigger = normalizeCallsign(rawEnvTrigger);
+if (!rawEnvTrigger || RESERVED_CALLSIGNS.has(rawEnvTrigger)) {
+  process.env.BOT_TRIGGER = resolvedInitialTrigger;
+  persistTriggerToEnvFile(envPath, resolvedInitialTrigger);
+  if (rootEnvPath !== envPath) {
+    persistTriggerToEnvFile(rootEnvPath, resolvedInitialTrigger);
+  }
+}
+
 export const CONFIG = {
-  // Trigger prefix in WhatsApp messages (case-insensitive)
-  triggerPrefix: (process.env.BOT_TRIGGER || '@agent').toLowerCase(),
+  // Unique trigger prefix in WhatsApp messages (case-insensitive, never @agent)
+  triggerPrefix: resolvedInitialTrigger,
 
   // Antigravity CLI binary path
   agyBin: process.env.AGY_BIN || 'agy',

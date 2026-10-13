@@ -13,7 +13,7 @@ Now also features direct **Google OAuth 2.0 PKCE** and **Direct Gemini API integ
 - ⚡ **Direct Gemini API Client**: Use Gemini models directly with an API key (`GEMINI_API_KEY`) or OAuth tokens without needing the `agy` CLI installed.
 - 🔒 **Project Isolation & Group Binding**: Lock specific WhatsApp groups to dedicated project folders (`/bind <project>`) so team members cannot access other directories.
 - 🎙️ **Voice Note Transcription**: Send WhatsApp audio or voice messages — automatically transcribed via Whisper/Groq or local engine.
-- 📸 **Visual QA & Screenshots**: Take automated web snapshots with `@agent /screenshot` or phone-sized viewports (`/screenshot mobile`).
+- 📸 **Visual QA & Screenshots**: Take automated web snapshots with `@weave /screenshot` or phone-sized viewports (`/screenshot mobile`).
 - 📎 **Direct File Transfers**: Send local files, downloads, or build artifacts straight to WhatsApp or contacts.
 - 📅 **Google Calendar & Email Sync**: Schedule meetings with natural language via OAuth or RFC 5545 `.ics` invitations and draft emails.
 - 🤝 **GitHub Integration**: Manage collaborators and auto-push commits directly via chat commands.
@@ -34,10 +34,16 @@ Now also features direct **Google OAuth 2.0 PKCE** and **Direct Gemini API integ
 
 ### 2. Download & Install
 
-Clone or download this repository:
+Install globally via npm:
 
 ```bash
-git clone https://github.com/<your-username>/weave.git
+npm install -g weave-agent
+```
+
+Or clone the repository for development:
+
+```bash
+git clone https://github.com/darthnihilus01/weave.git
 cd weave
 npm install
 ```
@@ -85,7 +91,7 @@ Edit `.env` to configure your environment:
 
 | Variable | Default | Description |
 | :--- | :--- | :--- |
-| `BOT_TRIGGER` | `@agent` | Prefix keyword to trigger the bot in chats |
+| `BOT_TRIGGER` | `@weave` | Prefix keyword to trigger the bot in chats |
 | `DEFAULT_PROJECT_DIR` | `./demo-site` | Fallback directory for tasks when no project is specified |
 | `AGY_BIN` | `agy` | Path to the Antigravity CLI binary |
 | `AGY_MODEL` | *(empty)* | Optional model override for Antigravity (e.g. `gemini-3.8-flash-high`) |
@@ -112,29 +118,29 @@ Edit `.env` to configure your environment:
 
 | Command | Description |
 | :--- | :--- |
-| `@agent <task>` | Execute a task on the active project directory |
-| `@agent [alias] <task>` | Run a task targeting a specific project alias |
-| `@agent -c <task>` | Continue the previous conversation context |
-| `@agent /projects` | List all discovered and registered projects |
-| `@agent /project <alias>` | Switch the active project folder |
-| `@agent /addproject <alias> <path>` | Register a new project directory |
-| `@agent /bind <alias>` | Lock the current WhatsApp group to a specific project *(Owner only)* |
-| `@agent /unbind` | Remove the project lock from the current group *(Owner only)* |
-| `@agent /screenshot [url]` | Take a headless screenshot preview |
-| `@agent /send <file>` | Send a file from your system to the chat |
-| `@agent /status` | Check the status of running tasks and queue |
-| `@agent /stop` | Cancel the currently running agent task |
-| `@agent /help` | Display list of available commands |
+| `@weave <task>` | Execute a task on the active project directory |
+| `@weave [alias] <task>` | Run a task targeting a specific project alias |
+| `@weave -c <task>` | Continue the previous conversation context |
+| `@weave /projects` | List all discovered and registered projects |
+| `@weave /project <alias>` | Switch the active project folder |
+| `@weave /addproject <alias> <path>` | Register a new project directory |
+| `@weave /bind <alias>` | Lock the current WhatsApp group to a specific project *(Owner only)* |
+| `@weave /unbind` | Remove the project lock from the current group *(Owner only)* |
+| `@weave /screenshot [url]` | Take a headless screenshot preview |
+| `@weave /send <file>` | Send a file from your system to the chat |
+| `@weave /status` | Check the status of running tasks and queue |
+| `@weave /stop` | Cancel the currently running agent task |
+| `@weave /help` | Display list of available commands |
 
 ---
 
 ## 💡 Example WhatsApp Prompts
 
-- `@agent create a modern hero section with Tailwind CSS and an emerald CTA button`
-- `@agent [mysite] add dark mode toggle with persistent localStorage`
-- `@agent -c make the cards responsive on mobile devices`
-- `@agent /screenshot http://localhost:3000`
-- **Voice Notes**: Send an audio message tagging `@agent` to prompt hands-free!
+- `@weave create a modern hero section with Tailwind CSS and an emerald CTA button`
+- `@weave [mysite] add dark mode toggle with persistent localStorage`
+- `@weave -c make the cards responsive on mobile devices`
+- `@weave /screenshot http://localhost:3000`
+- **Voice Notes**: Send an audio message tagging `@weave` to prompt hands-free!
 
 ---
 

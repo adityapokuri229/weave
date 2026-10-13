@@ -24,6 +24,7 @@ import {
   saveProjectsState,
   resolveProjectAndTask,
   PROJECT_PHONETIC_PATTERNS,
+  updateTriggerPrefix,
 } from './config.js';
 import { transcribeAudioFile } from './transcribe.js';
 import { buildGoogleCalendarUrl, createIcsFile, sendCalendarInviteDirectly } from './calendar.js';
@@ -590,7 +591,8 @@ function isStopWord(str) {
 }
 
 /**
- * Checks if the user is swipe-replying to a message sent by the bot itself.
+ * Checks if the user is swipe-replying to a message sent by THIS Weave bot instance.
+ * Relies strictly on tracked sentMessageIds so it never collides with another bot (like @agent).
  */
 function isReplyingToBot(msg) {
   const m = unwrapMessage(msg);
@@ -602,28 +604,7 @@ function isReplyingToBot(msg) {
     m?.documentMessage?.contextInfo;
 
   const stanzaId = contextInfo?.stanzaId;
-  if (stanzaId && sentMessageIds.has(stanzaId)) {
-    return true;
-  }
-
-  const quotedText = extractQuotedText(msg);
-  if (!quotedText) return false;
-
-  const botSignatures = [
-    'Changes Completed!',
-    'Gemini Agent working',
-    'WhatsApp Antigravity Agent',
-    'Agent Task Failed',
-    'Group Locked to Project',
-    'Task Queued',
-    'Email Draft (Awaiting Confirmation)',
-    'Pushed to GitHub',
-    'Auto-Pushed to GitHub',
-    'Email Sent Successfully',
-    'Live Location Shared',
-    'Agent Status:',
-  ];
-  return botSignatures.some((sig) => quotedText.includes(sig));
+  return Boolean(stanzaId && sentMessageIds.has(stanzaId));
 }
 
 function matchesCommand(lowerText, cmd) {
@@ -632,8 +613,8 @@ function matchesCommand(lowerText, cmd) {
 
 /**
  * Checks if the message either:
- * 1) Starts with the text trigger (e.g. "@agent <task>"), OR
- * 2) Swipe-replies to a message from the bot, OR
+ * 1) Starts with the unique text trigger (e.g. "@weave <task>"), OR
+ * 2) Swipe-replies to a message sent by this Weave bot, OR
  * 3) Natively @mentions the bot's WhatsApp account in a group chat (when TRIGGER_ON_MENTION=true)
  * Returns the extracted task body if triggered, or null if not triggered.
  */
@@ -642,7 +623,16 @@ function extractTriggeredBody(sock, msg, text) {
   const lowerText = trimmedText.toLowerCase();
   const trigger = CONFIG.triggerPrefix;
 
-  // 0. Swipe-replying "stop" to a task message (either the running task, a queued task, or a "@agent ..." message)
+  // Strictly ignore any message addressed to @agent so it never collides with an existing @agent bot
+  if (
+    lowerText === '@agent' ||
+    lowerText.startsWith('@agent ') ||
+    lowerText.startsWith('@agent\n')
+  ) {
+    return null;
+  }
+
+  // 0. Swipe-replying "stop" to a task message belonging to this Weave instance
   if (isStopWord(lowerText)) {
     const quotedId = getQuotedStanzaId(msg);
     const quotedText = extractQuotedText(msg).toLowerCase();
@@ -650,58 +640,33 @@ function extractTriggeredBody(sock, msg, text) {
       quotedId && currentRunningItem?.msg?.key?.id === quotedId;
     const matchesQueued =
       quotedId && taskQueue.some((item) => item.msg?.key?.id === quotedId);
-    const matchesTriggerText = quotedText.startsWith(trigger);
+    const matchesTriggerText =
+      quotedText === trigger ||
+      quotedText.startsWith(trigger + ' ') ||
+      quotedText.startsWith(trigger + '\n');
     if (matchesRunning || matchesQueued || matchesTriggerText) {
       return '/stop';
     }
   }
 
-  // 1. Direct owner commands (works even without "@agent" prefix!)
+  // 1. Explicit unique call-sign trigger prefix (e.g. "@weave ...")
+  if (
+    lowerText === trigger ||
+    lowerText.startsWith(trigger + ' ') ||
+    lowerText.startsWith(trigger + '\n')
+  ) {
+    const rest = trimmedText.slice(trigger.length).trim();
+    if (isStopWord(rest)) return '/stop';
+    return rest;
+  }
+
+  // 2. Owner pending confirmation replies or /callsign command
   if (isOwner(msg)) {
-    if (
-      matchesCommand(lowerText, '/bind') ||
-      matchesCommand(lowerText, '/unbind') ||
-      matchesCommand(lowerText, '/projects') ||
-      matchesCommand(lowerText, '/project') ||
-      matchesCommand(lowerText, '/addproject') ||
-      matchesCommand(lowerText, '/msg') ||
-      matchesCommand(lowerText, '/dm') ||
-      matchesCommand(lowerText, '/send') ||
-      matchesCommand(lowerText, '/mailsetup') ||
-      matchesCommand(lowerText, '/livelocation') ||
-      matchesCommand(lowerText, '/setlocation') ||
-      matchesCommand(lowerText, '/stoplocation') ||
-      matchesCommand(lowerText, '/collab') ||
-      matchesCommand(lowerText, '/addcollab') ||
-      matchesCommand(lowerText, '/collaborator') ||
-      matchesCommand(lowerText, '/addcollaborator') ||
-      matchesCommand(lowerText, '/invite') ||
-      matchesCommand(lowerText, '/removecollab') ||
-      matchesCommand(lowerText, '/uncollab') ||
-      matchesCommand(lowerText, '/removeinvite') ||
-      matchesCommand(lowerText, '/collabs') ||
-      matchesCommand(lowerText, '/collaborators') ||
-      matchesCommand(lowerText, '/push') ||
-      matchesCommand(lowerText, '/screenshot') ||
-      matchesCommand(lowerText, '/ss') ||
-      matchesCommand(lowerText, '/qa') ||
-      matchesCommand(lowerText, '/stop') ||
-      matchesCommand(lowerText, '/status') ||
-      matchesCommand(lowerText, '/autopush') ||
-      matchesCommand(lowerText, '/help') ||
-      lowerText === '/shutdown' ||
-      lowerText === '/wakeup' ||
-      lowerText === '/resume' ||
-      lowerText === '/start' ||
-      lowerText === '/confirm' ||
-      lowerText === '/sendemail' ||
-      lowerText === '/cancel' ||
-      lowerText === '/discard'
-    ) {
+    if (matchesCommand(lowerText, '/callsign') || matchesCommand(lowerText, '/trigger')) {
       return trimmedText;
     }
 
-    // If there is a pending email draft in this chat, allow direct "confirm" / "send" / "cancel"
+    // If there is a pending email draft in this Weave instance for this chat, allow direct confirm/cancel
     if (
       ['confirm', 'send', 'send it', 'yes', 'yes send', 'yes, send', 'send now', 'confirm send', 'cancel', 'discard'].includes(lowerText)
     ) {
@@ -712,23 +677,14 @@ function extractTriggeredBody(sock, msg, text) {
     }
   }
 
-  // 2. Explicit text trigger prefix (e.g. "@agent ...")
-  // NOTE: slice the *trimmed* text — slicing the raw text breaks when the
-  // message has leading whitespace ("  @agent hi" -> "nt hi").
-  if (lowerText.startsWith(trigger)) {
-    const rest = trimmedText.slice(trigger.length).trim();
-    if (isStopWord(rest)) return '/stop';
-    return rest;
-  }
-
-  // 3. Swipe-replying directly to a bot message (even without typing "@agent")
-  if (isReplyingToBot(msg)) {
+  // 3. Swipe-replying directly to a message sent by THIS Weave instance (unless addressing another @bot)
+  if (!lowerText.startsWith('@') && isReplyingToBot(msg)) {
     if (isStopWord(lowerText)) return '/stop';
-    return text.trim();
+    return trimmedText;
   }
 
-  // 4. Native WhatsApp @mention in a chat (dedicated bot account or explicit @tag)
-  if (sock.user) {
+  // 4. Native WhatsApp @mention in a chat (only when TRIGGER_ON_MENTION=true)
+  if (CONFIG.triggerOnMention && sock.user) {
     const m = unwrapMessage(msg);
     let contextInfo =
       m?.extendedTextMessage?.contextInfo ||
@@ -766,7 +722,7 @@ function extractTriggeredBody(sock, msg, text) {
     }
   }
 
-  // Voice notes & audio messages MUST be explicitly tagged with @agent or an @mention.
+  // Voice notes & audio messages MUST be explicitly tagged with the call-sign (e.g. @weave).
   // Untagged voice notes are strictly ignored.
   return null;
 }
@@ -2062,10 +2018,39 @@ async function handleSlashCommand(sock, jid, msg, commandBody) {
     return fresh;
   }
 
+  if (cmd === '/callsign' || cmd === 'callsign' || cmd === '/trigger' || cmd === 'trigger') {
+    if (!owner) {
+      await sendReply(sock, jid, `🔒 Only the bot owner can change the call-sign.`, msg);
+      return true;
+    }
+    if (!arg1) {
+      await sendReply(
+        sock,
+        jid,
+        `🏷️ *Current Weave Call-Sign:* \`${CONFIG.triggerPrefix}\`\n\nTo change it, send:\n*${CONFIG.triggerPrefix} /callsign @newname*\n*(Note: \`@agent\` is reserved so it won't conflict with your other agent)*`,
+        msg
+      );
+      return true;
+    }
+    const res = updateTriggerPrefix(arg1);
+    if (!res.success) {
+      await sendReply(sock, jid, `⚠️ ${res.error}`, msg);
+      return true;
+    }
+    await reactToMessage(sock, msg, '✅');
+    await sendReply(
+      sock,
+      jid,
+      `✅ *Weave Call-Sign updated to:* \`${res.triggerPrefix}\`\n\nUse *${res.triggerPrefix} <task>* to prompt this agent.`,
+      msg
+    );
+    return true;
+  }
+
   if (cmd === '/help' || cmd === 'help') {
     const trig = CONFIG.triggerPrefix;
     const helpLines = [
-      `🤖 *WhatsApp Agent* (${boundProject ? `\`${boundProject}\`` : 'unbound'})`,
+      `🤖 *Weave Agent (${trig})* (${boundProject ? `\`${boundProject}\`` : 'unbound'})`,
       `• *${trig} <task>* — Run task`,
       `• *${trig} /screenshot [url]* — Capture page screenshot (add mobile for phone view)`,
       `• *${trig} /push [msg]* — Commit & push`,
@@ -2075,14 +2060,15 @@ async function handleSlashCommand(sock, jid, msg, commandBody) {
 
     if (owner) {
       helpLines.push(
-        `• */collab <github_user> [repo] [read|write|admin]* — Invite GitHub collaborator`,
-        `• */removecollab <github_user> [repo]* — Remove collaborator / invite`,
-        `• */collabs [repo]* — List repo collaborators & pending invites`,
-        `• */bind <project>* | */unbind* | */projects* | */addproject <alias> <path>*`,
-        `• */autopush on|off* | */shutdown* | */wakeup*`,
-        `• */msg <Contact> <text>* | */send [Contact :] <file>*`,
-        `• */livelocation <Contact> [hours]* | */setlocation <place>* | */stoplocation*`,
-        `• */mailsetup <email> <app_pass>* | */confirm* | */cancel*`
+        `• *${trig} /callsign <@handle>* — Change unique agent call-sign`,
+        `• *${trig} /collab <github_user> [repo] [read|write|admin]* — Invite GitHub collaborator`,
+        `• *${trig} /removecollab <github_user> [repo]* — Remove collaborator / invite`,
+        `• *${trig} /collabs [repo]* — List repo collaborators & pending invites`,
+        `• *${trig} /bind <project>* | *${trig} /unbind* | *${trig} /projects* | *${trig} /addproject <alias> <path>*`,
+        `• *${trig} /autopush on|off* | *${trig} /shutdown* | *${trig} /wakeup*`,
+        `• *${trig} /msg <Contact> <text>* | *${trig} /send [Contact :] <file>*`,
+        `• *${trig} /livelocation <Contact> [hours]* | *${trig} /setlocation <place>* | *${trig} /stoplocation*`,
+        `• *${trig} /mailsetup <email> <app_pass>* | *confirm* | *cancel*`
       );
     }
 

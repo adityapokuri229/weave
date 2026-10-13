@@ -4,6 +4,10 @@
   "description": "WhatsApp Group & Direct Chat Agent Bridge for Google Antigravity & Gemini",
   "type": "module",
   "main": "electron/main.js",
+  "bin": {
+    "weave": "./bin/weave.js",
+    "weave-agent": "./bin/weave.js"
+  },
   "scripts": {
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",

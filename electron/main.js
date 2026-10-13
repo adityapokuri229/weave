@@ -1,9 +1,9 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, screen } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { startWhatsAppBot, botEvents, getBotStatus, requestPairingCode } from '../src/bot.js';
-import { CONFIG, loadProjectsState, saveProjectsState, ROOT_DIR, DATA_DIR } from '../src/config.js';
+import { CONFIG, loadProjectsState, saveProjectsState, ROOT_DIR, DATA_DIR, updateTriggerPrefix } from '../src/config.js';
 import { googleAuth } from '../src/auth.js';
 import { runAntigravityTask, stopActiveTask } from '../src/agent.js';
 
@@ -18,12 +18,15 @@ let mainWindow = null;
 let currentQrData = null;
 
 function createWindow() {
+  const { width, height } = screen.getPrimaryDisplay().workAreaSize;
+
   mainWindow = new BrowserWindow({
-    width: 1060,
-    height: 780,
+    width,
+    height,
     minWidth: 900,
     minHeight: 650,
     backgroundColor: '#09090b',
+    icon: path.join(__dirname, '..', 'build', 'icon.png'),
     frame: false,
     titleBarStyle: 'hidden',
     webPreferences: {
@@ -36,6 +39,7 @@ function createWindow() {
     },
   });
 
+  mainWindow.maximize();
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
   mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
@@ -171,34 +175,15 @@ ipcMain.handle('weave:get-status', async () => {
 });
 
 ipcMain.handle('weave:google-login', async () => {
-  let authWindow = null;
   try {
     const tokens = await googleAuth.startLoginFlow((authUrl) => {
-      authWindow = new BrowserWindow({
-        width: 480,
-        height: 600,
-        parent: mainWindow || undefined,
-        modal: Boolean(mainWindow),
-        backgroundColor: '#09090b',
-        autoHideMenuBar: true,
-        title: 'Sign in with Google — Weave PKCE',
-        webPreferences: {
-          contextIsolation: true,
-          nodeIntegration: false,
-        },
-      });
-      authWindow.loadURL(authUrl);
-      authWindow.on('closed', () => {
-        authWindow = null;
-      });
+      shell.openExternal(authUrl);
     });
 
-    if (authWindow && !authWindow.isDestroyed()) {
-      setTimeout(() => {
-        try {
-          if (authWindow && !authWindow.isDestroyed()) authWindow.close();
-        } catch {}
-      }, 600);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
     }
 
     return {
@@ -206,9 +191,6 @@ ipcMain.handle('weave:google-login', async () => {
       email: tokens.email,
     };
   } catch (err) {
-    if (authWindow && !authWindow.isDestroyed()) {
-      try { authWindow.close(); } catch {}
-    }
     return {
       success: false,
       error: err.message,
@@ -226,25 +208,7 @@ ipcMain.handle('weave:request-pairing-code', async (_event, phoneNumber) => {
 });
 
 ipcMain.handle('weave:update-handle', async (_event, newHandle) => {
-  if (!newHandle) return { success: false, error: 'Empty handle' };
-  const cleanHandle = newHandle.startsWith('@') ? newHandle : `@${newHandle}`;
-  CONFIG.triggerPrefix = cleanHandle.toLowerCase();
-
-  // Persist into .env file
-  try {
-    const envPath = path.join(DATA_DIR, '.env');
-    if (fs.existsSync(envPath)) {
-      let content = fs.readFileSync(envPath, 'utf8');
-      if (content.includes('BOT_TRIGGER=')) {
-        content = content.replace(/BOT_TRIGGER=.*/g, `BOT_TRIGGER=${cleanHandle}`);
-      } else {
-        content += `\nBOT_TRIGGER=${cleanHandle}\n`;
-      }
-      fs.writeFileSync(envPath, content, 'utf8');
-    }
-  } catch {}
-
-  return { success: true, triggerPrefix: CONFIG.triggerPrefix };
+  return updateTriggerPrefix(newHandle);
 });
 
 ipcMain.handle('weave:get-projects', async () => {

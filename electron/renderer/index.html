@@ -48,17 +48,40 @@
     <header class="h-11 bg-app-canvas border-b border-app-border flex items-center justify-between px-3.5 z-50 shrink-0 draggable">
       <!-- Left: Window controls & branding -->
       <div class="flex items-center gap-3 no-drag">
-        <!-- Minimal monochrome window controls -->
-        <div class="flex items-center gap-1.5 mr-1 group opacity-60 hover:opacity-100 transition-opacity">
-          <span id="btn-close" class="window-dot bg-[#27272a] border border-[#3f3f46]/50 cursor-pointer" title="Close"></span>
-          <span id="btn-minimize" class="window-dot bg-[#27272a] border border-[#3f3f46]/50 cursor-pointer" title="Minimize"></span>
-          <span id="btn-maximize" class="window-dot bg-[#27272a] border border-[#3f3f46]/50 cursor-pointer" title="Maximize"></span>
+        <!-- Visible window controls (Left) -->
+        <div class="flex items-center gap-1.5 mr-1">
+          <button id="btn-close" class="w-3.5 h-3.5 rounded-full bg-zinc-700 hover:bg-red-500 text-zinc-300 hover:text-white border border-zinc-600 flex items-center justify-center text-[8px] leading-none transition-colors cursor-pointer" title="Close">✕</button>
+          <button id="btn-minimize" class="w-3.5 h-3.5 rounded-full bg-zinc-700 hover:bg-amber-400 text-zinc-300 hover:text-black border border-zinc-600 flex items-center justify-center text-[8px] leading-none transition-colors cursor-pointer" title="Minimize">—</button>
+          <button id="btn-maximize" class="w-3.5 h-3.5 rounded-full bg-zinc-700 hover:bg-emerald-400 text-zinc-300 hover:text-black border border-zinc-600 flex items-center justify-center text-[8px] leading-none transition-colors cursor-pointer" title="Maximize / Full Screen">□</button>
         </div>
         <div class="h-3.5 w-px bg-app-border"></div>
         <!-- App Brand & Title -->
         <div class="flex items-center gap-2">
-          <div class="w-5 h-5 rounded bg-white text-black flex items-center justify-center font-bold text-xs">
-            <i class="fa-solid fa-code-merge text-[10px]"></i>
+          <div class="w-6 h-6 rounded bg-app-surface border border-app-border flex items-center justify-center p-0.5">
+            <svg viewBox="48 92 416 328" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-full h-full">
+              <path d="M 100.93 346.47 L 119.42 300.89 L 111.25 278.47 L 86.10 340.46 Z" fill="#a1a1aa"/>
+              <path d="M 145.21 237.31 L 171.90 171.54 L 157.07 165.53 L 137.04 214.89 Z" fill="#a1a1aa"/>
+              <path d="M 171.41 171.53 L 241.58 362.00 L 256.59 356.47 L 186.42 166.00 Z" fill="#a1a1aa"/>
+              <path d="M 270.42 362.00 L 290.97 306.23 L 282.73 282.30 L 255.41 356.47 Z" fill="#a1a1aa"/>
+              <path d="M 316.12 237.97 L 340.59 171.53 L 325.58 166.00 L 307.88 214.04 Z" fill="#a1a1aa"/>
+              <path d="M 340.10 171.54 L 411.07 346.47 L 425.90 340.46 L 354.93 165.53 Z" fill="#a1a1aa"/>
+              <path d="M 84.91 171.13 L 152.42 356.40 L 173.09 348.87 L 105.58 163.60 Z" fill="#ffffff"/>
+              <path d="M 191.19 356.05 L 208.29 306.37 L 196.27 273.72 L 170.39 348.89 Z" fill="#ffffff"/>
+              <path d="M 228.89 246.55 L 257.61 163.11 L 236.81 155.95 L 216.86 213.91 Z" fill="#ffffff"/>
+              <path d="M 254.39 163.11 L 320.81 356.05 L 341.61 348.89 L 275.19 155.95 Z" fill="#ffffff"/>
+              <path d="M 359.58 356.40 L 379.72 301.12 L 367.39 270.72 L 338.91 348.87 Z" fill="#ffffff"/>
+              <path d="M 400.15 245.07 L 427.09 171.13 L 406.42 163.60 L 387.81 214.66 Z" fill="#ffffff"/>
+              <circle cx="86.0" cy="362.0" r="20.0" fill="#09090b" stroke="#a1a1aa" stroke-width="8.0"/><circle cx="86.0" cy="362.0" r="6.0" fill="#a1a1aa"/>
+              <circle cx="172.0" cy="150.0" r="20.0" fill="#09090b" stroke="#a1a1aa" stroke-width="8.0"/><circle cx="172.0" cy="150.0" r="6.0" fill="#a1a1aa"/>
+              <circle cx="256.0" cy="378.0" r="20.0" fill="#09090b" stroke="#a1a1aa" stroke-width="8.0"/><circle cx="256.0" cy="378.0" r="6.0" fill="#a1a1aa"/>
+              <circle cx="340.0" cy="150.0" r="20.0" fill="#09090b" stroke="#a1a1aa" stroke-width="8.0"/><circle cx="340.0" cy="150.0" r="6.0" fill="#a1a1aa"/>
+              <circle cx="426.0" cy="362.0" r="20.0" fill="#09090b" stroke="#a1a1aa" stroke-width="8.0"/><circle cx="426.0" cy="362.0" r="6.0" fill="#a1a1aa"/>
+              <circle cx="86.0" cy="142.0" r="27.0" fill="#09090b" stroke="#ffffff" stroke-width="10.0"/><circle cx="86.0" cy="142.0" r="8.0" fill="#ffffff"/>
+              <circle cx="172.0" cy="378.0" r="27.0" fill="#09090b" stroke="#ffffff" stroke-width="10.0"/><circle cx="172.0" cy="378.0" r="8.0" fill="#ffffff"/>
+              <circle cx="256.0" cy="134.0" r="29.0" fill="#09090b" stroke="#ffffff" stroke-width="10.0"/><circle cx="256.0" cy="134.0" r="9.0" fill="#ffffff"/>
+              <circle cx="340.0" cy="378.0" r="27.0" fill="#09090b" stroke="#ffffff" stroke-width="10.0"/><circle cx="340.0" cy="378.0" r="8.0" fill="#ffffff"/>
+              <circle cx="426.0" cy="142.0" r="27.0" fill="#09090b" stroke="#ffffff" stroke-width="10.0"/><circle cx="426.0" cy="142.0" r="8.0" fill="#ffffff"/>
+            </svg>
           </div>
           <span class="font-medium text-xs tracking-tight text-white flex items-center gap-1.5 font-mono">
             weave
@@ -82,7 +105,7 @@
         </button>
       </div>
 
-      <!-- Right: Google Account / Loopback Info -->
+      <!-- Right: Google Account & Standard Window Control Buttons -->
       <div class="flex items-center gap-2.5 no-drag">
         <div id="runtime-pill" class="hidden md:flex items-center gap-1.5 text-[11px] text-app-tertiary font-mono">
           <span class="text-white">Node / JS Bridge</span>
@@ -97,6 +120,19 @@
             <span id="google-email" class="text-xs text-app-secondary font-mono max-w-[130px] truncate">Not Connected</span>
           </div>
         </div>
+        <div class="h-3.5 w-px bg-app-border"></div>
+        <!-- Standard Top-Right Desktop Window Controls -->
+        <div class="flex items-center gap-1">
+          <button id="btn-minimize-right" class="w-7 h-7 rounded hover:bg-app-subtle text-app-secondary hover:text-white flex items-center justify-center transition-colors cursor-pointer" title="Minimize">
+            <i class="fa-solid fa-minus text-[11px]"></i>
+          </button>
+          <button id="btn-maximize-right" class="w-7 h-7 rounded hover:bg-app-subtle text-app-secondary hover:text-white flex items-center justify-center transition-colors cursor-pointer" title="Maximize / Restore">
+            <i class="fa-regular fa-square text-[11px]"></i>
+          </button>
+          <button id="btn-close-right" class="w-7 h-7 rounded hover:bg-red-600 text-app-secondary hover:text-white flex items-center justify-center transition-colors cursor-pointer" title="Close App">
+            <i class="fa-solid fa-xmark text-[13px]"></i>
+          </button>
+        </div>
       </div>
     </header>
 
@@ -109,8 +145,31 @@
 
           <!-- Top Brand Icon & Ambient Header -->
           <div class="flex flex-col items-center text-center">
-            <div class="w-12 h-12 rounded-xl bg-app-surface border border-app-border flex items-center justify-center shadow-md mb-3">
-              <span class="material-symbols-outlined text-white text-[26px]">all_inclusive</span>
+            <div class="w-14 h-14 rounded-2xl bg-app-surface border border-app-border flex items-center justify-center shadow-md mb-3 p-2">
+              <svg viewBox="48 92 416 328" fill="none" xmlns="http://www.w3.org/2000/svg" class="w-full h-full">
+                <path d="M 100.93 346.47 L 119.42 300.89 L 111.25 278.47 L 86.10 340.46 Z" fill="#a1a1aa"/>
+                <path d="M 145.21 237.31 L 171.90 171.54 L 157.07 165.53 L 137.04 214.89 Z" fill="#a1a1aa"/>
+                <path d="M 171.41 171.53 L 241.58 362.00 L 256.59 356.47 L 186.42 166.00 Z" fill="#a1a1aa"/>
+                <path d="M 270.42 362.00 L 290.97 306.23 L 282.73 282.30 L 255.41 356.47 Z" fill="#a1a1aa"/>
+                <path d="M 316.12 237.97 L 340.59 171.53 L 325.58 166.00 L 307.88 214.04 Z" fill="#a1a1aa"/>
+                <path d="M 340.10 171.54 L 411.07 346.47 L 425.90 340.46 L 354.93 165.53 Z" fill="#a1a1aa"/>
+                <path d="M 84.91 171.13 L 152.42 356.40 L 173.09 348.87 L 105.58 163.60 Z" fill="#ffffff"/>
+                <path d="M 191.19 356.05 L 208.29 306.37 L 196.27 273.72 L 170.39 348.89 Z" fill="#ffffff"/>
+                <path d="M 228.89 246.55 L 257.61 163.11 L 236.81 155.95 L 216.86 213.91 Z" fill="#ffffff"/>
+                <path d="M 254.39 163.11 L 320.81 356.05 L 341.61 348.89 L 275.19 155.95 Z" fill="#ffffff"/>
+                <path d="M 359.58 356.40 L 379.72 301.12 L 367.39 270.72 L 338.91 348.87 Z" fill="#ffffff"/>
+                <path d="M 400.15 245.07 L 427.09 171.13 L 406.42 163.60 L 387.81 214.66 Z" fill="#ffffff"/>
+                <circle cx="86.0" cy="362.0" r="20.0" fill="#09090b" stroke="#a1a1aa" stroke-width="8.0"/><circle cx="86.0" cy="362.0" r="6.0" fill="#a1a1aa"/>
+                <circle cx="172.0" cy="150.0" r="20.0" fill="#09090b" stroke="#a1a1aa" stroke-width="8.0"/><circle cx="172.0" cy="150.0" r="6.0" fill="#a1a1aa"/>
+                <circle cx="256.0" cy="378.0" r="20.0" fill="#09090b" stroke="#a1a1aa" stroke-width="8.0"/><circle cx="256.0" cy="378.0" r="6.0" fill="#a1a1aa"/>
+                <circle cx="340.0" cy="150.0" r="20.0" fill="#09090b" stroke="#a1a1aa" stroke-width="8.0"/><circle cx="340.0" cy="150.0" r="6.0" fill="#a1a1aa"/>
+                <circle cx="426.0" cy="362.0" r="20.0" fill="#09090b" stroke="#a1a1aa" stroke-width="8.0"/><circle cx="426.0" cy="362.0" r="6.0" fill="#a1a1aa"/>
+                <circle cx="86.0" cy="142.0" r="27.0" fill="#09090b" stroke="#ffffff" stroke-width="10.0"/><circle cx="86.0" cy="142.0" r="8.0" fill="#ffffff"/>
+                <circle cx="172.0" cy="378.0" r="27.0" fill="#09090b" stroke="#ffffff" stroke-width="10.0"/><circle cx="172.0" cy="378.0" r="8.0" fill="#ffffff"/>
+                <circle cx="256.0" cy="134.0" r="29.0" fill="#09090b" stroke="#ffffff" stroke-width="10.0"/><circle cx="256.0" cy="134.0" r="9.0" fill="#ffffff"/>
+                <circle cx="340.0" cy="378.0" r="27.0" fill="#09090b" stroke="#ffffff" stroke-width="10.0"/><circle cx="340.0" cy="378.0" r="8.0" fill="#ffffff"/>
+                <circle cx="426.0" cy="142.0" r="27.0" fill="#09090b" stroke="#ffffff" stroke-width="10.0"/><circle cx="426.0" cy="142.0" r="8.0" fill="#ffffff"/>
+              </svg>
             </div>
             <h1 class="text-xl sm:text-2xl font-semibold text-white tracking-tight mb-1">
               Meet your AI assistant on WhatsApp
@@ -239,18 +298,18 @@
           </div>
 
           <!-- ================= STEP 3: BOT TRIGGER HANDLE ================= -->
-          <div id="step-3-card" class="flex flex-col gap-1.5 p-3 rounded-lg bg-app-surface border border-app-border opacity-45 transition-all">
+          <div id="step-3-card" class="flex flex-col gap-1.5 p-3 rounded-lg bg-app-surface border border-app-border transition-all">
             <div class="flex items-center justify-between">
               <label class="text-xs font-medium text-white flex items-center gap-1.5 font-mono" for="bot-tag-input">
                 <span class="material-symbols-outlined text-[15px] text-app-tertiary">alternate_email</span>
-                <span>Step 3: Assistant Trigger Handle</span>
+                <span>Step 3: Unique Agent Call-Sign</span>
               </label>
-              <span id="step-3-badge" class="text-[11px] text-app-dim font-mono">🔒 Complete Steps 1 &amp; 2 first</span>
+              <span id="step-3-badge" class="text-[11px] text-app-secondary font-mono">Unique handle (@agent reserved)</span>
             </div>
             <div class="flex items-center rounded-lg bg-app-window border border-app-border px-3 py-1.5">
               <span class="text-app-dim font-mono text-sm select-none">@</span>
-              <input id="bot-tag-input" disabled class="bg-transparent border-none text-app-dim font-mono text-xs focus:outline-none w-full px-1 tracking-tight cursor-not-allowed" placeholder="agent" value="agent"/>
-              <button id="btn-save-handle" disabled class="text-xs font-mono px-2.5 py-1 bg-app-subtle text-app-dim border border-app-border rounded transition-all cursor-not-allowed">Locked</button>
+              <input id="bot-tag-input" class="bg-transparent border-none text-white font-mono text-xs focus:outline-none w-full px-1 tracking-tight" placeholder="weave" value="weave"/>
+              <button id="btn-save-handle" class="text-xs font-mono px-2.5 py-1 bg-white hover:bg-neutral-200 text-black font-semibold rounded transition-all cursor-pointer">Save</button>
             </div>
           </div>
 
@@ -294,7 +353,7 @@
                     </div>
                     <div>
                       <div class="font-mono font-medium text-sm text-white tracking-tight flex items-center gap-1.5">
-                        <span id="callsign-display">@agent</span>
+                        <span id="callsign-display">@weave</span>
                         <i class="fa-solid fa-circle-check text-white text-[11px]" title="Verified Hook"></i>
                       </div>
                       <p class="text-[11px] text-app-tertiary mt-0.5 font-sans">Trigger via group or direct thread</p>
