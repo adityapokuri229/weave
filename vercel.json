@@ -1,13 +1,4 @@
 {
-  "version": 2,
-  "public": false,
-  "buildCommand": null,
   "outputDirectory": "site",
-  "cleanUrls": true,
-  "rewrites": [
-    {
-      "source": "/(.*)",
-      "destination": "/site/$1"
-    }
-  ]
+  "cleanUrls": true
 }
