@@ -20,18 +20,24 @@ export function getWritableDataDir() {
       return process.env.WEAVE_DATA_DIR;
     } catch {}
   }
-  try {
-    const testFile = path.join(ROOT_DIR, `.write_test_${process.pid}`);
-    fs.writeFileSync(testFile, 'ok');
-    fs.unlinkSync(testFile);
-    return ROOT_DIR;
-  } catch {
-    const userDir = path.join(os.homedir(), '.weave');
+  const isPackagedOrTemp =
+    ROOT_DIR.includes('app.asar') ||
+    ROOT_DIR.includes(os.tmpdir()) ||
+    ROOT_DIR.includes('\\AppData\\Local\\Temp\\') ||
+    ROOT_DIR.includes('/tmp/');
+  if (!isPackagedOrTemp) {
     try {
-      fs.mkdirSync(userDir, { recursive: true });
+      const testFile = path.join(ROOT_DIR, `.write_test_${process.pid}`);
+      fs.writeFileSync(testFile, 'ok');
+      fs.unlinkSync(testFile);
+      return ROOT_DIR;
     } catch {}
-    return userDir;
   }
+  const userDir = path.join(os.homedir(), '.weave');
+  try {
+    fs.mkdirSync(userDir, { recursive: true });
+  } catch {}
+  return userDir;
 }
 
 export const DATA_DIR = getWritableDataDir();
@@ -70,11 +76,82 @@ const IGNORED_DIRS = new Set([
   'Templates',
   'Videos',
   'node_modules',
+  'AppData',
 ]);
 
 function parsePositiveInt(raw, fallback) {
   const n = parseInt(raw, 10);
   return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
+/**
+ * Resolves the default project workspace directory and ensures it exists on disk.
+ * Never returns a path inside an Electron `app.asar` archive.
+ */
+function resolveDefaultProjectDir() {
+  const raw = (process.env.DEFAULT_PROJECT_DIR || './demo-site').trim();
+  const baseDir = ROOT_DIR.includes('app.asar') || DATA_DIR !== ROOT_DIR ? DATA_DIR : ROOT_DIR;
+  let resolved = path.resolve(baseDir, raw);
+  if (resolved.includes('app.asar')) {
+    resolved = path.join(DATA_DIR, 'demo-site');
+  }
+  try {
+    fs.mkdirSync(resolved, { recursive: true });
+    const indexPath = path.join(resolved, 'index.html');
+    if (!fs.existsSync(indexPath)) {
+      fs.writeFileSync(
+        indexPath,
+        '<!DOCTYPE html>\n<html><head><meta charset="utf-8"/><title>Weave Workspace</title></head><body><h1>Weave Default Workspace</h1></body></html>\n',
+        'utf8'
+      );
+    }
+  } catch {}
+  return resolved;
+}
+
+/**
+ * Resolves the Antigravity CLI binary across Linux, macOS, and Windows.
+ */
+export function resolveAgyBinary() {
+  const custom = (process.env.AGY_BIN || '').trim();
+  if (custom && custom !== 'agy' && fs.existsSync(custom)) {
+    return custom;
+  }
+  const home = os.homedir();
+  const localAppData = process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local');
+  const appData = process.env.APPDATA || path.join(home, 'AppData', 'Roaming');
+
+  const candidates =
+    process.platform === 'win32'
+      ? [
+          path.join(home, '.local', 'bin', 'agy.exe'),
+          path.join(home, '.local', 'bin', 'agy.cmd'),
+          path.join(home, '.gemini', 'antigravity', 'bin', 'agy.exe'),
+          path.join(home, '.gemini', 'antigravity', 'bin', 'agy.cmd'),
+          path.join(home, '.gemini', 'antigravity-cli', 'bin', 'agy.exe'),
+          path.join(localAppData, 'Programs', 'Antigravity', 'bin', 'agy.exe'),
+          path.join(localAppData, 'Programs', 'Antigravity', 'bin', 'agy.cmd'),
+          path.join(localAppData, 'Antigravity', 'bin', 'agy.exe'),
+          path.join(localAppData, 'Antigravity', 'bin', 'agy.cmd'),
+          path.join(appData, 'npm', 'agy.cmd'),
+        ]
+      : [
+          path.join(home, '.local', 'bin', 'agy'),
+          path.join(home, '.gemini', 'antigravity', 'bin', 'agy'),
+          path.join(home, '.gemini', 'antigravity-cli', 'bin', 'agy'),
+          '/usr/local/bin/agy',
+          '/opt/homebrew/bin/agy',
+          '/Applications/Antigravity.app/Contents/Resources/app/bin/agy',
+        ];
+
+  for (const candidate of candidates) {
+    try {
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
+    } catch {}
+  }
+  return custom || 'agy';
 }
 
 export const DEFAULT_CALLSIGN = '@weave';
@@ -140,7 +217,7 @@ export const CONFIG = {
   triggerPrefix: resolvedInitialTrigger,
 
   // Antigravity CLI binary path
-  agyBin: process.env.AGY_BIN || 'agy',
+  agyBin: resolveAgyBinary(),
 
   // Optional model override (e.g., gemini-3.8-flash-high, gemini-3.1-pro-high)
   agyModel: process.env.AGY_MODEL || '',
@@ -149,10 +226,7 @@ export const CONFIG = {
   taskTimeoutMs: parsePositiveInt(process.env.TASK_TIMEOUT_MS, 600000),
 
   // Default target directory for coding tasks (used for local CLI tests / owner DM)
-  defaultProjectDir: path.resolve(
-    ROOT_DIR,
-    process.env.DEFAULT_PROJECT_DIR || './demo-site'
-  ),
+  defaultProjectDir: resolveDefaultProjectDir(),
 
   // Owner/Admin phone numbers who are allowed to /bind or /unbind groups and view all projects
   // Note: Messages sent from your own linked WhatsApp account (fromMe) are automatically Admin.
@@ -264,6 +338,16 @@ export function loadProjectsState() {
   try {
     const saved = JSON.parse(fs.readFileSync(PROJECTS_FILE, 'utf8'));
     saved.projects = { ...discovered, ...(saved.projects || {}) };
+    let healed = false;
+    for (const [alias, dir] of Object.entries(saved.projects)) {
+      if (
+        typeof dir === 'string' &&
+        (dir.includes('app.asar') || (alias === 'demo' && !fs.existsSync(dir)))
+      ) {
+        saved.projects[alias] = CONFIG.defaultProjectDir;
+        healed = true;
+      }
+    }
     saved.groupBindings = saved.groupBindings || {};
     saved.conversations = saved.conversations || {};
     saved.pendingEmailDrafts = saved.pendingEmailDrafts || {};
@@ -272,13 +356,15 @@ export function loadProjectsState() {
     saved.deploymentUrls = saved.deploymentUrls || {};
     saved.pendingProjectConfirmations = saved.pendingProjectConfirmations || {};
     // Validate activeProject still exists; fall back instead of crashing callers.
-    if (!saved.projects[saved.activeProject]) {
-      saved.activeProject = saved.projects.demo
-        ? 'demo'
-        : Object.keys(saved.projects)[0] || 'demo';
-      if (!saved.projects[saved.activeProject]) {
-        saved.projects[saved.activeProject] = CONFIG.defaultProjectDir;
-      }
+    if (!saved.projects[saved.activeProject] || !fs.existsSync(saved.projects[saved.activeProject])) {
+      saved.activeProject = 'demo';
+      saved.projects.demo = CONFIG.defaultProjectDir;
+      healed = true;
+    }
+    if (healed) {
+      try {
+        atomicWriteJson(PROJECTS_FILE, saved);
+      } catch {}
     }
     return saved;
   } catch {

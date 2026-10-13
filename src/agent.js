@@ -3,10 +3,13 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { CONFIG, loadProjectsState, saveProjectsState } from './config.js';
+import { CONFIG, DATA_DIR, loadProjectsState, saveProjectsState } from './config.js';
+import { geminiClient } from './gemini-client.js';
 
 const __agentDir = path.dirname(fileURLToPath(import.meta.url));
-const ENV_FILE_PATH = path.resolve(__agentDir, '..', '.env');
+const ENV_FILE_PATH = fs.existsSync(path.join(DATA_DIR, '.env'))
+  ? path.join(DATA_DIR, '.env')
+  : path.resolve(__agentDir, '..', '.env');
 
 function readEnvFileDirect(key) {
   try {
@@ -54,9 +57,17 @@ export function stopActiveTask() {
       killFallbackTimer = null;
     }
     try {
-      // Negative PID kills the whole process group (child was spawned detached).
-      if (child.pid) process.kill(-child.pid, 'SIGTERM');
-      else child.kill('SIGTERM');
+      if (process.platform === 'win32') {
+        if (child.pid) {
+          spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true });
+        } else {
+          child.kill();
+        }
+      } else if (child.pid) {
+        process.kill(-child.pid, 'SIGTERM');
+      } else {
+        child.kill('SIGTERM');
+      }
     } catch {
       try {
         child.kill('SIGTERM');
@@ -68,7 +79,7 @@ export function stopActiveTask() {
     setTimeout(() => {
       try {
         if (child.exitCode === null && child.signalCode === null) {
-          if (child.pid) process.kill(-child.pid, 'SIGKILL');
+          if (process.platform !== 'win32' && child.pid) process.kill(-child.pid, 'SIGKILL');
           else child.kill('SIGKILL');
         }
       } catch {
@@ -577,8 +588,16 @@ export async function runAntigravityTask({
   mentionedJids = [],
   recentChatContext = '',
 }) {
-  if (!fs.existsSync(projectDir)) {
-    throw new Error(`Project directory does not exist: ${projectDir}`);
+  if (!projectDir || projectDir.includes('app.asar') || !fs.existsSync(projectDir)) {
+    if (!projectDir || projectDir.includes('app.asar') || projectAlias === 'demo') {
+      projectDir = CONFIG.defaultProjectDir;
+      try {
+        fs.mkdirSync(projectDir, { recursive: true });
+      } catch {}
+    }
+    if (!fs.existsSync(projectDir)) {
+      throw new Error(`Project directory does not exist: ${projectDir}`);
+    }
   }
 
   const now = new Date();
@@ -719,15 +738,38 @@ export async function runAntigravityTask({
       ? Math.min(CONFIG.taskTimeoutMs, 180000)
       : 180000;
 
-  return runWithWarmWorker({
-    projectAlias,
-    projectDir,
-    taskPrompt,
-    systemWrapperPrompt,
-    ownerAllowedToMessage,
-    timeoutMs,
-    allowRetry: true,
-  });
+  try {
+    return await runWithWarmWorker({
+      projectAlias,
+      projectDir,
+      taskPrompt,
+      systemWrapperPrompt,
+      ownerAllowedToMessage,
+      timeoutMs,
+      allowRetry: true,
+    });
+  } catch (err) {
+    if (err.cancelled) throw err;
+    const msg = String(err.message || '');
+    const isCliUnavailable =
+      msg.includes('ENOENT') ||
+      msg.includes('not recognized') ||
+      msg.includes('exited before init') ||
+      msg.includes('not logged into Antigravity');
+
+    if (isCliUnavailable) {
+      const startTime = Date.now();
+      const { text } = await geminiClient.generateContent(systemWrapperPrompt);
+      const durationSeconds = (Date.now() - startTime) / 1000;
+      return {
+        response: formatForWhatsApp(text || 'Task completed.'),
+        durationSeconds,
+        numTurns: 1,
+        gitSummary: getGitChangesSummary(projectDir),
+      };
+    }
+    throw err;
+  }
 }
 
 const MAX_WARM_WORKERS = 4;
@@ -746,8 +788,17 @@ function retireWarmWorker(worker) {
     // ignore
   }
   try {
-    if (worker.child.pid) process.kill(-worker.child.pid, 'SIGTERM');
-    else worker.child.kill('SIGTERM');
+    if (process.platform === 'win32') {
+      if (worker.child.pid) {
+        spawn('taskkill', ['/pid', String(worker.child.pid), '/T', '/F'], { windowsHide: true });
+      } else {
+        worker.child.kill();
+      }
+    } else if (worker.child.pid) {
+      process.kill(-worker.child.pid, 'SIGTERM');
+    } else {
+      worker.child.kill('SIGTERM');
+    }
   } catch {
     // ignore
   }
@@ -772,6 +823,10 @@ function evictOldestIdleWorkerIfNeeded(excludeProjectDir) {
 function createWarmWorker(projectDir) {
   evictOldestIdleWorkerIfNeeded(projectDir);
 
+  const isWin = process.platform === 'win32';
+  const useWinShell =
+    isWin && (!CONFIG.agyBin.toLowerCase().endsWith('.exe') || !path.isAbsolute(CONFIG.agyBin));
+
   const args = [
     '--input-format',
     'stream-json',
@@ -787,13 +842,15 @@ function createWarmWorker(projectDir) {
     args.push('--model', CONFIG.agyModel);
   }
 
-  args.push('-p=');
+  args.push(useWinShell ? '"-p="' : '-p=');
 
   const child = spawn(CONFIG.agyBin, args, {
     cwd: projectDir,
     env: { ...process.env, PAGER: 'cat' },
     stdio: ['pipe', 'pipe', 'pipe'],
-    detached: true,
+    detached: !isWin,
+    windowsHide: true,
+    shell: useWinShell,
   });
 
   const worker = {
