@@ -85,13 +85,18 @@
           </div>
           <span class="font-medium text-xs tracking-tight text-white flex items-center gap-1.5 font-mono">
             weave
-            <span class="text-[10px] text-app-dim font-normal">v1.4.2</span>
+            <span id="ota-version-label" class="text-[10px] text-app-dim font-normal">v1.0.0</span>
           </span>
           <!-- Connected status tag -->
           <div id="wa-header-pill" class="flex items-center gap-1.5 px-2 py-0.5 rounded bg-app-surface border border-app-border text-[10px] font-mono tracking-wider text-app-secondary ml-1 uppercase">
             <span id="wa-header-dot" class="w-1.5 h-1.5 rounded-full bg-app-dim inline-block"></span>
             <span id="wa-header-text">Initializing JS Bridge</span>
           </div>
+          <!-- Live OTA Update Button -->
+          <button id="btn-ota-update" class="flex items-center gap-1 px-2 py-0.5 rounded bg-app-surface hover:bg-zinc-800 border border-app-border hover:border-white/30 text-[10px] font-mono text-app-secondary hover:text-white transition cursor-pointer" title="Check &amp; pull live OTA updates without reinstalling">
+            <span id="ota-sync-icon" class="material-symbols-outlined text-[12px] text-emerald-400">bolt</span>
+            <span id="ota-sync-text">Live Sync</span>
+          </button>
         </div>
       </div>
 
@@ -108,7 +113,7 @@
       <!-- Right: Google Account & Standard Window Control Buttons -->
       <div class="flex items-center gap-2.5 no-drag">
         <div id="runtime-pill" class="hidden md:flex items-center gap-1.5 text-[11px] text-app-tertiary font-mono">
-          <span class="text-white">Node / JS Bridge</span>
+          <span class="text-white">OTA Auto-Update</span>
           <span class="text-app-dim">/</span>
           <span id="runtime-status-text" class="text-emerald-400">active</span>
         </div>

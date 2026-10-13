@@ -37,4 +37,11 @@ contextBridge.exposeInMainWorld('weaveAPI', {
   // Task execution
   runPrompt: (prompt, projectAlias) => ipcRenderer.invoke('weave:run-prompt', { prompt, projectAlias }),
   stopTask: () => ipcRenderer.invoke('weave:stop-task'),
+
+  // Live OTA Updates
+  getOtaStatus: () => ipcRenderer.invoke('weave:ota-status'),
+  checkOtaUpdate: (force = false) => ipcRenderer.invoke('weave:ota-update', force),
+  onOtaUpdated: (callback) => {
+    ipcRenderer.on('weave:ota-updated', (_event, data) => callback(data));
+  },
 });

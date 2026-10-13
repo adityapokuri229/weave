@@ -1,11 +1,13 @@
 import { app, BrowserWindow, ipcMain, shell, screen } from 'electron';
 import path from 'path';
 import fs from 'fs';
-import { fileURLToPath } from 'url';
-import { startWhatsAppBot, botEvents, getBotStatus, requestPairingCode } from '../src/bot.js';
-import { CONFIG, loadProjectsState, saveProjectsState, ROOT_DIR, DATA_DIR, updateTriggerPrefix } from '../src/config.js';
-import { googleAuth } from '../src/auth.js';
-import { runAntigravityTask, stopActiveTask } from '../src/agent.js';
+import { fileURLToPath, pathToFileURL } from 'url';
+import {
+  syncOtaOnBoot,
+  checkAndApplyOtaUpdate,
+  getOtaStatus,
+  onOtaUpdate,
+} from '../src/ota.js';
 
 if (process.platform === 'linux') {
   app.disableHardwareAcceleration();
@@ -16,9 +18,30 @@ const __dirname = path.dirname(__filename);
 
 let mainWindow = null;
 let currentQrData = null;
+let activeRuntimeDir = path.resolve(__dirname, '..');
 
-function createWindow() {
+// Dynamically loaded runtime modules (can be refreshed via OTA)
+let botMod = null;
+let configMod = null;
+let authMod = null;
+let agentMod = null;
+
+async function loadRuntimeModules(runtimeDir, cacheBust = '') {
+  const suffix = cacheBust ? `?v=${encodeURIComponent(cacheBust)}` : '';
+  const importFromRuntime = (relPath) =>
+    import(`${pathToFileURL(path.join(runtimeDir, relPath)).href}${suffix}`);
+
+  configMod = await importFromRuntime('src/config.js');
+  authMod = await importFromRuntime('src/auth.js');
+  agentMod = await importFromRuntime('src/agent.js');
+  if (!botMod) {
+    botMod = await importFromRuntime('src/bot.js');
+  }
+}
+
+function createWindow(runtimeDir) {
   const { width, height } = screen.getPrimaryDisplay().workAreaSize;
+  const electronDir = path.join(runtimeDir, 'electron');
 
   mainWindow = new BrowserWindow({
     width,
@@ -30,7 +53,9 @@ function createWindow() {
     frame: false,
     titleBarStyle: 'hidden',
     webPreferences: {
-      preload: fs.existsSync(path.join(__dirname, 'preload.cjs'))
+      preload: fs.existsSync(path.join(electronDir, 'preload.cjs'))
+        ? path.join(electronDir, 'preload.cjs')
+        : fs.existsSync(path.join(__dirname, 'preload.cjs'))
         ? path.join(__dirname, 'preload.cjs')
         : path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -40,21 +65,28 @@ function createWindow() {
   });
 
   mainWindow.maximize();
-  mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  const rendererHtml = path.join(electronDir, 'renderer', 'index.html');
+  mainWindow.loadFile(
+    fs.existsSync(rendererHtml)
+      ? rendererHtml
+      : path.join(__dirname, 'renderer', 'index.html')
+  );
 
   mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
     console.log(`[Renderer] [${level}] ${message} (${sourceId}:${line})`);
   });
 
   mainWindow.webContents.on('did-finish-load', () => {
-    // If QR data is already generated, immediately push it to the renderer
     if (currentQrData) {
       mainWindow.webContents.send('weave:qr-update', currentQrData);
-    } else {
-      // Check if whatsapp-qr.png exists on disk in DATA_DIR or ROOT_DIR as fallback
-      const qrPath = path.join(DATA_DIR, 'whatsapp-qr.png');
-      const fallbackPath = path.join(ROOT_DIR, 'whatsapp-qr.png');
-      const targetPath = fs.existsSync(qrPath) ? qrPath : fs.existsSync(fallbackPath) ? fallbackPath : null;
+    } else if (configMod) {
+      const qrPath = path.join(configMod.DATA_DIR, 'whatsapp-qr.png');
+      const fallbackPath = path.join(configMod.ROOT_DIR, 'whatsapp-qr.png');
+      const targetPath = fs.existsSync(qrPath)
+        ? qrPath
+        : fs.existsSync(fallbackPath)
+        ? fallbackPath
+        : null;
       if (targetPath) {
         try {
           const imgBuffer = fs.readFileSync(targetPath);
@@ -66,9 +98,8 @@ function createWindow() {
     }
   });
 
-  // Live reload renderer files in development
   try {
-    const rendererDir = path.join(__dirname, 'renderer');
+    const rendererDir = path.join(electronDir, 'renderer');
     fs.watch(rendererDir, { recursive: true }, (_eventType, filename) => {
       if (mainWindow && !mainWindow.isDestroyed() && filename) {
         mainWindow.webContents.reloadIgnoringCache();
@@ -134,15 +165,38 @@ ipcMain.on('weave:window-close', () => {
   if (mainWindow) mainWindow.close();
 });
 
+ipcMain.handle('weave:ota-status', async () => {
+  return getOtaStatus();
+});
+
+ipcMain.handle('weave:ota-update', async (_event, force = false) => {
+  try {
+    const res = await checkAndApplyOtaUpdate({ force: Boolean(force) });
+    if (res.updated) {
+      await loadRuntimeModules(res.runtimeDir || activeRuntimeDir, `${res.commitHash}-${Date.now()}`);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.reloadIgnoringCache();
+      }
+    }
+    return { success: true, ...res };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
 ipcMain.handle('weave:get-status', async () => {
-  const botStatus = getBotStatus();
-  const state = loadProjectsState();
+  const botStatus = botMod.getBotStatus();
+  const state = configMod.loadProjectsState();
 
   let qrToSend = currentQrData;
   if (!qrToSend && !botStatus.connected) {
-    const qrPath = path.join(DATA_DIR, 'whatsapp-qr.png');
-    const fallbackPath = path.join(ROOT_DIR, 'whatsapp-qr.png');
-    const targetPath = fs.existsSync(qrPath) ? qrPath : fs.existsSync(fallbackPath) ? fallbackPath : null;
+    const qrPath = path.join(configMod.DATA_DIR, 'whatsapp-qr.png');
+    const fallbackPath = path.join(configMod.ROOT_DIR, 'whatsapp-qr.png');
+    const targetPath = fs.existsSync(qrPath)
+      ? qrPath
+      : fs.existsSync(fallbackPath)
+      ? fallbackPath
+      : null;
     if (targetPath) {
       try {
         const imgBuffer = fs.readFileSync(targetPath);
@@ -161,13 +215,14 @@ ipcMain.handle('weave:get-status', async () => {
       user: botStatus.user,
       registered: botStatus.registered,
       activeTask: botStatus.activeTask,
-      triggerPrefix: CONFIG.triggerPrefix,
+      triggerPrefix: configMod.CONFIG.triggerPrefix,
       qrData: qrToSend,
     },
     google: {
-      authenticated: googleAuth.isAuthenticated(),
-      email: googleAuth.getUserEmail(),
+      authenticated: authMod.googleAuth.isAuthenticated(),
+      email: authMod.googleAuth.getUserEmail(),
     },
+    ota: getOtaStatus(),
     projects: state.projects,
     activeProject: state.activeProject,
     groupBindings: state.groupBindings,
@@ -176,7 +231,7 @@ ipcMain.handle('weave:get-status', async () => {
 
 ipcMain.handle('weave:google-login', async () => {
   try {
-    const tokens = await googleAuth.startLoginFlow((authUrl) => {
+    const tokens = await authMod.googleAuth.startLoginFlow((authUrl) => {
       shell.openExternal(authUrl);
     });
 
@@ -200,7 +255,7 @@ ipcMain.handle('weave:google-login', async () => {
 
 ipcMain.handle('weave:request-pairing-code', async (_event, phoneNumber) => {
   try {
-    const code = await requestPairingCode(phoneNumber);
+    const code = await botMod.requestPairingCode(phoneNumber);
     return { success: true, code };
   } catch (err) {
     return { success: false, error: err.message };
@@ -208,16 +263,15 @@ ipcMain.handle('weave:request-pairing-code', async (_event, phoneNumber) => {
 });
 
 ipcMain.handle('weave:update-handle', async (_event, newHandle) => {
-  return updateTriggerPrefix(newHandle);
+  return configMod.updateTriggerPrefix(newHandle);
 });
 
 ipcMain.handle('weave:get-projects', async () => {
-  const state = loadProjectsState();
-  return state;
+  return configMod.loadProjectsState();
 });
 
 ipcMain.handle('weave:add-project', async (_event, { alias, folderPath }) => {
-  const state = loadProjectsState();
+  const state = configMod.loadProjectsState();
   const cleanAlias = (alias || '').trim().toLowerCase();
   const resolvedPath = path.resolve(folderPath);
 
@@ -226,28 +280,28 @@ ipcMain.handle('weave:add-project', async (_event, { alias, folderPath }) => {
   }
 
   state.projects[cleanAlias] = resolvedPath;
-  saveProjectsState(state);
+  configMod.saveProjectsState(state);
   return { success: true, projects: state.projects };
 });
 
 ipcMain.handle('weave:bind-group', async (_event, { groupJid, alias }) => {
-  const state = loadProjectsState();
+  const state = configMod.loadProjectsState();
   if (alias && state.projects[alias]) {
     state.groupBindings[groupJid] = alias;
   } else {
     delete state.groupBindings[groupJid];
   }
-  saveProjectsState(state);
+  configMod.saveProjectsState(state);
   return { success: true, groupBindings: state.groupBindings };
 });
 
 ipcMain.handle('weave:run-prompt', async (_event, { prompt, projectAlias }) => {
-  const state = loadProjectsState();
+  const state = configMod.loadProjectsState();
   const targetAlias = projectAlias || state.activeProject || 'demo';
-  const targetDir = state.projects[targetAlias] || CONFIG.defaultProjectDir;
+  const targetDir = state.projects[targetAlias] || configMod.CONFIG.defaultProjectDir;
 
   try {
-    const result = await runAntigravityTask({
+    const result = await agentMod.runAntigravityTask({
       projectAlias: targetAlias,
       projectDir: targetDir,
       taskPrompt: prompt,
@@ -259,35 +313,61 @@ ipcMain.handle('weave:run-prompt', async (_event, { prompt, projectAlias }) => {
 });
 
 ipcMain.handle('weave:stop-task', async () => {
-  stopActiveTask();
+  agentMod.stopActiveTask();
   return { success: true };
 });
 
-// Forward bot events to renderer
-botEvents.on('qr', (data) => {
-  currentQrData = data;
-  sendToRenderer('weave:qr-update', data);
-});
-
-botEvents.on('connection', (data) => {
-  if (data.status === 'connected') {
-    currentQrData = null;
+// Listen for OTA updates (triggered via WhatsApp `/update` or background timer)
+onOtaUpdate(async (updateInfo) => {
+  try {
+    await loadRuntimeModules(
+      updateInfo.runtimeDir || activeRuntimeDir,
+      `${updateInfo.commitHash}-${Date.now()}`
+    );
+    sendToRenderer('weave:ota-updated', updateInfo);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.reloadIgnoringCache();
+    }
+  } catch (err) {
+    console.warn('OTA hot-reload warning:', err.message);
   }
-  sendToRenderer('weave:status-update', data);
 });
 
 // App Lifecycle
-app.whenReady().then(() => {
-  createWindow();
+app.whenReady().then(async () => {
+  // 1. Sync OTA bundle before loading app modules
+  activeRuntimeDir = await syncOtaOnBoot();
+  await loadRuntimeModules(activeRuntimeDir);
 
-  // Start the background WhatsApp bot service
-  startWhatsAppBot().catch((err) => {
+  // 2. Wire bot events
+  botMod.botEvents.on('qr', (data) => {
+    currentQrData = data;
+    sendToRenderer('weave:qr-update', data);
+  });
+
+  botMod.botEvents.on('connection', (data) => {
+    if (data.status === 'connected') {
+      currentQrData = null;
+    }
+    sendToRenderer('weave:status-update', data);
+  });
+
+  // 3. Create window from active runtime directory
+  createWindow(activeRuntimeDir);
+
+  // 4. Start WhatsApp bot service
+  botMod.startWhatsAppBot().catch((err) => {
     console.error('WhatsApp Bot startup error:', err.message);
   });
 
+  // 5. Poll for live OTA updates every 3 minutes in the background
+  setInterval(() => {
+    checkAndApplyOtaUpdate({ force: false }).catch(() => {});
+  }, 180000).unref?.();
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+      createWindow(activeRuntimeDir);
     }
   });
 });

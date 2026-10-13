@@ -29,6 +29,7 @@ import {
 import { transcribeAudioFile } from './transcribe.js';
 import { buildGoogleCalendarUrl, createIcsFile, sendCalendarInviteDirectly } from './calendar.js';
 import { captureWebScreenshot, getProjectDeploymentUrl } from './qa.js';
+import { checkAndApplyOtaUpdate, getOtaStatus } from './ota.js';
 import {
   runAntigravityTask,
   getActiveTaskInfo,
@@ -2047,6 +2048,34 @@ async function handleSlashCommand(sock, jid, msg, commandBody) {
     return true;
   }
 
+  if (cmd === '/update' || cmd === 'update' || cmd === '/ota' || cmd === 'ota') {
+    await reactToMessage(sock, msg, '⏳');
+    try {
+      const res = await checkAndApplyOtaUpdate({ force: arg1 === 'force' });
+      await reactToMessage(sock, msg, '✅');
+      if (res.updated) {
+        await sendReply(
+          sock,
+          jid,
+          `⚡ *Weave Live Update Applied*\n• *Version:* \`v${res.version}\` (\`${res.commitHash}\`)\n• *Files updated:* ${res.filesUpdated}\n• *Status:* Live in-place (no reinstall needed)`,
+          msg
+        );
+      } else {
+        const status = getOtaStatus();
+        await sendReply(
+          sock,
+          jid,
+          `✅ *Weave is up to date* (\`v${status.version}\` · \`${status.commitHash}\`)`,
+          msg
+        );
+      }
+    } catch (err) {
+      await reactToMessage(sock, msg, '❌');
+      await sendReply(sock, jid, `❌ Live update check failed: ${err.message}`, msg);
+    }
+    return true;
+  }
+
   if (cmd === '/help' || cmd === 'help') {
     const trig = CONFIG.triggerPrefix;
     const helpLines = [
@@ -2055,6 +2084,7 @@ async function handleSlashCommand(sock, jid, msg, commandBody) {
       `• *${trig} /screenshot [url]* — Capture page screenshot (add mobile for phone view)`,
       `• *${trig} /push [msg]* — Commit & push`,
       `• *${trig} /status* — Check status`,
+      `• *${trig} /update* — Pull latest live OTA update without reinstalling`,
       `• *${trig} /stop* — Stop task (or swipe-reply *stop*)`,
     ];
 

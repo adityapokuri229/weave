@@ -508,8 +508,62 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  // OTA Live Sync UI
+  const otaVersionLabel = document.getElementById('ota-version-label');
+  const btnOtaUpdate = document.getElementById('btn-ota-update');
+  const otaSyncText = document.getElementById('ota-sync-text');
+
+  async function refreshOtaBadge() {
+    if (!api?.getOtaStatus) return;
+    try {
+      const ota = await api.getOtaStatus();
+      if (ota && otaVersionLabel) {
+        const shortCommit =
+          ota.commitHash && ota.commitHash !== 'initial'
+            ? ` · ${String(ota.commitHash).slice(0, 7)}`
+            : '';
+        otaVersionLabel.textContent = `v${ota.version || '1.0.0'}${shortCommit}`;
+      }
+    } catch {}
+  }
+
+  if (btnOtaUpdate) {
+    btnOtaUpdate.addEventListener('click', async () => {
+      if (!api?.checkOtaUpdate) return;
+      if (otaSyncText) otaSyncText.textContent = 'Syncing...';
+      btnOtaUpdate.disabled = true;
+      try {
+        const res = await api.checkOtaUpdate(false);
+        if (res?.updated) {
+          if (otaSyncText) otaSyncText.textContent = `Updated (${String(res.commitHash).slice(0, 7)})`;
+          appendLog('info', `⚡ Live OTA Update applied (${res.commitHash})`);
+        } else {
+          if (otaSyncText) otaSyncText.textContent = 'Up to Date';
+          appendLog('info', `✓ ${res?.message || 'Already on latest OTA build.'}`);
+          setTimeout(() => {
+            if (otaSyncText) otaSyncText.textContent = 'Live Sync';
+          }, 2500);
+        }
+        await refreshOtaBadge();
+      } catch (err) {
+        if (otaSyncText) otaSyncText.textContent = 'Live Sync';
+        appendLog('warn', `OTA check error: ${err.message}`);
+      } finally {
+        btnOtaUpdate.disabled = false;
+      }
+    });
+  }
+
+  if (api?.onOtaUpdated) {
+    api.onOtaUpdated((info) => {
+      appendLog('info', `⚡ Live OTA Update applied: ${info.commitHash}`);
+      refreshOtaBadge();
+    });
+  }
+
   // Initial Sync
   syncStatus();
+  refreshOtaBadge();
 
   // Periodic status check every 3s to guarantee QR and connection updates
   setInterval(() => {

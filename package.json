@@ -12,8 +12,9 @@
     "start": "node src/index.js",
     "dev": "node --watch src/index.js",
     "desktop": "electron electron/main.js",
-    "dist": "electron-builder",
-    "dist:dir": "electron-builder --dir",
+    "build:ota": "node scripts/build-ota.js",
+    "dist": "node scripts/build-ota.js && electron-builder",
+    "dist:dir": "node scripts/build-ota.js && electron-builder --dir",
     "test:agent": "node src/test-agent.js",
     "auth": "node src/auth.js",
     "bundle": "git archive --format=zip --output=weave.zip HEAD"
@@ -32,6 +33,7 @@
   "build": {
     "appId": "com.weave.desktop",
     "productName": "Weave",
+    "asar": false,
     "directories": {
       "output": "dist"
     },
