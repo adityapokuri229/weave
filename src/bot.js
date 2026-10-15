@@ -41,6 +41,7 @@ import {
   prewarmAgentSession,
   prewarmAllBoundProjects,
 } from './agent.js';
+import { geminiClient } from './gemini-client.js';
 
 const AUTH_DIR = path.join(DATA_DIR, 'auth_info_baileys');
 const CONTACTS_FILE = path.join(DATA_DIR, 'contacts.json');
@@ -2082,6 +2083,8 @@ async function handleSlashCommand(sock, jid, msg, commandBody) {
       `🤖 *Weave Agent (${trig})* (${boundProject ? `\`${boundProject}\`` : 'unbound'})`,
       `• *${trig} <task>* — Run task`,
       `• *${trig} /screenshot [url]* — Capture page screenshot (add mobile for phone view)`,
+      `• *${trig} /btw <question>* — Ask Gemini directly without sending to Antigravity session`,
+      `• *${trig} /new* — Reset/clear Antigravity session for current project`,
       `• *${trig} /push [msg]* — Commit & push`,
       `• *${trig} /status* — Check status`,
       `• *${trig} /update* — Pull latest live OTA update without reinstalling`,
@@ -3196,6 +3199,83 @@ async function handleSlashCommand(sock, jid, msg, commandBody) {
       );
     } else {
       await sendReply(sock, jid, `ℹ️ No task is currently running.`, msg);
+    }
+    return true;
+  }
+
+  // --- /btw: Quick direct LLM query without polluting AGY workspace / conversation ---
+  if (cmd === '/btw' || cmd === 'btw') {
+    const query = fullRest.trim();
+    if (!query) {
+      await sendReply(
+        sock,
+        jid,
+        `⚠️ Usage: *${CONFIG.triggerPrefix} /btw <question>*\nAnswers via Gemini directly without sending commands to your Antigravity session.`,
+        msg
+      );
+      return true;
+    }
+
+    await reactToMessage(sock, msg, '💬');
+    try {
+      const currentState = loadProjectsState();
+      const activeProj = isGroup ? currentState.groupBindings?.[jid] : currentState.activeProject;
+      const projDir = (activeProj && currentState.projects?.[activeProj]) || CONFIG.defaultProjectDir;
+      const recentChatContext = getRecentChatContext(jid);
+
+      const systemPrompt = [
+        `You are Weave's conversational assistant, responding to a user query without performing filesystem edits or terminal execution.`,
+        activeProj ? `Active Project: ${activeProj} (${projDir})` : null,
+        recentChatContext ? `Recent Chat Context:\n${recentChatContext}` : null,
+        `Provide a concise, helpful answer formatted for WhatsApp (*bold*, _italic_, \`code\`).`,
+      ].filter(Boolean).join('\n\n');
+
+      const { text } = await geminiClient.generateContent(query, systemPrompt);
+      const cleanAnswer = (text || 'No response generated.').replace(/\[([^\]]+)\]\(file:\/\/[^)]+\)/g, '`$1`').trim();
+
+      await sendReply(
+        sock,
+        jid,
+        `💬 *[Direct Gemini]*\n\n${cleanAnswer}`,
+        msg
+      );
+      await reactToMessage(sock, msg, '✅');
+    } catch (err) {
+      await reactToMessage(sock, msg, '❌');
+      await sendReply(
+        sock,
+        jid,
+        `❌ Gemini Error: ${err.message}`,
+        msg
+      );
+    }
+    return true;
+  }
+
+  // --- /new: Clear persistent conversation ID for current project ---
+  if (cmd === '/new') {
+    const currentState = loadProjectsState();
+    const activeProj = isGroup ? currentState.groupBindings?.[jid] : currentState.activeProject;
+    if (activeProj && currentState.conversations?.[activeProj]) {
+      persistFresh((fresh) => {
+        if (fresh.conversations?.[activeProj]) {
+          delete fresh.conversations[activeProj];
+        }
+      });
+      await reactToMessage(sock, msg, '🧹');
+      await sendReply(
+        sock,
+        jid,
+        `🧹 Cleared Antigravity session memory for *${activeProj}*. Next prompt will start fresh!`,
+        msg
+      );
+    } else {
+      await sendReply(
+        sock,
+        jid,
+        `ℹ️ No previous conversation stored for *${activeProj || 'active project'}*.`,
+        msg
+      );
     }
     return true;
   }
