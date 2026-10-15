@@ -3205,7 +3205,7 @@ async function handleSlashCommand(sock, jid, msg, commandBody) {
 
   // --- /btw: Quick direct LLM query without polluting AGY workspace / conversation ---
   if (cmd === '/btw' || cmd === 'btw') {
-    const query = fullRest.trim();
+    const query = parts.slice(1).join(' ').trim();
     if (!query) {
       await sendReply(
         sock,
