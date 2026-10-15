@@ -199,19 +199,119 @@ async function fetchRemoteManifest(timeoutMs = 4500) {
 
 /**
  * Checks for and applies any remote OTA bundle update.
- * (Disabled to protect local fork modifications).
  */
 export async function checkAndApplyOtaUpdate({ force = false, timeoutMs = 8000 } = {}) {
-  return {
-    updated: false,
-    message: 'OTA updates are disabled on this installation.',
+  const targetDir = ensureWritableRuntimeDir();
+  const local = getLocalOtaVersion();
+  lastCheckedAt = new Date().toISOString();
+
+  const remote = await fetchRemoteManifest(timeoutMs);
+  if (!remote) {
+    return {
+      updated: false,
+      commitHash: local.commitHash,
+      builtAt: local.builtAt,
+      message: 'Offline or OTA endpoint unreachable; running cached version.',
+    };
+  }
+
+  const { base, manifest } = remote;
+  const isNewer =
+    force ||
+    manifest.commitHash !== local.commitHash ||
+    (manifest.builtAt && (!local.builtAt || manifest.builtAt > local.builtAt));
+
+  if (!isNewer) {
+    return {
+      updated: false,
+      commitHash: local.commitHash,
+      builtAt: local.builtAt,
+      message: `Already up to date (${local.commitHash}).`,
+    };
+  }
+
+  const bundleUrl = manifest.bundleUrl || `${base}/bundle.json`;
+  let bundle = null;
+  try {
+    bundle = await fetchJsonWithTimeout(bundleUrl, timeoutMs);
+  } catch {
+    bundle = await fetchJsonWithTimeout(`${base}/bundle.json`, timeoutMs);
+  }
+
+  if (!bundle || !bundle.files) {
+    throw new Error('Downloaded OTA bundle is invalid.');
+  }
+
+  // Persist in ~/.weave/ota-cache so portable .exe launches always keep the latest code
+  try {
+    fs.mkdirSync(OTA_CACHE_DIR, { recursive: true });
+    fs.writeFileSync(CACHED_BUNDLE_PATH, JSON.stringify(bundle), 'utf8');
+    fs.writeFileSync(
+      CACHED_MANIFEST_PATH,
+      JSON.stringify(
+        {
+          version: bundle.version || manifest.version || '1.0.0',
+          commitHash: bundle.commitHash || manifest.commitHash,
+          builtAt: bundle.builtAt || manifest.builtAt,
+        },
+        null,
+        2
+      ),
+      'utf8'
+    );
+  } catch {}
+
+  const filesUpdated = applyBundleFilesToDir(bundle, targetDir);
+  const result = {
+    updated: true,
+    version: bundle.version || manifest.version || '1.0.0',
+    commitHash: bundle.commitHash || manifest.commitHash,
+    builtAt: bundle.builtAt || manifest.builtAt,
+    filesUpdated,
+    runtimeDir: targetDir,
+    message: `Updated ${filesUpdated} files to commit ${bundle.commitHash || manifest.commitHash}.`,
   };
+
+  for (const fn of updateListeners) {
+    try {
+      fn(result);
+    } catch {}
+  }
+
+  return result;
 }
 
 /**
- * Runs on Electron / CLI startup before loading bot modules.
- * Returns local directory directly without downloading or applying remote bundles.
+ * Runs on Electron / CLI startup before loading bot modules:
+ * 1. Immediately applies any cached OTA bundle from ~/.weave/ota-cache (takes <10ms, works offline & across Portable Temp folders).
+ * 2. Checks remote OTA manifest with a short timeout and applies any new push immediately.
  */
 export async function syncOtaOnBoot() {
-  return ensureWritableRuntimeDir();
+  const targetDir = ensureWritableRuntimeDir();
+
+  // Step 1: Apply cached bundle if newer than baked-in version
+  try {
+    if (fs.existsSync(CACHED_BUNDLE_PATH)) {
+      const cachedBundle = JSON.parse(fs.readFileSync(CACHED_BUNDLE_PATH, 'utf8'));
+      const bakedPath = path.join(targetDir, 'src', 'ota-version.json');
+      let bakedBuiltAt = 0;
+      if (fs.existsSync(bakedPath)) {
+        try {
+          bakedBuiltAt = JSON.parse(fs.readFileSync(bakedPath, 'utf8')).builtAt || 0;
+        } catch {}
+      }
+      if (!bakedBuiltAt || (cachedBundle.builtAt && cachedBundle.builtAt >= bakedBuiltAt)) {
+        applyBundleFilesToDir(cachedBundle, targetDir);
+      }
+    }
+  } catch {}
+
+  // Step 2: Check remote OTA server with fast 3.5s timeout
+  try {
+    await checkAndApplyOtaUpdate({ force: false, timeoutMs: 3500 });
+  } catch {
+    // Non-fatal on boot
+  }
+
+  return targetDir;
 }
