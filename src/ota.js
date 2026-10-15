@@ -201,6 +201,13 @@ async function fetchRemoteManifest(timeoutMs = 4500) {
  * Checks for and applies any remote OTA bundle update.
  */
 export async function checkAndApplyOtaUpdate({ force = false, timeoutMs = 8000 } = {}) {
+  if (process.env.DISABLE_OTA === 'true' || process.env.WEAVE_DISABLE_OTA === 'true') {
+    return {
+      updated: false,
+      message: 'OTA updates are disabled by environment configuration.',
+    };
+  }
+
   const targetDir = ensureWritableRuntimeDir();
   const local = getLocalOtaVersion();
   lastCheckedAt = new Date().toISOString();
