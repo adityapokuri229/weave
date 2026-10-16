@@ -820,7 +820,7 @@ function evictOldestIdleWorkerIfNeeded(excludeProjectDir) {
   }
 }
 
-function createWarmWorker(projectDir) {
+function createWarmWorker(projectDir, conversationId = null) {
   evictOldestIdleWorkerIfNeeded(projectDir);
 
   const isWin = process.platform === 'win32';
@@ -840,6 +840,10 @@ function createWarmWorker(projectDir) {
 
   if (CONFIG.agyModel) {
     args.push('--model', CONFIG.agyModel);
+  }
+
+  if (conversationId) {
+    args.push('--conversation', conversationId);
   }
 
   args.push(useWinShell ? '"-p="' : '-p=');
@@ -954,7 +958,7 @@ function createWarmWorker(projectDir) {
         // Rotate worker after MAX_TURNS_PER_WORKER so context never gets bloated
         if (worker.turnsCompleted >= MAX_TURNS_PER_WORKER) {
           retireWarmWorker(worker);
-          prewarmAgentSession(projectDir);
+          prewarmAgentSession(projectDir, turn.projectAlias);
         }
 
         turn.resolve({
@@ -1026,12 +1030,27 @@ function createWarmWorker(projectDir) {
  * Pre-warms an Antigravity CLI process for `projectDir` in the background
  * so the next message in that project has zero cold-start latency (~2s response).
  */
-export function prewarmAgentSession(projectDir) {
+export function prewarmAgentSession(projectDir, projectAlias = null) {
   try {
     if (!projectDir || !fs.existsSync(projectDir)) return;
     const existing = warmPool.get(projectDir);
     if (existing && !existing.dead) return;
-    createWarmWorker(projectDir);
+    let savedConvId = null;
+    try {
+      const state = loadProjectsState();
+      if (projectAlias && state.conversations?.[projectAlias]) {
+        savedConvId = state.conversations[projectAlias];
+      } else {
+        // Find matching project alias for this project directory
+        for (const [alias, dir] of Object.entries(state.projects || {})) {
+          if (dir === projectDir && state.conversations?.[alias]) {
+            savedConvId = state.conversations[alias];
+            break;
+          }
+        }
+      }
+    } catch {}
+    createWarmWorker(projectDir, savedConvId);
   } catch {
     // Ignore prewarm errors
   }
@@ -1092,7 +1111,31 @@ async function runWithWarmWorker({
   }
 
   if (!worker || worker.dead || worker.currentTurn) {
-    worker = createWarmWorker(projectDir);
+    let savedConvId = null;
+    try {
+      const state = loadProjectsState();
+      savedConvId = state.conversations?.[projectAlias] || null;
+    } catch {}
+
+    try {
+      worker = createWarmWorker(projectDir, savedConvId);
+      worker.projectAlias = projectAlias;
+    } catch (err) {
+      if (savedConvId) {
+        // Fallback to fresh worker if resuming previous conversation failed
+        try {
+          const updatedState = loadProjectsState();
+          if (updatedState.conversations?.[projectAlias]) {
+            delete updatedState.conversations[projectAlias];
+            saveProjectsState(updatedState);
+          }
+        } catch {}
+        worker = createWarmWorker(projectDir, null);
+        worker.projectAlias = projectAlias;
+      } else {
+        throw err;
+      }
+    }
   }
 
   activeChildProcess = worker.child;
@@ -1161,9 +1204,17 @@ async function runWithWarmWorker({
     });
   } catch (err) {
     if (err.cancelled) throw err;
-    // If a pre-warmed standby process died while idle before finishing the turn, retry once cleanly
-    if (allowRetry && wasPreexisting) {
-      retireWarmWorker(worker);
+    // If resuming an old conversation ID failed (or process died while idle), clear the stale conversation ID and retry once
+    if (allowRetry) {
+      if (worker) retireWarmWorker(worker);
+      try {
+        const state = loadProjectsState();
+        if (state.conversations?.[projectAlias]) {
+          delete state.conversations[projectAlias];
+          saveProjectsState(state);
+        }
+      } catch {}
+
       return runWithWarmWorker({
         projectAlias,
         projectDir,
