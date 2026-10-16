@@ -26,8 +26,18 @@ contextBridge.exposeInMainWorld('weaveAPI', {
   // Config & Handle
   updateHandle: (newHandle) => ipcRenderer.invoke('weave:update-handle', newHandle),
   getProjects: () => ipcRenderer.invoke('weave:get-projects'),
+  setActiveProject: (alias) => ipcRenderer.invoke('weave:set-active-project', alias),
+  openFolder: (folderPath) => ipcRenderer.invoke('weave:open-folder', folderPath),
   addProject: (alias, folderPath) => ipcRenderer.invoke('weave:add-project', { alias, folderPath }),
   bindGroup: (groupJid, alias) => ipcRenderer.invoke('weave:bind-group', { groupJid, alias }),
+  toggleAutopilot: (enabled) => ipcRenderer.invoke('weave:toggle-autopilot', enabled),
+  pickMasterDir: () => ipcRenderer.invoke('weave:pick-master-dir'),
+  setMasterDir: (dirPath) => ipcRenderer.invoke('weave:set-master-dir', dirPath),
+
+  // Friends & Collaborators Directory
+  getFriends: () => ipcRenderer.invoke('weave:get-friends'),
+  addFriend: (name, github) => ipcRenderer.invoke('weave:add-friend', { name, github }),
+  removeFriend: (nameOrId) => ipcRenderer.invoke('weave:remove-friend', nameOrId),
 
   // Logs stream
   onLog: (callback) => {

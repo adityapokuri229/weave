@@ -100,13 +100,22 @@
         </div>
       </div>
 
-      <!-- Center: View Switcher Tabs -->
-      <div class="flex items-center gap-1 bg-app-surface p-1 rounded-md border border-app-border no-drag text-xs font-mono">
-        <button id="tab-onboarding" class="px-2.5 py-0.5 rounded text-[11px] font-medium text-black bg-white transition-all flex items-center gap-1.5 cursor-pointer">
-          <span class="material-symbols-outlined text-[13px]">qr_code_2</span> Setup &amp; Link
-        </button>
-        <button id="tab-workspace" class="px-2.5 py-0.5 rounded text-[11px] font-medium text-app-dim opacity-50 cursor-not-allowed transition-all flex items-center gap-1.5" title="Link WhatsApp first to unlock Workspace">
-          <span id="tab-workspace-icon" class="material-symbols-outlined text-[13px]">lock</span> Workspace
+      <!-- Center: View Switcher Tabs & Autopilot Mode Toggle -->
+      <div class="flex items-center gap-2 no-drag">
+        <div class="flex items-center gap-1 bg-app-surface p-1 rounded-md border border-app-border text-xs font-mono">
+          <button id="tab-onboarding" class="px-2.5 py-0.5 rounded text-[11px] font-medium text-black bg-white transition-all flex items-center gap-1.5 cursor-pointer">
+            <span class="material-symbols-outlined text-[13px]">qr_code_2</span> Setup &amp; Link
+          </button>
+          <button id="tab-workspace" class="px-2.5 py-0.5 rounded text-[11px] font-medium text-app-dim opacity-50 cursor-not-allowed transition-all flex items-center gap-1.5" title="Link WhatsApp first to unlock Workspace">
+            <span id="tab-workspace-icon" class="material-symbols-outlined text-[13px]">lock</span> Workspace
+          </button>
+        </div>
+
+        <!-- Autopilot Mode Toggle Button -->
+        <button id="btn-toggle-autopilot" class="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-app-surface hover:bg-zinc-800 border border-app-border transition text-xs font-mono cursor-pointer" title="Toggle Autopilot Autonomous Mode">
+          <span class="material-symbols-outlined text-[14px] text-zinc-400" id="autopilot-icon">smart_toy</span>
+          <span class="text-[11px] font-medium text-zinc-300">Autopilot</span>
+          <span id="autopilot-pill" class="px-1.5 py-0.2 rounded text-[9px] font-mono uppercase bg-zinc-800 text-zinc-400 border border-zinc-700">OFF</span>
         </button>
       </div>
 
@@ -142,11 +151,11 @@
     </header>
 
     <!-- CONTENT VIEWS -->
-    <div class="flex-1 overflow-hidden relative flex bg-app-canvas">
+    <div class="flex-1 min-h-0 overflow-hidden relative flex flex-col bg-app-canvas">
 
       <!-- ================= VIEW 1: ONBOARDING / SETUP (Strict Chronology: JS Check -> WhatsApp QR -> Google PKCE) ================= -->
-      <div id="view-onboarding" class="flex-1 overflow-y-auto flex items-center justify-center p-4 sm:p-6 bg-app-canvas">
-        <div class="w-full max-w-[620px] bg-app-window border border-app-border rounded-xl shadow-2xl p-6 sm:p-8 flex flex-col gap-5">
+      <div id="view-onboarding" class="flex-1 min-h-0 overflow-y-auto flex flex-col p-4 sm:p-6 bg-app-canvas">
+        <div class="w-full max-w-[620px] m-auto bg-app-window border border-app-border rounded-xl shadow-2xl p-6 sm:p-8 flex flex-col gap-5">
 
           <!-- Top Brand Icon & Ambient Header -->
           <div class="flex flex-col items-center text-center">
@@ -318,6 +327,25 @@
             </div>
           </div>
 
+          <!-- ================= MASTER DIRECTORY (Workspace Root) ================= -->
+          <div id="master-dir-card-onboarding" class="flex flex-col gap-1.5 p-3 rounded-lg bg-app-surface border border-app-border transition-all">
+            <div class="flex items-center justify-between">
+              <label class="text-xs font-medium text-white flex items-center gap-1.5 font-mono" for="master-dir-input-onboarding">
+                <span class="material-symbols-outlined text-[15px] text-app-tertiary">folder_special</span>
+                <span>Master Directory (Projects Root)</span>
+              </label>
+              <span id="master-dir-badge-onboarding" class="text-[11px] text-app-secondary font-mono">Auto-discovers subprojects</span>
+            </div>
+            <div class="flex items-center gap-1.5 rounded-lg bg-app-window border border-app-border px-2 py-1.5">
+              <input id="master-dir-input-onboarding" class="bg-transparent border-none text-white font-mono text-xs focus:outline-none w-full px-1 tracking-tight" placeholder="/path/to/projects or ~/workspace" value=""/>
+              <button id="btn-browse-master-dir-onboarding" class="text-xs font-mono px-2.5 py-1 bg-app-subtle hover:bg-white hover:text-black text-white border border-app-border rounded transition-all cursor-pointer flex items-center gap-1 shrink-0" title="Choose directory with file picker">
+                <span class="material-symbols-outlined text-[14px]">folder_open</span>
+                <span>Browse</span>
+              </button>
+              <button id="btn-save-master-dir-onboarding" class="text-xs font-mono px-2.5 py-1 bg-white hover:bg-neutral-200 text-black font-semibold rounded transition-all cursor-pointer shrink-0">Save</button>
+            </div>
+          </div>
+
           <!-- Bottom Action Button & Encryption Guarantee -->
           <div class="flex flex-col gap-2 pt-1">
             <button id="btn-launch-workspace" class="w-full py-3 px-6 rounded-lg bg-app-subtle text-app-dim border border-app-border text-xs font-mono font-semibold uppercase tracking-wider flex items-center justify-center gap-2 transition-all opacity-50 cursor-not-allowed">
@@ -334,8 +362,8 @@
       </div>
 
       <!-- ================= VIEW 2: DESKTOP WORKSPACE (Stitch Screen 05 Monochrome) ================= -->
-      <div id="view-workspace" class="flex-1 flex flex-col overflow-hidden hidden bg-app-canvas">
-        <main class="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3.5 bg-app-canvas">
+      <div id="view-workspace" class="flex-1 min-h-0 flex flex-col overflow-hidden hidden bg-app-canvas">
+        <main class="flex-1 min-h-0 overflow-y-auto p-4 sm:p-5 space-y-3.5 bg-app-canvas">
           
           <!-- Section 1: Bot Call-Sign & Agent Telemetry Row -->
           <div class="grid grid-cols-1 md:grid-cols-12 gap-3">
@@ -439,57 +467,108 @@
 
           <!-- Section 2: Split Columns - Connected Workspaces & Live Feed -->
           <div class="grid grid-cols-1 md:grid-cols-12 gap-3">
-            <!-- Connected Workspaces Panel (5 cols) -->
-            <div class="md:col-span-5 bg-app-surface border border-app-border rounded-md p-3.5 flex flex-col justify-between">
-              <div>
-                <div class="flex items-center justify-between mb-2.5">
-                  <div class="flex items-center gap-1.5">
-                    <i class="fa-regular fa-folder text-white text-xs"></i>
-                    <h2 class="text-[10px] font-mono font-medium text-app-tertiary tracking-wider uppercase">Local Workspaces</h2>
+            <!-- Left Column: Workspaces & Friends (5 cols) -->
+            <div id="left-pane" class="md:col-span-5 flex flex-col gap-3 overflow-y-auto max-h-[calc(100vh-210px)] pr-1.5">
+              
+              <!-- Connected Workspaces Panel -->
+              <div class="bg-app-surface border border-app-border rounded-md p-3.5 flex flex-col justify-between">
+                <div>
+                  <div class="flex items-center justify-between mb-2.5">
+                    <div class="flex items-center gap-1.5">
+                      <i class="fa-regular fa-folder text-white text-xs"></i>
+                      <h2 class="text-[10px] font-mono font-medium text-app-tertiary tracking-wider uppercase">Local Workspaces</h2>
+                    </div>
+                    <span id="badge-mounted-count" class="text-[10px] text-app-secondary font-mono bg-app-canvas px-1.5 py-0.5 rounded border border-app-border">1 MOUNTED</span>
                   </div>
-                  <span id="badge-mounted-count" class="text-[10px] text-app-secondary font-mono bg-app-canvas px-1.5 py-0.5 rounded border border-app-border">1 MOUNTED</span>
-                </div>
-                
-                <!-- Folders list -->
-                <div id="projects-list-container" class="space-y-2">
-                  <div class="p-2 rounded bg-app-canvas border border-app-border hover:border-app-secondary transition group cursor-pointer">
-                    <div class="flex items-start justify-between">
-                      <div class="flex items-center gap-2">
-                        <div class="w-6 h-6 rounded bg-app-subtle border border-app-border flex items-center justify-center text-white text-xs shrink-0">
-                          <i class="fa-solid fa-code text-[10px]"></i>
-                        </div>
-                        <div>
-                          <div class="text-xs font-medium text-white flex items-center gap-1.5">
-                            Active Project
-                            <span class="text-[9px] px-1 py-0.2 rounded bg-app-subtle text-app-secondary border border-app-border font-mono uppercase">[Mounted]</span>
-                          </div>
-                          <div id="active-project-path" class="text-[10px] font-mono text-app-tertiary truncate mt-0.5">/home/tinchu/weave</div>
-                        </div>
-                      </div>
-                      <div class="text-[10px] font-mono text-app-secondary flex items-center gap-1 mt-0.5">
-                        <span class="w-1 h-1 rounded-full bg-white"></span>
-                        R/W
-                      </div>
+
+                  <!-- Master Directory Config Bar -->
+                  <div class="mb-3 p-2 rounded bg-app-canvas border border-app-border">
+                    <div class="flex items-center justify-between mb-1.5">
+                      <span class="text-[10px] font-mono uppercase text-app-tertiary flex items-center gap-1">
+                        <span class="material-symbols-outlined text-[13px] text-zinc-400">folder_special</span>
+                        Master Directory
+                      </span>
+                      <span id="master-dir-workspace-badge" class="text-[9px] font-mono text-zinc-500">Root folder</span>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                      <input id="master-dir-input-workspace" type="text" placeholder="/path/to/projects or ~/workspace" class="bg-app-surface border border-app-border rounded px-2 py-1 text-xs text-white font-mono focus:outline-none w-full tracking-tight"/>
+                      <button id="btn-browse-master-dir-workspace" class="px-2 py-1 bg-app-subtle hover:bg-white hover:text-black text-white border border-app-border rounded text-[11px] font-mono transition flex items-center gap-1 cursor-pointer shrink-0" title="Select directory with file picker">
+                        <span class="material-symbols-outlined text-[13px]">folder_open</span>
+                        <span>Browse</span>
+                      </button>
+                      <button id="btn-save-master-dir-workspace" class="px-2.5 py-1 bg-white hover:bg-neutral-200 text-black text-[11px] font-mono font-medium rounded transition active:scale-95 shrink-0 cursor-pointer">
+                        Save
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <!-- Folders / Projects list -->
+                  <div id="projects-list-container" class="space-y-2 max-h-[260px] overflow-y-auto pr-1">
+                    <!-- Dynamically populated by app.js -->
+                    <div class="p-3 rounded bg-app-canvas border border-app-border text-center text-app-tertiary text-xs font-mono">
+                      Discovering workspaces...
+                    </div>
+                  </div>
+
+                  <!-- Run Local Prompt Test Box -->
+                  <div class="mt-3 pt-3 border-t border-app-borderSubtle">
+                    <label class="text-[10px] font-mono uppercase text-app-tertiary block mb-1">Direct Console Prompt</label>
+                    <div class="flex items-center gap-1 bg-app-canvas border border-app-border rounded p-1">
+                      <input id="prompt-input" type="text" placeholder="e.g. create a counter component" class="bg-transparent border-none text-xs text-white font-mono focus:outline-none px-2 w-full"/>
+                      <button id="btn-run-prompt" class="px-2.5 py-1 bg-white hover:bg-neutral-200 text-black text-[11px] font-mono font-medium rounded transition active:scale-95 shrink-0">
+                        Run
+                      </button>
                     </div>
                   </div>
                 </div>
 
-                <!-- Run Local Prompt Test Box -->
-                <div class="mt-3 pt-3 border-t border-app-borderSubtle">
-                  <label class="text-[10px] font-mono uppercase text-app-tertiary block mb-1">Direct Console Prompt</label>
-                  <div class="flex items-center gap-1 bg-app-canvas border border-app-border rounded p-1">
-                    <input id="prompt-input" type="text" placeholder="e.g. create a counter component" class="bg-transparent border-none text-xs text-white font-mono focus:outline-none px-2 w-full"/>
-                    <button id="btn-run-prompt" class="px-2.5 py-1 bg-white hover:bg-neutral-200 text-black text-[11px] font-mono font-medium rounded transition active:scale-95 shrink-0">
-                      Run
-                    </button>
-                  </div>
+                <div class="mt-3 pt-2 border-t border-app-borderSubtle flex items-center justify-between text-[10px] text-app-tertiary font-mono">
+                  <span>SANDBOX: <strong class="text-app-secondary font-normal">Active</strong></span>
+                  <span class="text-app-dim">Subprocess Isolation</span>
                 </div>
               </div>
 
-              <div class="mt-3 pt-2 border-t border-app-borderSubtle flex items-center justify-between text-[10px] text-app-tertiary font-mono">
-                <span>SANDBOX: <strong class="text-app-secondary font-normal">Active</strong></span>
-                <span class="text-app-dim">Subprocess Isolation</span>
+              <!-- Friends & Collaborators Directory Panel -->
+              <div class="bg-app-surface border border-app-border rounded-md p-3.5 flex flex-col justify-between">
+                <div>
+                  <div class="flex items-center justify-between mb-2.5">
+                    <div class="flex items-center gap-1.5">
+                      <span class="material-symbols-outlined text-[15px] text-white">group</span>
+                      <h2 class="text-[10px] font-mono font-medium text-app-tertiary tracking-wider uppercase">Friends &amp; Collaborators</h2>
+                    </div>
+                    <span id="badge-friends-count" class="text-[10px] text-app-secondary font-mono bg-app-canvas px-1.5 py-0.5 rounded border border-app-border">0 REGISTERED</span>
+                  </div>
+
+                  <!-- Add Friend Form -->
+                  <div class="mb-3 p-2 rounded bg-app-canvas border border-app-border">
+                    <div class="text-[10px] font-mono uppercase text-app-tertiary mb-1.5 flex items-center gap-1">
+                      <span class="material-symbols-outlined text-[13px] text-zinc-400">person_add</span>
+                      Add Friend (GitHub Mapping)
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-1.5 mb-1.5">
+                      <input id="input-friend-name" type="text" placeholder="Name (e.g. Jai)" class="bg-app-surface border border-app-border rounded px-2 py-1 text-xs text-white font-mono focus:outline-none"/>
+                      <input id="input-friend-github" type="text" placeholder="GitHub username (e.g. jai-dev)" class="bg-app-surface border border-app-border rounded px-2 py-1 text-xs text-white font-mono focus:outline-none"/>
+                    </div>
+                    <button id="btn-add-friend" class="w-full py-1 bg-white hover:bg-neutral-200 text-black text-[11px] font-mono font-medium rounded transition active:scale-95 cursor-pointer flex items-center justify-center gap-1">
+                      <span class="material-symbols-outlined text-[13px]">add</span>
+                      <span>Save Friend</span>
+                    </button>
+                  </div>
+
+                  <!-- Dynamic Friends List Container -->
+                  <div id="friends-list-container" class="space-y-1.5 max-h-[220px] overflow-y-auto pr-1">
+                    <div class="p-2.5 rounded bg-app-canvas border border-app-border text-center text-app-tertiary text-xs font-mono">
+                      No friends added yet.
+                    </div>
+                  </div>
+                </div>
+
+                <div class="mt-3 pt-2 border-t border-app-borderSubtle flex items-center justify-between text-[10px] text-app-tertiary font-mono">
+                  <span>COLLAB RESOLUTION: <strong class="text-app-secondary font-normal">Active</strong></span>
+                  <span class="text-app-dim">Auto GitHub Invites</span>
+                </div>
               </div>
+
             </div>
 
             <!-- Live WhatsApp Activity Feed (7 cols) -->

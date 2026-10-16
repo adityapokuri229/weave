@@ -3,7 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { CONFIG, DATA_DIR, loadProjectsState, saveProjectsState } from './config.js';
+import { CONFIG, DATA_DIR, loadProjectsState, saveProjectsState, isPathWithinMasterDir } from './config.js';
 import { geminiClient } from './gemini-client.js';
 
 const __agentDir = path.dirname(fileURLToPath(import.meta.url));
@@ -35,6 +35,10 @@ let activeChildProcess = null;
 let currentTaskInfo = null;
 let killFallbackTimer = null;
 
+const MAX_WARM_WORKERS = 4;
+const MAX_TURNS_PER_WORKER = 6;
+const warmPool = new Map(); // projectDir -> WarmWorker
+
 /**
  * Returns info about the currently running task, if any.
  */
@@ -43,50 +47,176 @@ export function getActiveTaskInfo() {
 }
 
 /**
- * Kills the currently running Antigravity CLI process (and its children) if one is active.
+ * Recursively retrieves all descendant process IDs for a given root PID on Linux/macOS.
  */
-export function stopActiveTask() {
-  if (activeChildProcess) {
-    const info = currentTaskInfo;
-    const child = activeChildProcess;
-    child._cancelledByUser = true;
-    activeChildProcess = null;
-    currentTaskInfo = null;
-    if (killFallbackTimer) {
-      clearTimeout(killFallbackTimer);
-      killFallbackTimer = null;
-    }
+function getAllDescendantPids(rootPid) {
+  if (!rootPid || process.platform === 'win32') return [];
+  const pids = [];
+  const queue = [rootPid];
+  while (queue.length > 0) {
+    const parent = queue.shift();
+    let stdout = '';
     try {
-      if (process.platform === 'win32') {
-        if (child.pid) {
-          spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true });
-        } else {
-          child.kill();
-        }
-      } else if (child.pid) {
-        process.kill(-child.pid, 'SIGTERM');
-      } else {
-        child.kill('SIGTERM');
-      }
+      stdout = execFileSync('pgrep', ['-P', String(parent)], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
     } catch {
       try {
-        child.kill('SIGTERM');
+        stdout = execFileSync('ps', ['-o', 'pid=', '--ppid', String(parent)], {
+          encoding: 'utf8',
+          stdio: ['ignore', 'pipe', 'ignore'],
+        });
       } catch {
-        // Ignore kill errors (already exited)
+        // No children or command failed
       }
     }
-    // If the process ignores SIGTERM, escalate to SIGKILL.
-    setTimeout(() => {
-      try {
-        if (child.exitCode === null && child.signalCode === null) {
-          if (process.platform !== 'win32' && child.pid) process.kill(-child.pid, 'SIGKILL');
-          else child.kill('SIGKILL');
+    if (stdout) {
+      for (const token of stdout.trim().split(/\s+/)) {
+        const p = parseInt(token.trim(), 10);
+        if (p && !isNaN(p) && !pids.includes(p)) {
+          pids.push(p);
+          queue.push(p);
         }
-      } catch {
-        // Already exited
       }
-    }, 3000).unref?.();
-    return info;
+    }
+  }
+  return pids;
+}
+
+/**
+ * Forcefully terminates a child process and its entire process tree across Linux and Windows.
+ * On Windows: Uses taskkill /pid <pid> /T /F
+ * On Linux/Unix: Gathers all descendants, sends SIGTERM to process group and tree (pkill -P),
+ * followed by SIGKILL to ensure lingering bash, compilers, dev servers, etc. are eliminated.
+ */
+export function terminateProcessTree(child, { graceMs = 300 } = {}) {
+  if (!child) return;
+  child._cancelledByUser = true;
+  const pid = child.pid;
+  if (!pid) {
+    try {
+      child.kill('SIGKILL');
+    } catch {}
+    return;
+  }
+
+  if (process.platform === 'win32') {
+    try {
+      spawn('taskkill', ['/pid', String(pid), '/T', '/F'], { windowsHide: true });
+    } catch {
+      try {
+        child.kill();
+      } catch {}
+    }
+    return;
+  }
+
+  // Linux / macOS:
+  // Gather descendants before parent exits and children reparent
+  const descendants = getAllDescendantPids(pid);
+
+  const sendSignals = (sig) => {
+    // 1. Send signal to process group (-pid)
+    try {
+      process.kill(-pid, sig);
+    } catch {
+      try {
+        process.kill(pid, sig);
+      } catch {}
+    }
+
+    // 2. Direct children via pkill -P
+    const sigName = sig.replace(/^SIG/, '');
+    try {
+      execFileSync('pkill', [`-${sigName}`, '-P', String(pid)], { stdio: 'ignore' });
+    } catch {}
+
+    // 3. All gathered descendants and their process groups
+    for (const dPid of descendants) {
+      try {
+        process.kill(-dPid, sig);
+      } catch {}
+      try {
+        process.kill(dPid, sig);
+      } catch {}
+    }
+
+    try {
+      child.kill(sig);
+    } catch {}
+  };
+
+  // Immediate SIGTERM to allow graceful shutdown
+  sendSignals('SIGTERM');
+
+  // Follow-up SIGKILL escalation to ensure zero orphan processes remain
+  const killTimer = setTimeout(() => {
+    sendSignals('SIGKILL');
+  }, graceMs);
+  killTimer.unref?.();
+}
+
+/**
+ * Kills the currently running Antigravity CLI process (and its entire child process tree)
+ * if one is active, aborts the active turn, retires the worker, and cleans up state.
+ */
+export function stopActiveTask() {
+  const info = currentTaskInfo;
+  let stopped = false;
+
+  if (killFallbackTimer) {
+    clearTimeout(killFallbackTimer);
+    killFallbackTimer = null;
+  }
+
+  // Find and terminate any warm worker that is executing a turn or associated with activeChildProcess
+  for (const worker of warmPool.values()) {
+    if (
+      worker.currentTurn ||
+      (activeChildProcess && worker.child === activeChildProcess)
+    ) {
+      stopped = true;
+      worker.dead = true;
+      warmPool.delete(worker.projectDir);
+
+      if (worker.currentTurn) {
+        const turn = worker.currentTurn;
+        worker.currentTurn = null;
+        if (turn.timer) clearTimeout(turn.timer);
+        const cancelErr = new Error('Task was cancelled by user.');
+        cancelErr.cancelled = true;
+        turn.reject(cancelErr);
+      }
+
+      const waiters = worker.initWaiters.splice(0);
+      for (const w of waiters) {
+        const cancelErr = new Error('Task was cancelled by user.');
+        cancelErr.cancelled = true;
+        w.reject(cancelErr);
+      }
+
+      try {
+        worker.child?.stdin?.end();
+      } catch {}
+
+      terminateProcessTree(worker.child, { graceMs: 250 });
+      const projDir = worker.projectDir;
+      const projAlias = worker.projectAlias;
+      setTimeout(() => prewarmAgentSession(projDir, projAlias), 400).unref?.();
+    }
+  }
+
+  if (activeChildProcess) {
+    stopped = true;
+    terminateProcessTree(activeChildProcess, { graceMs: 250 });
+    activeChildProcess = null;
+  }
+
+  currentTaskInfo = null;
+
+  if (stopped) {
+    return info || { stopped: true };
   }
   return null;
 }
@@ -600,6 +730,12 @@ export async function runAntigravityTask({
     }
   }
 
+  // Strict Master Directory Sandboxing Enforcement
+  const state = loadProjectsState();
+  if (state.masterDir && !isPathWithinMasterDir(projectDir, state.masterDir)) {
+    throw new Error(`Security Violation: Execution blocked. Directory "${projectDir}" is outside the Master Directory sandbox.`);
+  }
+
   const now = new Date();
   const currentDateStr = now.toLocaleDateString('en-US', {
     weekday: 'long',
@@ -617,7 +753,6 @@ export async function runAntigravityTask({
   });
   const todayIsoDate = now.toISOString().split('T')[0];
 
-  const state = loadProjectsState();
   const previousConvId = state.conversations?.[projectAlias];
 
   const filePath = attachmentInfo?.filePath || imagePath;
@@ -772,10 +907,6 @@ export async function runAntigravityTask({
   }
 }
 
-const MAX_WARM_WORKERS = 4;
-const MAX_TURNS_PER_WORKER = 6;
-const warmPool = new Map(); // projectDir -> WarmWorker
-
 function retireWarmWorker(worker) {
   if (!worker) return;
   worker.dead = true;
@@ -783,24 +914,24 @@ function retireWarmWorker(worker) {
     warmPool.delete(worker.projectDir);
   }
   try {
-    worker.child.stdin?.end();
+    worker.child?.stdin?.end();
   } catch {
     // ignore
   }
-  try {
-    if (process.platform === 'win32') {
-      if (worker.child.pid) {
-        spawn('taskkill', ['/pid', String(worker.child.pid), '/T', '/F'], { windowsHide: true });
-      } else {
-        worker.child.kill();
-      }
-    } else if (worker.child.pid) {
-      process.kill(-worker.child.pid, 'SIGTERM');
-    } else {
-      worker.child.kill('SIGTERM');
-    }
-  } catch {
-    // ignore
+  if (worker.currentTurn) {
+    const turn = worker.currentTurn;
+    worker.currentTurn = null;
+    if (turn.timer) clearTimeout(turn.timer);
+    const cancelErr = new Error('Warm worker retired.');
+    cancelErr.cancelled = true;
+    turn.reject(cancelErr);
+  }
+  const waiters = worker.initWaiters.splice(0);
+  for (const w of waiters) {
+    w.reject(new Error('Warm worker retired before init.'));
+  }
+  if (worker.child) {
+    terminateProcessTree(worker.child, { graceMs: 300 });
   }
 }
 
