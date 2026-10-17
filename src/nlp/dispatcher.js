@@ -27,7 +27,8 @@ import {
 } from '../agent.js';
 import { captureWebScreenshot, getProjectDeploymentUrl } from '../qa.js';
 import { checkAndApplyOtaUpdate, getOtaStatus } from '../ota.js';
-import { geminiClient } from '../gemini-client.js';
+import { handleCabRequest } from '../concierge/cabs/cabService.js';
+import { handleSwiggyRequest } from '../concierge/swiggy/swiggyService.js';
 
 /**
  * Dispatches a classified intent to its corresponding handler.
@@ -518,7 +519,55 @@ export async function dispatchIntent({
     }
   }
 
-  // 7. Conversational Q&A (Informational question without file edits)
+  // 7. Cab Booking & Route Fare Comparison (Uber, Ola, Namma Yatri)
+  if (intent === INTENTS.CAB_BOOKING) {
+    if (reactToMessage) {
+      await reactToMessage(sock, msg, '🚖').catch(() => {});
+    }
+    try {
+      const card = await handleCabRequest({
+        text: rawBody,
+        msg,
+        intentResult,
+      });
+      await sendReply(sock, jid, card, msg);
+    } catch (err) {
+      await sendReply(
+        sock,
+        jid,
+        `⚠️ *Could not fetch cab comparison:* ${err.message}`,
+        msg
+      );
+    }
+    return { handled: true };
+  }
+
+  // 8. Swiggy Food & Instamart Groceries
+  if (intent === INTENTS.SWIGGY) {
+    if (reactToMessage) {
+      const isIm = intentResult.swiggy?.service === 'instamart' || /instamart|grocery/i.test(rawBody);
+      await reactToMessage(sock, msg, isIm ? '⚡' : '🍽️').catch(() => {});
+    }
+    try {
+      const card = await handleSwiggyRequest({
+        text: rawBody,
+        msg,
+        intentResult,
+        jid,
+      });
+      await sendReply(sock, jid, card, msg);
+    } catch (err) {
+      await sendReply(
+        sock,
+        jid,
+        `⚠️ *Could not process Swiggy request:* ${err.message}`,
+        msg
+      );
+    }
+    return { handled: true };
+  }
+
+  // 9. Conversational Q&A (Informational question without file edits)
   if (intent === INTENTS.CONVERSATIONAL_QA) {
     const query = intentResult.conversationalQa?.query || rawBody;
     const directReply = intentResult.conversationalQa?.directReply;

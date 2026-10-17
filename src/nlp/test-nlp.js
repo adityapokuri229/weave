@@ -47,6 +47,20 @@ const testCases = [
   // Conversational Q&A
   { input: 'how does JWT refresh token rotation work?', expectedIntent: INTENTS.CONVERSATIONAL_QA },
   { input: 'what is the difference between flexbox and grid?', expectedIntent: INTENTS.CONVERSATIONAL_QA },
+
+  // Cab Booking & Fare Comparison (Uber, Ola, Namma Yatri)
+  { input: 'book an auto to MG Road', expectedIntent: INTENTS.CAB_BOOKING },
+  { input: 'compare cabs from Indiranagar to Kempegowda Airport', expectedIntent: INTENTS.CAB_BOOKING },
+  { input: 'uber to Koramangala', expectedIntent: INTENTS.CAB_BOOKING },
+  { input: 'check namma yatri fare to whitefield', expectedIntent: INTENTS.CAB_BOOKING },
+
+  // Swiggy Food & Instamart Groceries
+  { input: "order 1 Margherita Pizza from Domino's", expectedIntent: INTENTS.SWIGGY },
+  { input: 'find biryani on swiggy', expectedIntent: INTENTS.SWIGGY },
+  { input: 'show menu for Meghana Foods', expectedIntent: INTENTS.SWIGGY },
+  { input: 'buy 2 milk from instamart', expectedIntent: INTENTS.SWIGGY },
+  { input: 'view cart', expectedIntent: INTENTS.SWIGGY },
+  { input: 'track my swiggy order', expectedIntent: INTENTS.SWIGGY },
 ];
 
 async function runTests() {

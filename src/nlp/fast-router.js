@@ -14,6 +14,8 @@ Classify the user's message into intent and output strictly JSON.
 Allowed Intents:
 - "coding_task": Write, edit, debug, refactor, or build code in active project.
 - "conversational_qa": Greetings, chit-chat, technical questions, banter, opinions.
+- "cab_booking": Compare cab fares, check route pricing, or book ride with Uber, Ola, or Namma Yatri.
+- "swiggy": Order food or groceries (Instamart), browse menus, manage cart, coupons, track delivery.
 - "workspace_management": Switch/list/create project or bind chat.
 - "git_github": Push, commit, git status, collaborators.
 - "task_control": Stop, cancel, status, clear session.
@@ -24,7 +26,7 @@ Rules:
 2. If "coding_task", set "directReply" to null and fill "instructions" and "targetProject" (if mentioned).
 3. Output ONLY a valid JSON object matching this schema:
 {
-  "intent": "coding_task" | "conversational_qa" | "workspace_management" | "git_github" | "task_control" | "help_guide",
+  "intent": "coding_task" | "conversational_qa" | "cab_booking" | "swiggy" | "workspace_management" | "git_github" | "task_control" | "help_guide",
   "confidence": 0.95,
   "directReply": string | null,
   "instructions": string | null,
@@ -126,4 +128,59 @@ export async function queryFastRouter({ text, availableProjects = [], boundProje
   }
 
   return null;
+}
+
+/**
+ * Direct conversational call to the custom router / OpenRouter model.
+ */
+export async function queryCustomRouterChat({ systemPrompt, userMessage, temperature = 0.2 }) {
+  const baseUrl = (CONFIG.routerBaseUrl || 'https://openrouter.ai/api/v1').replace(/\/+$/, '');
+  const apiKey = CONFIG.routerApiKey;
+  const model = CONFIG.routerModel || 'openrouter/free';
+
+  if (!apiKey) return null;
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 20000);
+
+    const headers = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    };
+
+    if (baseUrl.includes('openrouter.ai')) {
+      headers['HTTP-Referer'] = 'https://github.com/darthnihilus01/weave';
+      headers['X-Title'] = 'Weave';
+    }
+
+    const res = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers,
+      signal: controller.signal,
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMessage },
+        ],
+        temperature,
+      }),
+    });
+
+    clearTimeout(timeout);
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.warn(`[FastRouter] Chat request failed (${res.status}): ${errText}`);
+      return null;
+    }
+
+    const data = await res.json();
+    const rawContent = data.choices?.[0]?.message?.content || '';
+    return stripEmojis(rawContent.trim());
+  } catch (err) {
+    console.warn(`[FastRouter] Chat error: ${err.message}`);
+    return null;
+  }
 }

@@ -12,6 +12,8 @@ export const INTENTS = {
   FILE_OPERATIONS: 'file_operations',
   AGENT_LIFECYCLE: 'agent_lifecycle',
   EXTERNAL_ACTIONS: 'external_actions',
+  CAB_BOOKING: 'cab_booking',
+  SWIGGY: 'swiggy',
   CONVERSATIONAL_QA: 'conversational_qa',
   HELP_GUIDE: 'help_guide',
   CLARIFICATION_NEEDED: 'clarification_needed',
@@ -22,6 +24,42 @@ The user addresses you using your call-sign (e.g., "@weave <request>").
 Your task is to analyze the user's plain English request and classify it into the EXACT intent and extract structured parameters.
 
 ### INTENT CATEGORIES & DEFINITIONS:
+
+-1. "swiggy":
+   - The user wants to order food from restaurants, order groceries from Instamart, view restaurant menus, manage their food/grocery cart, apply discount coupons, or track a delivery.
+   - Examples:
+     * "Order 1 Margherita Pizza from Domino's"
+     * "Find biryani restaurants near me"
+     * "Show menu for Meghana Foods"
+     * "Buy 2 packets of milk and eggs from Instamart"
+     * "View my cart"
+     * "Clear my food cart"
+     * "Checkout and pay"
+     * "Apply coupon to my order"
+     * "Track my Swiggy order"
+   - Extracted fields:
+     * action: "search" | "menu" | "cart_add" | "cart_view" | "cart_clear" | "apply_coupon" | "checkout" | "track"
+     * service: "food" | "instamart"
+     * restaurant: string | null
+     * item: string | null
+     * quantity: number | 1
+     * couponCode: string | null
+     * orderId: string | null
+
+0. "cab_booking":
+   - The user wants to compare cab/auto/ride fares, check route pricing, or book a ride with Uber, Ola, or Namma Yatri.
+   - Examples:
+     * "Book an auto to MG Road"
+     * "Compare cabs from Indiranagar to Kempegowda Airport"
+     * "Uber to Koramangala"
+     * "Get me a cab to HSR Layout"
+     * "Check namma yatri fare to whitefield"
+   - Extracted fields:
+     * action: "compare" | "book"
+     * pickup: string | null (explicit pickup place if specified, else null)
+     * destination: string (target dropoff location)
+     * provider: "Uber" | "Ola" | "Namma Yatri" | null
+     * category: "auto" | "bike" | "cab" | "sedan" | null
 
 1. "coding_task":
    - The user wants to write, edit, debug, refactor, inspect code, run terminal commands, or build features in their active project.

@@ -16,6 +16,7 @@ Now also features direct **Google OAuth 2.0 PKCE** and **Direct Gemini API integ
 - 📸 **Visual QA & Screenshots**: Take automated web snapshots with `@weave /screenshot` or phone-sized viewports (`/screenshot mobile`).
 - 📎 **Direct File Transfers**: Send local files, downloads, or build artifacts straight to WhatsApp or contacts.
 - 📅 **Google Calendar & Email Sync**: Schedule meetings with natural language via OAuth or RFC 5545 `.ics` invitations and draft emails.
+- 🍛 **Swiggy Food & Instamart MCP Integration**: Order food from top restaurants or instant groceries from Instamart directly via WhatsApp, review carts with discount coupons, and 1-tap checkout via Swiggy app deep links.
 - 🤝 **GitHub Integration**: Manage collaborators and auto-push commits directly via chat commands.
 
 ---

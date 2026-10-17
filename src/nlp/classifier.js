@@ -4,6 +4,8 @@ import { queryFastRouter } from './fast-router.js';
 import { loadProjectsState, getFriends } from '../config.js';
 import { listProjectsForGroup } from '../autopilot/workspace.js';
 import { getActiveTaskInfo } from '../agent.js';
+import { parseCabEntities } from '../concierge/cabs/cabService.js';
+import { parseSwiggyEntities } from '../concierge/swiggy/swiggyService.js';
 
 /**
  * Fast Regex / Fuzzy Parser for zero-latency deterministic classification.
@@ -13,6 +15,45 @@ export function fastFuzzyClassify(rawText, { availableProjects = [], boundProjec
   const text = (rawText || '').trim();
   const lower = text.toLowerCase();
   const clean = lower.replace(/^[,\s]+|[?.!,]+$/g, '').trim();
+
+  // -1. Swiggy Food & Instamart Groceries
+  if (
+    /\b(?:swiggy|instamart)\b/i.test(clean) ||
+    /^(?:(?:please\s+)?(?:order|buy|get|search|find)\s+(?:me\s+)?(?:food|grocer(?:y|ies)|pizza|biryani|burger|milk|eggs|bread))\b/i.test(clean) ||
+    /^(?:view\s+cart|show\s+cart|my\s+cart|clear\s+cart|cart|checkout|apply\s+coupon)\b/i.test(clean) ||
+    /^(?:order|buy)\s+\d+\s+.+?(?:\s+from\s+[a-zA-Z0-9\s'’]+)?$/i.test(clean) ||
+    /^(?:menu|show\s+menu)\s+(?:for|of|from)\s+[a-zA-Z0-9\s'’]+$/i.test(clean) ||
+    /\b(?:track(?:ing)?|where\s+is\s+my|status\s+of)\s+(?:food|order|swiggy|delivery)\b/i.test(clean)
+  ) {
+    if (
+      !/\b(?:cabs?|taxis?|rides?|ubers?|olas?)\b/i.test(clean) &&
+      !/\b(?:function|component|bug|code|test|file|git|repo|commit|css|html|js|ts)\b/i.test(clean)
+    ) {
+      const parsed = parseSwiggyEntities(text);
+      return {
+        intent: INTENTS.SWIGGY,
+        confidence: 0.98,
+        swiggy: parsed,
+      };
+    }
+  }
+
+  // 0. Cab Booking & Route Fare Comparison (Uber, Ola, Namma Yatri)
+  if (
+    /^(?:(?:please\s+)?(?:book|get|find|compare|check)\s+(?:me\s+)?(?:(?:an?|the)\s+)?(?:cabs?|taxis?|rides?|autos?|bikes?|ubers?|olas?|namma\s+yatri))\b/i.test(clean) ||
+    /^(?:uber|ola|namma\s+yatri)\s+(?:to|from)\b/i.test(clean) ||
+    /^(?:cabs?|autos?|taxis?|rides?)\s+to\b/i.test(clean) ||
+    /\b(?:how\s+much\s+(?:is\s+)?(?:(?:an?|the)\s+)?(?:cabs?|taxis?|ubers?|olas?|autos?|rides?)\s+to)\b/i.test(clean)
+  ) {
+    const parsed = parseCabEntities(text);
+    if (parsed.destination) {
+      return {
+        intent: INTENTS.CAB_BOOKING,
+        confidence: 0.98,
+        cabBooking: parsed,
+      };
+    }
+  }
 
   // 1. Immediate Abort / Stop Reflex
   if (
@@ -131,7 +172,7 @@ export function fastFuzzyClassify(rawText, { availableProjects = [], boundProjec
 
   // 10. Workspace Management: List Projects
   if (
-    /^(?:what\s+projects\s+(?:do\s+we\s+have|are\s+available)|list\s+(?:all\s+)?projects|show\s+(?:all\s+)?projects|which\s+projects\s+exist|show\s+repos|list\s+repos|projects)$/i.test(
+    /^(?:what\s+projects\s+(?:do\s+we\s+have(?:\s+available)?|are\s+available)|list\s+(?:all\s+)?projects|show\s+(?:all\s+)?projects|which\s+projects\s+exist|show\s+repos|list\s+repos|projects)$/i.test(
       clean
     )
   ) {
