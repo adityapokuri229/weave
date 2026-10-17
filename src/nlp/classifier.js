@@ -56,6 +56,26 @@ export function fastFuzzyClassify(rawText, { availableProjects = [], boundProjec
     }
   }
 
+  // 0.5. Portfolio Website Creation & Iteration (Stitch MCP + Netlify)
+  const isPortfolioCreation =
+    /\b(?:create|build|make|generate|design|setup|deploy)\b.*\b(?:portfolio|personal\s+website|personal\s+site)\b/i.test(clean) ||
+    /^(?:portfolio\s+website|create\s+portfolio|build\s+portfolio)\b/i.test(clean);
+
+  const isPortfolioIteration =
+    /\b(?:option\s+[123]|switch\s+to\s+option|choose\s+option\s+[123]|swiss\s+style|bento\s+style|brutalist\s+style)\b/i.test(clean) ||
+    /^(?:switch\s+to\s+option\s+[123]|option\s+[123]|make\s+it\s+swiss|make\s+it\s+bento|make\s+it\s+brutalist)$/i.test(clean);
+
+  if (isPortfolioCreation || isPortfolioIteration) {
+    return {
+      intent: INTENTS.PORTFOLIO,
+      confidence: 0.98,
+      portfolio: {
+        isIteration: Boolean(isPortfolioIteration),
+        rawText: text,
+      },
+    };
+  }
+
   // 1. Immediate Abort / Stop Reflex
   if (
     /^(?:please\s+)?(?:stop|halt|cancel|abort|shut\s*up|wait\s+stop|kill\s+task|stop\s+task|stop\s+what\s+you(?:'re|\s+are)\s+doing)/i.test(

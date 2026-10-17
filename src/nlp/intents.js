@@ -14,6 +14,7 @@ export const INTENTS = {
   EXTERNAL_ACTIONS: 'external_actions',
   CAB_BOOKING: 'cab_booking',
   SWIGGY: 'swiggy',
+  PORTFOLIO: 'portfolio',
   CONVERSATIONAL_QA: 'conversational_qa',
   HELP_GUIDE: 'help_guide',
   CLARIFICATION_NEEDED: 'clarification_needed',

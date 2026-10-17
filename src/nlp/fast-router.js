@@ -13,6 +13,7 @@ Classify the user's message into intent and output strictly JSON.
 
 Allowed Intents:
 - "coding_task": Write, edit, debug, refactor, or build code in active project.
+- "portfolio": Create, design, or iterate on a portfolio website, design variants, or personal site.
 - "conversational_qa": Greetings, chit-chat, technical questions, banter, opinions.
 - "cab_booking": Compare cab fares, check route pricing, or book ride with Uber, Ola, or Namma Yatri.
 - "swiggy": Order food or groceries (Instamart), browse menus, manage cart, coupons, track delivery.
@@ -26,7 +27,7 @@ Rules:
 2. If "coding_task", set "directReply" to null and fill "instructions" and "targetProject" (if mentioned).
 3. Output ONLY a valid JSON object matching this schema:
 {
-  "intent": "coding_task" | "conversational_qa" | "cab_booking" | "swiggy" | "workspace_management" | "git_github" | "task_control" | "help_guide",
+  "intent": "coding_task" | "portfolio" | "conversational_qa" | "cab_booking" | "swiggy" | "workspace_management" | "git_github" | "task_control" | "help_guide",
   "confidence": 0.95,
   "directReply": string | null,
   "instructions": string | null,

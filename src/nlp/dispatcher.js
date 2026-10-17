@@ -29,6 +29,10 @@ import { captureWebScreenshot, getProjectDeploymentUrl } from '../qa.js';
 import { checkAndApplyOtaUpdate, getOtaStatus } from '../ota.js';
 import { handleCabRequest } from '../concierge/cabs/cabService.js';
 import { handleSwiggyRequest } from '../concierge/swiggy/swiggyService.js';
+import {
+  executePortfolioCreation,
+  iteratePortfolioDesign,
+} from '../portfolio/portfolioOrchestrator.js';
 
 /**
  * Dispatches a classified intent to its corresponding handler.
@@ -563,6 +567,97 @@ export async function dispatchIntent({
         `⚠️ *Could not process Swiggy request:* ${err.message}`,
         msg
       );
+    }
+    return { handled: true };
+  }
+
+  // 8.5. Portfolio Creation & Stitch MCP Generation (Netlify Drop)
+  if (intent === INTENTS.PORTFOLIO) {
+    if (reactToMessage) {
+      await reactToMessage(sock, msg, '🎨').catch(() => {});
+    }
+    try {
+      const isIteration = intentResult.portfolio?.isIteration;
+      if (isIteration) {
+        const iterRes = await iteratePortfolioDesign({
+          chatJid: jid,
+          feedbackText: rawBody,
+        });
+
+        if (iterRes?.updatedShotPath && fs.existsSync(iterRes.updatedShotPath)) {
+          await sendWhatsAppFile(
+            sock,
+            jid,
+            iterRes.updatedShotPath,
+            `📸 *Updated Portfolio Preview*`,
+            msg
+          );
+        }
+
+        const cleanedText = (iterRes?.messageText || '')
+          .replace(/\[SEND_FILE:[^\]]+\]/g, '')
+          .trim();
+        if (cleanedText) {
+          await sendReply(sock, jid, cleanedText, msg);
+        }
+        if (reactToMessage) await reactToMessage(sock, msg, '✅').catch(() => {});
+        return { handled: true };
+      }
+
+      // New Portfolio Website creation
+      const defaultProjDir =
+        (boundProject && state?.projects?.[boundProject]) ||
+        path.resolve(process.cwd(), 'demo-site');
+
+      const result = await executePortfolioCreation({
+        prompt: rawBody,
+        chatJid: jid,
+        targetProjectDir: defaultProjDir,
+        projectAlias: boundProject || 'portfolio-website',
+        senderName: msg?.pushName || 'Founder / Architect',
+      });
+
+      // Send live preview screenshot
+      if (result.livePreviewScreenshot && fs.existsSync(result.livePreviewScreenshot)) {
+        await sendWhatsAppFile(
+          sock,
+          jid,
+          result.livePreviewScreenshot,
+          `📸 *Live Portfolio Preview*\n🌐 *URL:* ${result.siteUrl}`,
+          msg
+        );
+      }
+
+      // Send alternative Stitch design variant screenshots
+      if (result.variants && result.variants.length > 0) {
+        for (const v of result.variants) {
+          if (
+            v.screenshotPath &&
+            fs.existsSync(v.screenshotPath) &&
+            v.screenshotPath !== result.livePreviewScreenshot
+          ) {
+            await sendWhatsAppFile(
+              sock,
+              jid,
+              v.screenshotPath,
+              `🎨 *Option ${v.option}: ${v.name}*\n${v.description}`
+            );
+          }
+        }
+      }
+
+      // Send deploy card message
+      const cleanedText = result.messageText.replace(/\[SEND_FILE:[^\]]+\]/g, '').trim();
+      await sendReply(sock, jid, cleanedText, msg);
+      if (reactToMessage) await reactToMessage(sock, msg, '✅').catch(() => {});
+    } catch (err) {
+      await sendReply(
+        sock,
+        jid,
+        `❌ *Portfolio Creation Error:* ${err.message}`,
+        msg
+      );
+      if (reactToMessage) await reactToMessage(sock, msg, '❌').catch(() => {});
     }
     return { handled: true };
   }
