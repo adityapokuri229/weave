@@ -12,7 +12,6 @@ export const INTENTS = {
   FILE_OPERATIONS: 'file_operations',
   AGENT_LIFECYCLE: 'agent_lifecycle',
   EXTERNAL_ACTIONS: 'external_actions',
-  CAB_BOOKING: 'cab_booking',
   CONVERSATIONAL_QA: 'conversational_qa',
   HELP_GUIDE: 'help_guide',
   CLARIFICATION_NEEDED: 'clarification_needed',
@@ -125,20 +124,7 @@ Your task is to analyze the user's plain English request and classify it into th
      * "How do I talk to you?"
      * "What commands do you have?" (respond with conversational examples, NO slash commands)
 
-10. "cab_booking":
-   - The user wants to book a cab, check ride prices, track their ride status, or cancel an active ride.
-   - Sub-actions:
-     * "book": The user wants to book/confirm a ride ("book a cab to Airport", "get me an auto to MG Road", "book an uber").
-     * "compare": The user only wants to see/compare prices or fares ("how much is a cab to Indiranagar?", "compare cab prices to Times Square").
-     * "status": The user wants to know where their booked cab is ("where is my cab?", "cab status", "track ride").
-     * "cancel": The user wants to cancel their active ride ("cancel cab", "cancel my ride", "abort ride").
-   - Extracted fields:
-     * action: "book" | "compare" | "status" | "cancel"
-     * pickup: string | null (e.g. "here", "Indiranagar", or null if from current location)
-     * destination: string | null (e.g. "Airport", "Times Square", "MG Road")
-     * rideTier: "auto" | "bike" | "economy" | "premier" | "xl" | null
-
-11. "clarification_needed":
+10. "clarification_needed":
    - The request is completely ambiguous or underspecified, where multiple actions could be intended.
    - Examples: "look at it", "is it done?", "open that"
    - Extracted fields:
@@ -148,7 +134,7 @@ Your task is to analyze the user's plain English request and classify it into th
 ### RESPONSE FORMAT:
 Respond ONLY with a JSON object adhering to this schema:
 {
-  "intent": "coding_task" | "workspace_management" | "visual_qa" | "task_control" | "git_github" | "file_operations" | "agent_lifecycle" | "cab_booking" | "conversational_qa" | "help_guide" | "clarification_needed",
+  "intent": "coding_task" | "workspace_management" | "visual_qa" | "task_control" | "git_github" | "file_operations" | "agent_lifecycle" | "conversational_qa" | "help_guide" | "clarification_needed",
   "confidence": number, // 0.0 to 1.0
   "codingTask": { "instructions": string, "targetProject": string | null, "isContinuation": boolean },
   "workspace": { "action": "list"|"switch"|"bind"|"unbind"|"create"|"status", "projectName": string | null },
@@ -157,7 +143,6 @@ Respond ONLY with a JSON object adhering to this schema:
   "git": { "action": "push"|"autopush_toggle"|"collab_add"|"collab_remove"|"collab_list", "commitMessage": string | null, "username": string | null, "enabled": boolean | null },
   "fileOps": { "fileName": string },
   "lifecycle": { "action": "sleep"|"wakeup"|"callsign_change"|"ota_update", "newCallsign": string | null },
-  "cabBooking": { "action": "book"|"compare"|"status"|"cancel", "pickup": string | null, "destination": string | null, "rideTier": "auto"|"bike"|"economy"|"premier"|"xl"|null },
   "conversationalQa": { "query": string, "directReply": string | null },
   "clarification": { "question": string, "options": string[] }
 }

@@ -44,14 +44,6 @@ const testCases = [
   { input: 'check for updates', expectedIntent: INTENTS.AGENT_LIFECYCLE },
   { input: 'change your callsign to @jarvis', expectedIntent: INTENTS.AGENT_LIFECYCLE },
 
-  // Cab & Ride Booking
-  { input: 'book a cab to the airport', expectedIntent: INTENTS.CAB_BOOKING },
-  { input: 'compare cab prices to Times Square', expectedIntent: INTENTS.CAB_BOOKING },
-  { input: 'get me an auto to MG Road', expectedIntent: INTENTS.CAB_BOOKING },
-  { input: 'book an uber from Central Park to JFK', expectedIntent: INTENTS.CAB_BOOKING },
-  { input: 'how much is a cab to Indiranagar', expectedIntent: INTENTS.CAB_BOOKING },
-  { input: 'uber to Whitefield', expectedIntent: INTENTS.CAB_BOOKING },
-
   // Conversational Q&A
   { input: 'how does JWT refresh token rotation work?', expectedIntent: INTENTS.CONVERSATIONAL_QA },
   { input: 'what is the difference between flexbox and grid?', expectedIntent: INTENTS.CONVERSATIONAL_QA },

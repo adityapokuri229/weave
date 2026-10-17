@@ -13,16 +13,14 @@ export function fastFuzzyClassify(rawText, { availableProjects = [], boundProjec
   const lower = text.toLowerCase();
   const clean = lower.replace(/^[,\s]+|[?.!,]+$/g, '').trim();
 
-  // 1. Immediate Abort / Stop Reflex (exclude cab/table/ticket booking cancellations)
-  const isLifestyleCancel = /\b(?:cab|taxi|uber|ola|lyft|ride|table|reservation|ticket)\b/i.test(clean);
+  // 1. Immediate Abort / Stop Reflex
   if (
-    !isLifestyleCancel &&
-    (/^(?:please\s+)?(?:stop|halt|cancel|abort|shut\s*up|wait\s+stop|kill\s+task|stop\s+task|stop\s+what\s+you(?:'re|\s+are)\s+doing)/i.test(
+    /^(?:please\s+)?(?:stop|halt|cancel|abort|shut\s*up|wait\s+stop|kill\s+task|stop\s+task|stop\s+what\s+you(?:'re|\s+are)\s+doing)/i.test(
       clean
     ) ||
       clean === 'stop' ||
       clean === 'cancel' ||
-      clean === 'abort')
+      clean === 'abort'
   ) {
     return {
       intent: INTENTS.TASK_CONTROL,
@@ -306,70 +304,7 @@ export function fastFuzzyClassify(rawText, { availableProjects = [], boundProjec
     };
   }
 
-  // 20. Cab & Ride Hailing (Uber, Ola, Lyft, Auto, Bike)
-  if (/^(?:where\s+is\s+my\s+(?:cab|uber|ola|ride)|cab\s+status|track\s+(?:my\s+)?(?:cab|ride)|ride\s+status)$/i.test(clean)) {
-    return {
-      intent: INTENTS.CAB_BOOKING,
-      confidence: 0.98,
-      cabBooking: { action: 'status', pickup: null, destination: null, rideTier: null },
-    };
-  }
-
-  if (/^(?:cancel\s+(?:my\s+)?(?:cab|uber|ola|ride)|cancel\s+(?:the\s+)?ride|abort\s+ride)$/i.test(clean)) {
-    return {
-      intent: INTENTS.CAB_BOOKING,
-      confidence: 0.98,
-      cabBooking: { action: 'cancel', pickup: null, destination: null, rideTier: null },
-    };
-  }
-
-  const cabTierMatch = clean.match(/\b(auto|rickshaw|bike|moto|suv|xl|premier|sedan|comfort|mini|uberx)\b/i);
-  let detectedTier = null;
-  if (cabTierMatch) {
-    const t = cabTierMatch[1].toLowerCase();
-    if (t === 'auto' || t === 'rickshaw') detectedTier = 'auto';
-    else if (t === 'bike' || t === 'moto') detectedTier = 'bike';
-    else if (t === 'suv' || t === 'xl') detectedTier = 'xl';
-    else if (t === 'premier' || t === 'sedan' || t === 'comfort') detectedTier = 'premier';
-    else if (t === 'mini' || t === 'uberx') detectedTier = 'economy';
-  }
-
-  const isComparisonOnly = /\b(compare|how\s+much|fares?|prices?|rates?|estimates?)\b/i.test(clean);
-  const defaultAction = isComparisonOnly ? 'compare' : 'book';
-
-  const cabFromToMatch = clean.match(
-    /\b(?:cab|taxi|uber|ola|lyft|auto|ride)\b.*?\bfrom\s+([^,]+?)\s+to\s+([^,]+)$/i
-  );
-  if (cabFromToMatch) {
-    return {
-      intent: INTENTS.CAB_BOOKING,
-      confidence: 0.98,
-      cabBooking: {
-        action: defaultAction,
-        pickup: cabFromToMatch[1].trim(),
-        destination: cabFromToMatch[2].trim(),
-        rideTier: detectedTier,
-      },
-    };
-  }
-
-  const cabToMatch = clean.match(
-    /(?:(?:book|find|get|check|call|compare|how\s+much\s+(?:is|for))\s+(?:a\s+|an\s+)?(?:cab|taxi|uber|ola|lyft|auto|ride)(?:\s+(?:prices?|fares?|rates?))?|^(?:uber|ola|lyft|cab|taxi|auto))\s+to\s+([^,]+)$/i
-  );
-  if (cabToMatch) {
-    return {
-      intent: INTENTS.CAB_BOOKING,
-      confidence: 0.96,
-      cabBooking: {
-        action: defaultAction,
-        pickup: null,
-        destination: cabToMatch[1].trim(),
-        rideTier: detectedTier,
-      },
-    };
-  }
-
-  // 21. Natural Language Question (pure conversational Q&A)
+  // 20. Natural Language Question (pure conversational Q&A)
   if (
     /^(?:how\s+does|how\s+do\s+i|what\s+is\s+the\s+difference\s+between|why\s+would|explain\s+how|what\s+are\s+the\s+pros\s+and\s+cons)\b/i.test(
       lower
