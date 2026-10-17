@@ -1,2 +1,144 @@
 <!DOCTYPE html>
-<html><head><meta charset="utf-8"/><title>Weave Workspace</title></head><body><h1>Weave Default Workspace</h1></body></html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NexusHack 2026 — Global 48-Hour Developer Sprint // October 23-25</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    body { font-family: 'Space Grotesk', sans-serif; }
+    .mono { font-family: 'JetBrains Mono', monospace; }
+    .brutal-card {
+      background: #ffffff;
+      border: 3px solid #000000;
+      box-shadow: 6px 6px 0px #000000;
+      transition: all 0.15s ease-in-out;
+    }
+    .brutal-card:hover {
+      transform: translate(-2px, -2px);
+      box-shadow: 10px 10px 0px #000000;
+    }
+    .brutal-btn {
+      border: 3px solid #000000;
+      box-shadow: 4px 4px 0px #000000;
+      transition: all 0.1s ease-in-out;
+    }
+    .brutal-btn:hover {
+      transform: translate(-1px, -1px);
+      box-shadow: 6px 6px 0px #000000;
+    }
+    .brutal-btn:active {
+      transform: translate(2px, 2px);
+      box-shadow: 0px 0px 0px #000000;
+    }
+  </style>
+</head>
+<body class="bg-[#fef9c3] text-zinc-950 min-h-screen p-6 md:p-12 selection:bg-black selection:text-yellow-300">
+  <div class="max-w-5xl mx-auto">
+    <!-- Header Banner -->
+    <header class="brutal-card p-6 mb-8 flex justify-between items-center bg-[#a7f3d0]">
+      <div class="font-black text-xl tracking-tight uppercase">NexusHack 2026 // 2026</div>
+      <div class="mono text-xs font-bold uppercase tracking-wider bg-black text-white px-3 py-1 rounded">
+        SYSTEMS ONLINE
+      </div>
+    </header>
+
+    <!-- Hero -->
+    <div class="grid grid-cols-1 md:grid-cols-12 gap-6 mb-8">
+      <div class="md:col-span-8 brutal-card p-8 md:p-12 bg-white">
+        <span class="mono text-xs font-black uppercase tracking-widest bg-yellow-300 border-2 border-black px-2 py-0.5 inline-block mb-4">
+          Global 48-Hour Developer Sprint // October 23-25
+        </span>
+        <h1 class="text-4xl md:text-6xl font-black uppercase tracking-tight leading-none mb-6">
+          Building Unbreakable Architecture.
+        </h1>
+        <p class="text-lg md:text-xl font-bold leading-relaxed mb-8">
+          500+ developers, designers, and innovators building next-gen autonomous systems. $25,000 in prizes.
+        </p>
+        <div class="flex flex-wrap gap-4">
+          <a href="#work" class="brutal-btn px-6 py-3 bg-[#f43f5e] text-white font-black text-sm uppercase">
+            View Deployments
+          </a>
+          <a href="mailto:team@nexushack.dev" class="brutal-btn px-6 py-3 bg-white text-black font-black text-sm uppercase">
+            Contact Direct
+          </a>
+        </div>
+      </div>
+
+      <!-- Stats Box -->
+      <div class="md:col-span-4 flex flex-col gap-6">
+        <div class="brutal-card p-6 bg-[#bae6fd] flex-1 flex flex-col justify-center">
+          <span class="mono text-xs font-black uppercase mb-1">METRICS</span>
+          <div class="text-4xl font-black">$25,000</div>
+          <div class="text-sm font-bold">Prize Pool</div>
+        </div>
+        <div class="brutal-card p-6 bg-[#fed7aa] flex-1 flex flex-col justify-center">
+          <span class="mono text-xs font-black uppercase mb-1">DEPLOYED</span>
+          <div class="text-4xl font-black">500+</div>
+          <div class="text-sm font-bold">Builders Registered</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Philosophy -->
+    <div class="brutal-card p-8 mb-8 bg-[#fbcfe8]">
+      <span class="mono text-xs font-black uppercase tracking-widest bg-black text-white px-2 py-1 inline-block mb-3">
+        MANIFESTO
+      </span>
+      <p class="text-2xl md:text-3xl font-black leading-snug">
+        "Code at the frontier. 48 hours to assemble prototypes that solve real-world problems with AI & distributed compute."
+      </p>
+    </div>
+
+    <!-- Projects -->
+    <div id="work" class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+      
+        <div class="brutal-card p-6 bg-white flex flex-col justify-between">
+          <div>
+            <div class="mono text-xs font-black text-zinc-500 mb-2">#01</div>
+            <h3 class="text-xl font-black uppercase mb-2">Track 1: Agent Swarms</h3>
+            <p class="text-sm font-medium leading-relaxed mb-6">Multi-agent orchestration, tool usage, consensus algorithms, and task completion engines.</p>
+          </div>
+          <div class="flex flex-wrap gap-1 border-t-2 border-black pt-4">
+            <span class="mono text-[10px] font-bold bg-zinc-100 border border-black px-1.5 py-0.5">TypeScript</span><span class="mono text-[10px] font-bold bg-zinc-100 border border-black px-1.5 py-0.5">Gemini Flash</span><span class="mono text-[10px] font-bold bg-zinc-100 border border-black px-1.5 py-0.5">WebSockets</span>
+          </div>
+        </div>
+      
+        <div class="brutal-card p-6 bg-white flex flex-col justify-between">
+          <div>
+            <div class="mono text-xs font-black text-zinc-500 mb-2">#02</div>
+            <h3 class="text-xl font-black uppercase mb-2">Track 2: Real-time Multimodal</h3>
+            <p class="text-sm font-medium leading-relaxed mb-6">Sub-second audio streaming, computer vision pipelines, and interactive spatial computing.</p>
+          </div>
+          <div class="flex flex-wrap gap-1 border-t-2 border-black pt-4">
+            <span class="mono text-[10px] font-bold bg-zinc-100 border border-black px-1.5 py-0.5">WebRTC</span><span class="mono text-[10px] font-bold bg-zinc-100 border border-black px-1.5 py-0.5">PyTorch</span><span class="mono text-[10px] font-bold bg-zinc-100 border border-black px-1.5 py-0.5">Rust</span>
+          </div>
+        </div>
+      
+        <div class="brutal-card p-6 bg-white flex flex-col justify-between">
+          <div>
+            <div class="mono text-xs font-black text-zinc-500 mb-2">#03</div>
+            <h3 class="text-xl font-black uppercase mb-2">Track 3: Edge & Local AI</h3>
+            <p class="text-sm font-medium leading-relaxed mb-6">Quantized on-device LLM inference, local vector search, and offline-first applications.</p>
+          </div>
+          <div class="flex flex-wrap gap-1 border-t-2 border-black pt-4">
+            <span class="mono text-[10px] font-bold bg-zinc-100 border border-black px-1.5 py-0.5">C++</span><span class="mono text-[10px] font-bold bg-zinc-100 border border-black px-1.5 py-0.5">ONNX</span><span class="mono text-[10px] font-bold bg-zinc-100 border border-black px-1.5 py-0.5">WebAssembly</span>
+          </div>
+        </div>
+      
+    </div>
+
+    <!-- Footer -->
+    <footer class="brutal-card p-6 bg-black text-white flex justify-between items-center">
+      <div class="mono text-xs font-bold uppercase">Deployed to Netlify Anonymous Drop</div>
+      <a href="mailto:team@nexushack.dev" class="text-xs font-bold uppercase underline hover:text-yellow-300">
+        team@nexushack.dev
+      </a>
+    </footer>
+  </div>
+</body>
+</html>

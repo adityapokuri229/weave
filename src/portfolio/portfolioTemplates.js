@@ -18,77 +18,307 @@ export const DESIGN_PHILOSOPHIES = {
 export function buildPortfolioData(custom = {}) {
   const promptLower = String(custom.prompt || custom.tagline || '').toLowerCase();
 
-  if (promptLower.includes('hackathon')) {
-    const eventName = 'NexusHack 2026';
-    const role = 'Global 48-Hour Developer Sprint // October 23-25';
-    const tagline =
-      '500+ developers, designers, and innovators building next-gen autonomous systems. $25,000 in prizes.';
-    const philosophy =
-      'Code at the frontier. 48 hours to assemble prototypes that solve real-world problems with AI & distributed compute.';
-    const stats = [
-      { label: 'Prize Pool', value: '$25,000' },
-      { label: 'Builders Registered', value: '500+' },
-      { label: 'Sprint Duration', value: '48 Hours' },
-      { label: 'Industry Mentors', value: '30+' },
-    ];
-    const projects = [
-      {
-        title: 'Track 1: Agent Swarms',
-        category: 'Autonomous Workflows',
-        description: 'Multi-agent orchestration, tool usage, consensus algorithms, and task completion engines.',
-        tags: ['TypeScript', 'Gemini Flash', 'WebSockets'],
-        github: '#',
-        demo: '#',
-      },
-      {
-        title: 'Track 2: Real-time Multimodal',
-        category: 'Voice & Vision',
-        description: 'Sub-second audio streaming, computer vision pipelines, and interactive spatial computing.',
-        tags: ['WebRTC', 'PyTorch', 'Rust'],
-        github: '#',
-        demo: '#',
-      },
-      {
-        title: 'Track 3: Edge & Local AI',
-        category: 'Embedded Systems',
-        description: 'Quantized on-device LLM inference, local vector search, and offline-first applications.',
-        tags: ['C++', 'ONNX', 'WebAssembly'],
-        github: '#',
-        demo: '#',
-      },
-    ];
-    const skills = [
-      'Registration Open',
-      'October 23 Kickoff',
-      'Mentorship Hours',
-      'API Key Credits',
-      'Cloud Compute',
-      'Live Demos',
-    ];
+  // 1. Dog Shelter / Animal Rescue / Pets
+  if (promptLower.match(/(dog|shelter|rescue|animal|cat|pet|pup|puppy|adopt|canine|sanctuary)/i)) {
     return {
-      name: custom.eventName || (custom.name && custom.name !== 'Alex Chen' && !custom.name.includes('Founder') ? custom.name : 'NexusHack 2026'),
-      role,
-      tagline,
-      philosophy,
-      stats,
-      projects,
-      skills,
-      email: 'team@nexushack.dev',
-      github: 'https://github.com',
-      twitter: 'https://twitter.com',
+      name: custom.eventName || (custom.name && custom.name !== 'Alex Chen' && !custom.name.includes('Founder') ? custom.name : 'Paws & Hope Sanctuary'),
+      role: 'Rescue, Rehabilitation & Forever Adoptions',
+      headline: 'Giving Every Rescued Dog A Loving Second Chance.',
+      tagline: 'Dedicated to rescuing abandoned pups, providing compassionate veterinary care, and connecting loving families with their new best friends.',
+      statusBadge: '🐾 14 Dogs Ready For Adoption',
+      categoryBadge: 'ANIMAL RESCUE & NO-KILL SANCTUARY',
+      ctaPrimary: 'Meet Adoptable Dogs',
+      ctaSecondary: 'Donate & Foster',
+      manifestoTitle: 'Compassion In Action',
+      philosophy: 'Every rescue deserves safety, medical care, and unconditional love. We operate as a 100% no-kill rescue dedicated to ensuring no animal is left behind.',
+      headerTag: 'NO-KILL SANCTUARY // 2026',
+      stats: [
+        { label: 'Dogs Rescued', value: '520+' },
+        { label: 'Happy Adoptions', value: '470+' },
+        { label: 'No-Kill Rate', value: '100%' },
+        { label: 'Active Fosters', value: '65+' },
+      ],
+      projects: [
+        {
+          title: 'Milo (Golden Retriever Mix)',
+          category: 'Ready For Adoption',
+          description: 'Energetic 2-year-old cuddle bug who loves outdoor fetch, leash-trained and fully vaccinated.',
+          tags: ['Friendly', 'House-Trained', 'Vaccinated'],
+          github: '#',
+          demo: '#',
+        },
+        {
+          title: 'Bella (Gentle Shepherd)',
+          category: 'Ready For Adoption',
+          description: 'Calm and affectionate 3-year-old companion, wonderful with young children and other household pets.',
+          tags: ['Family-Friendly', 'Gentle', 'Spayed'],
+          github: '#',
+          demo: '#',
+        },
+        {
+          title: 'Rocky & Luna (Bonded Pair)',
+          category: 'Foster or Adopt',
+          description: 'Sweet, inseparable sibling pair looking for a cozy home with a warm yard to explore together.',
+          tags: ['Bonded Pair', 'Quiet', 'Loving'],
+          github: '#',
+          demo: '#',
+        },
+      ],
+      skills: [
+        'Pet Adoption',
+        'Foster Network',
+        'Emergency Vet Care',
+        'Weekend Adoption Drives',
+        'Puppy Socialization',
+        'Community Outreach',
+      ],
+      email: 'adopt@pawsandhope.org',
+      github: 'https://instagram.com/pawsandhope',
+      twitter: 'https://twitter.com/pawsandhope',
       prompt: custom.prompt,
     };
   }
 
+  // 2. Hackathon / Developer Sprint / Tech Event
+  if (promptLower.match(/(hackathon|sprint|buildathon|competition|devfest)/i)) {
+    return {
+      name: custom.eventName || (custom.name && custom.name !== 'Alex Chen' && !custom.name.includes('Founder') ? custom.name : 'NexusHack 2026'),
+      role: 'Global 48-Hour Developer Sprint // October 23-25',
+      headline: 'Build The Next Reality.',
+      tagline: '500+ developers, designers, and innovators assembling next-gen autonomous systems. $25,000 in prizes.',
+      statusBadge: '⚡ Registration Open for Oct 23-25',
+      categoryBadge: 'GLOBAL DEVELOPER SPRINT',
+      ctaPrimary: 'Register Team',
+      ctaSecondary: 'View Tracks & Prizes',
+      manifestoTitle: 'Code At The Frontier',
+      philosophy: 'Code at the frontier. 48 hours to assemble prototypes that solve real-world problems with AI & distributed compute.',
+      headerTag: 'OCTOBER 23-25 // 2026',
+      stats: [
+        { label: 'Prize Pool', value: '$25,000' },
+        { label: 'Builders Registered', value: '500+' },
+        { label: 'Sprint Duration', value: '48 Hours' },
+        { label: 'Industry Mentors', value: '30+' },
+      ],
+      projects: [
+        {
+          title: 'Track 1: Agent Swarms',
+          category: 'Autonomous Workflows',
+          description: 'Multi-agent orchestration, tool usage, consensus algorithms, and task completion engines.',
+          tags: ['TypeScript', 'Gemini Flash', 'WebSockets'],
+          github: '#',
+          demo: '#',
+        },
+        {
+          title: 'Track 2: Real-time Multimodal',
+          category: 'Voice & Vision',
+          description: 'Sub-second audio streaming, computer vision pipelines, and interactive spatial computing.',
+          tags: ['WebRTC', 'PyTorch', 'Rust'],
+          github: '#',
+          demo: '#',
+        },
+        {
+          title: 'Track 3: Edge & Local AI',
+          category: 'Embedded Systems',
+          description: 'Quantized on-device LLM inference, local vector search, and offline-first applications.',
+          tags: ['C++', 'ONNX', 'WebAssembly'],
+          github: '#',
+          demo: '#',
+        },
+      ],
+      skills: [
+        'Registration Open',
+        'October 23 Kickoff',
+        'Mentorship Hours',
+        'API Key Credits',
+        'Cloud Compute',
+        'Live Demos',
+      ],
+      email: 'team@nexushack.dev',
+      github: 'https://github.com/nexushack',
+      twitter: 'https://twitter.com/nexushack',
+      prompt: custom.prompt,
+    };
+  }
+
+  // 3. Cafe / Bakery / Coffee / Restaurant
+  if (promptLower.match(/(cafe|coffee|bakery|restaurant|food|bistro|dining|pastry|roaster|kitchen)/i)) {
+    return {
+      name: custom.eventName || (custom.name && custom.name !== 'Alex Chen' && !custom.name.includes('Founder') ? custom.name : 'Artisan Roast & Bakery'),
+      role: 'Specialty Coffee & Handcrafted Sourdough',
+      headline: 'Crafting Moments Over Fresh Roast & Warm Loaves.',
+      tagline: 'Locally roasted single-origin coffees, organic slow-fermented pastries, and a welcoming neighborhood table for everyone.',
+      statusBadge: '☕ Fresh Batches Daily from 7 AM',
+      categoryBadge: 'SPECIALTY ROASTERY & BAKERY',
+      ctaPrimary: 'Explore Menu',
+      ctaSecondary: 'Visit Our Table',
+      manifestoTitle: 'The Slow Food Craft',
+      philosophy: 'We source ethical beans directly from smallholders and bake with 100-year-old heritage sourdough cultures with zero compromises.',
+      headerTag: 'OPEN DAILY 7AM - 6PM',
+      stats: [
+        { label: 'Single Origins', value: '14+' },
+        { label: 'Local Farms', value: '18' },
+        { label: 'Customer Rating', value: '4.9★' },
+        { label: 'Seating Capacity', value: '60+' },
+      ],
+      projects: [
+        {
+          title: 'Ethiopia Yirgacheffe Pour-Over',
+          category: 'Signature Single Origin',
+          description: 'Bright floral jasmine notes, bergamot sweetness, and clean lingering citrus acidity.',
+          tags: ['Single Origin', 'Light Roast', 'Direct Trade'],
+          github: '#',
+          demo: '#',
+        },
+        {
+          title: 'Wild Honey & Almond Croissant',
+          category: 'Artisan Pastry',
+          description: 'Twice-baked flaky butter pastry layered with roasted frangipane cream and wildflower honey glaze.',
+          tags: ['Fresh Daily', 'French Butter', 'Organic'],
+          github: '#',
+          demo: '#',
+        },
+        {
+          title: '36-Hour Country Sourdough',
+          category: 'Heritage Bakes',
+          description: 'Dark caramelized crust, custardy open crumb, and deep naturally fermented tang.',
+          tags: ['Wild Yeast', 'Stoneground', 'No Preservatives'],
+          github: '#',
+          demo: '#',
+        },
+      ],
+      skills: ['Specialty Coffee', 'Heritage Sourdough', 'Pour-Over Bar', 'Wholesale Beans', 'Catering Orders', 'Barista Classes'],
+      email: 'hello@artisanroast.com',
+      github: 'https://instagram.com/artisanroast',
+      twitter: 'https://twitter.com/artisanroast',
+      prompt: custom.prompt,
+    };
+  }
+
+  // 4. Photography / Creative Studio / Visual Arts
+  if (promptLower.match(/(photo|photography|design studio|artist|creative studio|videograph|camera|gallery|fashion)/i)) {
+    return {
+      name: custom.eventName || (custom.name && custom.name !== 'Alex Chen' && !custom.name.includes('Founder') ? custom.name : 'Lumina Creative Studio'),
+      role: 'Editorial Photography & Visual Direction',
+      headline: 'Capturing Human Emotion Through Light & Shadow.',
+      tagline: 'Specializing in editorial portraiture, brand identities, and cinematic documentary photography that tells unforgettable stories.',
+      statusBadge: '📷 Booking Available for Season 2026',
+      categoryBadge: 'EDITORIAL & CINEMATIC VISUALS',
+      ctaPrimary: 'View Selected Works',
+      ctaSecondary: 'Inquire Commission',
+      manifestoTitle: 'Visual Poetics',
+      philosophy: 'Every frame is an intentional dialogue between light, atmosphere, and authentic human presence.',
+      headerTag: 'STUDIO // 2026',
+      stats: [
+        { label: 'Exhibitions', value: '24+' },
+        { label: 'Cover Stories', value: '45+' },
+        { label: 'Global Clients', value: '80+' },
+        { label: 'Industry Awards', value: '12' },
+      ],
+      projects: [
+        {
+          title: 'Solitude in Monochrome',
+          category: 'Fine Art Series',
+          description: '35mm silver-gelatin prints exploring architectural geometry and minimalist human solitude.',
+          tags: ['Medium Format', 'B&W', 'Exhibition'],
+          github: '#',
+          demo: '#',
+        },
+        {
+          title: 'Nordic Horizon Campaign',
+          category: 'Brand Direction',
+          description: 'Atmospheric visual campaign shot on location across Icelandic volcanic coasts for sustainable apparel.',
+          tags: ['Editorial', 'Commercial', 'Location'],
+          github: '#',
+          demo: '#',
+        },
+        {
+          title: 'The Craftsmen of Kyoto',
+          category: 'Documentary',
+          description: 'Intimate visual essays documenting master woodturners, lacquerers, and ceramicists in Japan.',
+          tags: ['Documentary', 'Storytelling', 'Published'],
+          github: '#',
+          demo: '#',
+        },
+      ],
+      skills: ['Editorial Photography', 'Creative Direction', 'Medium Format Film', 'Lighting Design', 'Color Grading', 'Brand Identity'],
+      email: 'studio@luminavisuals.com',
+      github: 'https://instagram.com/luminastudio',
+      twitter: 'https://twitter.com/luminastudio',
+      prompt: custom.prompt,
+    };
+  }
+
+  // 5. Fitness / Gym / Wellness
+  if (promptLower.match(/(gym|fitness|workout|trainer|yoga|crossfit|wellness|athletic)/i)) {
+    return {
+      name: custom.eventName || (custom.name && custom.name !== 'Alex Chen' && !custom.name.includes('Founder') ? custom.name : 'Apex Performance & Wellness'),
+      role: 'Functional Conditioning & Strength Training',
+      headline: 'Transforming Strength, Mobility, & Longevity.',
+      tagline: 'Science-backed strength conditioning, athletic recovery, and personal coaching designed for sustainable peak health.',
+      statusBadge: '⚡ Free 3-Day Trial Pass Available',
+      categoryBadge: 'ATHLETIC PERFORMANCE & WELLNESS',
+      ctaPrimary: 'Start Free Trial',
+      ctaSecondary: 'Explore Programs',
+      manifestoTitle: 'The Discipline Mindset',
+      philosophy: 'True strength is built through progressive overload, disciplined recovery, and daily consistency. No shortcuts.',
+      headerTag: 'ELEVATE YOUR BASELINE',
+      stats: [
+        { label: 'Active Members', value: '650+' },
+        { label: 'Certified Coaches', value: '15' },
+        { label: 'Class Formats', value: '25+' },
+        { label: 'Member Retention', value: '94%' },
+      ],
+      projects: [
+        {
+          title: 'Functional Hypertrophy Track',
+          category: 'Strength Program',
+          description: 'Periodized 12-week barbell and dumbbell progression focused on compound lifting mechanics.',
+          tags: ['Strength', 'Hypertrophy', 'Periodization'],
+          github: '#',
+          demo: '#',
+        },
+        {
+          title: 'Athletic Engine & Conditioning',
+          category: 'Cardiovascular Work',
+          description: 'High-density aerobic capacity training utilizing rowers, air bikes, and sled pushes.',
+          tags: ['Cardio', 'VO2 Max', 'High Intensity'],
+          github: '#',
+          demo: '#',
+        },
+        {
+          title: 'Mobility & Joint Longevity',
+          category: 'Recovery Series',
+          description: 'Targeted mobility routines to decompress spines, restore hip rotational mechanics, and prevent injury.',
+          tags: ['Mobility', 'Recovery', 'Injury Prevention'],
+          github: '#',
+          demo: '#',
+        },
+      ],
+      skills: ['Strength Coaching', 'Olympic Lifting', 'Metabolic Conditioning', 'Nutrition Advisory', 'Physical Therapy', 'Recovery Suites'],
+      email: 'coach@apexstrength.com',
+      github: 'https://instagram.com/apexstrength',
+      twitter: 'https://twitter.com/apexstrength',
+      prompt: custom.prompt,
+    };
+  }
+
+  // 6. Default: Tech / AI / Systems Architecture (or user-specified profile)
   const name = custom.name || 'Alex Chen';
   const role = custom.role || 'AI Systems Engineer & Full-Stack Architect';
+  const headline = custom.headline || 'Building Unbreakable Architecture.';
   const tagline =
     custom.tagline ||
     'Architecting autonomous agent networks and high-throughput LLM deployment pipelines.';
   const philosophy =
     custom.philosophy ||
     'I believe intelligence infrastructure should be deterministic, auditable, and seamlessly integrated into human workflows.';
-  
+  const statusBadge = custom.statusBadge || 'Status: Open for Architecture Roles';
+  const categoryBadge = custom.categoryBadge || 'PORTFOLIO & ARCHITECTURE';
+  const ctaPrimary = custom.ctaPrimary || 'Explore Systems';
+  const ctaSecondary = custom.ctaSecondary || 'Initiate Contact';
+  const manifestoTitle = custom.manifestoTitle || 'Deterministic Intelligence';
+  const headerTag = custom.headerTag || 'SYSTEMS ONLINE';
+
   const stats = custom.stats || [
     { label: 'Latency Reduction', value: '4.2x' },
     { label: 'Production Models', value: '18+' },
@@ -140,7 +370,26 @@ export function buildPortfolioData(custom = {}) {
   const github = custom.github || 'https://github.com';
   const twitter = custom.twitter || 'https://twitter.com';
 
-  return { name, role, tagline, philosophy, stats, projects, skills, email, github, twitter, ...custom };
+  return {
+    name,
+    role,
+    headline,
+    tagline,
+    statusBadge,
+    categoryBadge,
+    ctaPrimary,
+    ctaSecondary,
+    manifestoTitle,
+    headerTag,
+    philosophy,
+    stats,
+    projects,
+    skills,
+    email,
+    github,
+    twitter,
+    ...custom,
+  };
 }
 
 /**
@@ -187,11 +436,11 @@ export function renderBentoPortfolio(data) {
     <header class="flex items-center justify-between pb-12 border-b border-zinc-800/80 mb-12">
       <div class="flex items-center space-x-3">
         <div class="w-3.5 h-3.5 rounded-full bg-cyan-400 animate-pulse shadow-[0_0_12px_rgba(0,240,255,0.8)]"></div>
-        <span class="mono text-xs font-semibold tracking-wider text-cyan-400 uppercase">Status: Open for Architecture Roles</span>
+        <span class="mono text-xs font-semibold tracking-wider text-cyan-400 uppercase">${d.statusBadge}</span>
       </div>
       <div class="flex items-center space-x-4 mono text-xs text-zinc-400">
-        <a href="#work" class="hover:text-cyan-300 transition-colors">Work</a>
-        <a href="#approach" class="hover:text-cyan-300 transition-colors">Approach</a>
+        <a href="#work" class="hover:text-cyan-300 transition-colors">Overview</a>
+        <a href="#approach" class="hover:text-cyan-300 transition-colors">About</a>
         <a href="#contact" class="hover:text-cyan-300 transition-colors">Contact</a>
       </div>
     </header>
@@ -199,7 +448,7 @@ export function renderBentoPortfolio(data) {
     <!-- Hero Section -->
     <section class="mb-16">
       <div class="max-w-3xl">
-        <p class="mono text-cyan-400 text-sm font-medium mb-3 tracking-wide">// PORTFOLIO & ARCHITECTURE</p>
+        <p class="mono text-cyan-400 text-sm font-medium mb-3 tracking-wide">// ${d.categoryBadge}</p>
         <h1 class="text-4xl md:text-6xl font-bold tracking-tight text-white mb-6 leading-[1.12]">
           ${d.name}
         </h1>
@@ -208,12 +457,12 @@ export function renderBentoPortfolio(data) {
         </p>
         <div class="flex flex-wrap gap-4">
           <a href="#work" class="px-6 py-3 rounded-xl bg-cyan-400 text-zinc-950 font-semibold hover:bg-cyan-300 transition-all flex items-center gap-2 shadow-[0_0_25px_rgba(0,240,255,0.3)]">
-            <span>Explore Systems</span>
+            <span>${d.ctaPrimary}</span>
             <i data-lucide="arrow-down-right" class="w-4 h-4"></i>
           </a>
           <a href="mailto:${d.email}" class="px-6 py-3 rounded-xl bento-card text-zinc-200 font-medium hover:text-white transition-all flex items-center gap-2">
             <i data-lucide="mail" class="w-4 h-4 text-cyan-400"></i>
-            <span>Initiate Contact</span>
+            <span>${d.ctaSecondary}</span>
           </a>
         </div>
       </div>
@@ -226,9 +475,9 @@ export function renderBentoPortfolio(data) {
         <div class="relative z-10">
           <div class="flex items-center gap-2 mono text-xs text-cyan-400 mb-4">
             <i data-lucide="compass" class="w-4 h-4"></i>
-            <span class="tracking-widest uppercase">The Engineering Approach</span>
+            <span class="tracking-widest uppercase">Mission & Impact</span>
           </div>
-          <h2 class="text-2xl font-bold text-white mb-4">Deterministic Intelligence</h2>
+          <h2 class="text-2xl font-bold text-white mb-4">${d.manifestoTitle}</h2>
           <p class="text-zinc-300 text-base leading-relaxed mb-6">
             ${d.philosophy}
           </p>
@@ -243,14 +492,14 @@ export function renderBentoPortfolio(data) {
         </div>
       </div>
 
-      <!-- Tech Stack Radar Card (Span 5) -->
+      <!-- Core Tooling / Programs Card (Span 5) -->
       <div class="md:col-span-5 bento-card rounded-2xl p-8 flex flex-col justify-between">
         <div>
           <div class="flex items-center gap-2 mono text-xs text-cyan-400 mb-4">
-            <i data-lucide="cpu" class="w-4 h-4"></i>
-            <span class="tracking-widest uppercase">Core Stack & Tooling</span>
+            <i data-lucide="sparkles" class="w-4 h-4"></i>
+            <span class="tracking-widest uppercase">Highlights & Focus</span>
           </div>
-          <h3 class="text-xl font-bold text-white mb-4">Production Arsenal</h3>
+          <h3 class="text-xl font-bold text-white mb-4">Core Focus Areas</h3>
           <div class="flex flex-wrap gap-2 mb-6">
             ${d.skills.map(s => `
               <span class="px-3 py-1.5 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-300 text-xs font-medium hover:border-cyan-500/40 transition-colors">
@@ -348,7 +597,7 @@ export function renderSwissPortfolio(data) {
     <!-- Hero / Manifesto -->
     <section class="mb-24">
       <h1 class="serif text-5xl md:text-7xl font-normal text-zinc-950 leading-[1.05] tracking-tight mb-8">
-        Crafting clarity, elegance, & precision in modern software.
+        ${d.headline}
       </h1>
       <p class="text-lg md:text-xl text-zinc-700 max-w-2xl leading-relaxed font-light">
         ${d.tagline}
@@ -358,7 +607,7 @@ export function renderSwissPortfolio(data) {
     <!-- Philosophy -->
     <section class="grid grid-cols-1 md:grid-cols-12 gap-8 border-t border-zinc-300 pt-12 mb-24">
       <div class="md:col-span-4">
-        <h2 class="text-xs uppercase tracking-widest text-zinc-500 font-bold">The Approach</h2>
+        <h2 class="text-xs uppercase tracking-widest text-zinc-500 font-bold">${d.manifestoTitle}</h2>
       </div>
       <div class="md:col-span-8">
         <p class="text-2xl serif text-zinc-900 leading-snug mb-8">
@@ -378,7 +627,7 @@ export function renderSwissPortfolio(data) {
     <!-- Selected Work -->
     <section class="border-t border-zinc-300 pt-12 mb-24">
       <div class="flex justify-between items-baseline mb-12">
-        <h2 class="text-xs uppercase tracking-widest text-zinc-500 font-bold">Selected Projects</h2>
+        <h2 class="text-xs uppercase tracking-widest text-zinc-500 font-bold">Featured Highlights</h2>
         <span class="text-xs text-zinc-400">01 — 0${d.projects.length}</span>
       </div>
       <div class="divide-y divide-zinc-200">
@@ -393,7 +642,7 @@ export function renderSwissPortfolio(data) {
               ${p.description}
             </div>
             <div class="md:col-span-2 text-right">
-              <span class="text-xs font-medium text-orange-600 underline underline-offset-4">Read Case →</span>
+              <span class="text-xs font-medium text-orange-600 underline underline-offset-4">${d.ctaPrimary} →</span>
             </div>
           </div>
         `).join('')}
@@ -465,7 +714,7 @@ export function renderBrutalistPortfolio(data) {
     <header class="brutal-card p-6 mb-8 flex justify-between items-center bg-[#a7f3d0]">
       <div class="font-black text-xl tracking-tight uppercase">${d.name} // 2026</div>
       <div class="mono text-xs font-bold uppercase tracking-wider bg-black text-white px-3 py-1 rounded">
-        SYSTEMS ONLINE
+        ${d.headerTag}
       </div>
     </header>
 
@@ -476,17 +725,17 @@ export function renderBrutalistPortfolio(data) {
           ${d.role}
         </span>
         <h1 class="text-4xl md:text-6xl font-black uppercase tracking-tight leading-none mb-6">
-          Building Unbreakable Architecture.
+          ${d.headline}
         </h1>
         <p class="text-lg md:text-xl font-bold leading-relaxed mb-8">
           ${d.tagline}
         </p>
         <div class="flex flex-wrap gap-4">
           <a href="#work" class="brutal-btn px-6 py-3 bg-[#f43f5e] text-white font-black text-sm uppercase">
-            View Deployments
+            ${d.ctaPrimary}
           </a>
           <a href="mailto:${d.email}" class="brutal-btn px-6 py-3 bg-white text-black font-black text-sm uppercase">
-            Contact Direct
+            ${d.ctaSecondary}
           </a>
         </div>
       </div>
@@ -494,14 +743,14 @@ export function renderBrutalistPortfolio(data) {
       <!-- Stats Box -->
       <div class="md:col-span-4 flex flex-col gap-6">
         <div class="brutal-card p-6 bg-[#bae6fd] flex-1 flex flex-col justify-center">
-          <span class="mono text-xs font-black uppercase mb-1">METRICS</span>
-          <div class="text-4xl font-black">${d.stats[0]?.value || '4.2x'}</div>
-          <div class="text-sm font-bold">${d.stats[0]?.label || 'Performance Gain'}</div>
+          <span class="mono text-xs font-black uppercase mb-1">KEY METRIC</span>
+          <div class="text-4xl font-black">${d.stats[0]?.value || '100%'}</div>
+          <div class="text-sm font-bold">${d.stats[0]?.label || 'Impact'}</div>
         </div>
         <div class="brutal-card p-6 bg-[#fed7aa] flex-1 flex flex-col justify-center">
-          <span class="mono text-xs font-black uppercase mb-1">DEPLOYED</span>
-          <div class="text-4xl font-black">${d.stats[1]?.value || '18+'}</div>
-          <div class="text-sm font-bold">${d.stats[1]?.label || 'Production Models'}</div>
+          <span class="mono text-xs font-black uppercase mb-1">TOTAL</span>
+          <div class="text-4xl font-black">${d.stats[1]?.value || '500+'}</div>
+          <div class="text-sm font-bold">${d.stats[1]?.label || 'Community'}</div>
         </div>
       </div>
     </div>

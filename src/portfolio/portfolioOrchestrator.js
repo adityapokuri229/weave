@@ -106,15 +106,12 @@ export async function executePortfolioCreation({
   const projectDir = targetProjectDir || path.resolve(process.cwd(), 'demo-site');
   fs.mkdirSync(projectDir, { recursive: true });
 
-  // 1. Synthesize portfolio / event copy based on prompt
-  const isHackathon = (prompt || '').toLowerCase().includes('hackathon');
+  // 1. Synthesize website copy based on domain and prompt
   const portfolioData = buildPortfolioData({
     prompt,
-    eventName: isHackathon ? 'NexusHack 2026' : undefined,
-    name: isHackathon ? 'NexusHack 2026' : (senderName || 'Alex Chen'),
-    tagline: isHackathon
-      ? 'Global 48-Hour Developer Sprint // October 23-25'
-      : (prompt ? `Portfolio & Systems: ${prompt}` : undefined),
+    name: (prompt || '').match(/(shelter|dog|rescue|animal|cafe|coffee|bakery|restaurant|photo|studio|gym|fitness|hackathon|sprint)/i)
+      ? undefined
+      : (senderName || 'Alex Chen'),
     organizer: senderName || 'Founder',
   });
 
