@@ -30,6 +30,20 @@ export async function deployToNetlifyDrop(projectDir, { title = 'portfolio', sit
 
   const token = process.env.NETLIFY_AUTH_TOKEN || '';
 
+  // Check if Netlify CLI has an active login session
+  let isCliLoggedIn = false;
+  if (!token) {
+    try {
+      const { stdout } = await execFileAsync('netlify', ['status', '--json'], { timeout: 4000 });
+      const statusObj = JSON.parse(stdout || '{}');
+      if (statusObj && statusObj.loggedIn) {
+        isCliLoggedIn = true;
+      }
+    } catch {
+      isCliLoggedIn = false;
+    }
+  }
+
   // Determine CLI arguments
   const args = ['deploy', '--dir', resolvedDir, '--prod', '--no-build'];
 
@@ -39,7 +53,7 @@ export async function deployToNetlifyDrop(projectDir, { title = 'portfolio', sit
 
   if (token) {
     args.push('--auth', token);
-  } else {
+  } else if (!isCliLoggedIn) {
     args.push('--allow-anonymous');
   }
 
