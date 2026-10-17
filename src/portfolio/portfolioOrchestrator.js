@@ -257,7 +257,17 @@ export async function iteratePortfolioDesign({ chatJid, feedbackText }) {
   }
 
   // If user dictates custom content or adjustments
-  const portfolioData = session.portfolioData || buildPortfolioData();
+  let portfolioData = session.portfolioData;
+  if (!portfolioData || !portfolioData.headline) {
+    portfolioData = buildPortfolioData({
+      prompt: session.portfolioData?.prompt || session.prompt || '',
+      name: (session.portfolioData?.prompt || '').match(/(shelter|dog|rescue|animal|cafe|coffee|bakery|restaurant|photo|studio|gym|fitness|hackathon|sprint)/i)
+        ? undefined
+        : session.portfolioData?.name,
+    });
+    session.portfolioData = portfolioData;
+  }
+
   if (lower.includes('accent') || lower.includes('color') || lower.includes('cyan') || lower.includes('purple')) {
     portfolioData.tagline += ' // Styled with customized accent palette';
   }
