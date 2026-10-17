@@ -103,6 +103,18 @@ document.addEventListener('DOMContentLoaded', async () => {
   const callsignDisplay = document.getElementById('callsign-display');
   const btnCopyCallsign = document.getElementById('btn-copy-callsign');
 
+  // Master Directory Elements (Onboarding & Workspace)
+  const masterDirInputOnboarding = document.getElementById('master-dir-input-onboarding');
+  const btnBrowseMasterDirOnboarding = document.getElementById('btn-browse-master-dir-onboarding');
+  const btnSaveMasterDirOnboarding = document.getElementById('btn-save-master-dir-onboarding');
+  const masterDirBadgeOnboarding = document.getElementById('master-dir-badge-onboarding');
+
+  const masterDirInputWorkspace = document.getElementById('master-dir-input-workspace');
+  const btnBrowseMasterDirWorkspace = document.getElementById('btn-browse-master-dir-workspace');
+  const btnSaveMasterDirWorkspace = document.getElementById('btn-save-master-dir-workspace');
+  const masterDirWorkspaceBadge = document.getElementById('master-dir-workspace-badge');
+  const badgeMountedCount = document.getElementById('badge-mounted-count');
+
   // Workspace Feed & Elements
   const terminalBody = document.getElementById('terminal-body');
   const btnClearLogs = document.getElementById('btn-clear-logs');
@@ -111,6 +123,14 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnQuickStop = document.getElementById('btn-quick-stop');
   const workspaceBotStatusTag = document.getElementById('workspace-bot-status-tag');
   const activeProjectPath = document.getElementById('active-project-path');
+  const projectsListContainer = document.getElementById('projects-list-container');
+
+  // Friends & Collaborators Directory Elements
+  const friendsListContainer = document.getElementById('friends-list-container');
+  const badgeFriendsCount = document.getElementById('badge-friends-count');
+  const inputFriendName = document.getElementById('input-friend-name');
+  const inputFriendGithub = document.getElementById('input-friend-github');
+  const btnAddFriend = document.getElementById('btn-add-friend');
 
   // Copy callsign helper
   if (btnCopyCallsign) {
@@ -158,6 +178,180 @@ document.addEventListener('DOMContentLoaded', async () => {
     btnClearLogs.addEventListener('click', () => {
       terminalBody.innerHTML = '<div class="text-app-dim">// Stream cleared.</div>';
     });
+  }
+
+  function escapeHtml(str) {
+    if (typeof str !== 'string') return '';
+    return str
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function renderProjectsList(projects, activeProject, groupBindings = {}) {
+    if (!projectsListContainer) return;
+    const projectEntries = Object.entries(projects || {});
+    if (projectEntries.length === 0) {
+      projectsListContainer.innerHTML = `
+        <div class="p-3 rounded bg-app-canvas border border-app-border text-center text-app-tertiary text-xs font-mono">
+          No projects discovered or configured.
+        </div>`;
+      return;
+    }
+
+    // Map: alias (lowercase) -> array of groupJids
+    const bindingsByProject = {};
+    for (const [groupJid, alias] of Object.entries(groupBindings || {})) {
+      if (!alias) continue;
+      const lower = alias.toLowerCase();
+      if (!bindingsByProject[lower]) {
+        bindingsByProject[lower] = [];
+      }
+      bindingsByProject[lower].push(groupJid);
+    }
+
+    projectsListContainer.innerHTML = projectEntries
+      .map(([alias, folderPath]) => {
+        const isGlobalActive =
+          (activeProject || '').toLowerCase() === alias.toLowerCase();
+        const boundGroups = bindingsByProject[alias.toLowerCase()] || [];
+        const hasGroups = boundGroups.length > 0;
+
+        let groupsHtml = '';
+        if (hasGroups) {
+          groupsHtml = boundGroups
+            .map((jid) => {
+              const cleanJid = escapeHtml(jid);
+              const shortJid = escapeHtml(jid.replace('@g.us', ''));
+              return `
+                <div class="flex items-center justify-between gap-1 text-[10px] font-mono bg-zinc-900/90 border border-zinc-800 rounded px-2 py-1 mt-1">
+                  <span class="flex items-center gap-1.5 text-emerald-400 truncate" title="${cleanJid}">
+                    <i class="fa-brands fa-whatsapp text-[11px] shrink-0"></i>
+                    <span class="text-zinc-300 truncate">Group ${shortJid}</span>
+                    <span class="text-[8px] px-1 py-0.2 bg-emerald-950/60 text-emerald-400 border border-emerald-800/50 rounded uppercase shrink-0 font-medium">Bound</span>
+                  </span>
+                  <button
+                    class="btn-unbind-group text-[9px] text-zinc-400 hover:text-red-400 hover:bg-red-500/10 px-1.5 py-0.5 rounded border border-zinc-700/60 hover:border-red-500/30 transition cursor-pointer shrink-0"
+                    data-jid="${cleanJid}"
+                    data-alias="${escapeHtml(alias)}"
+                    title="Unbind this group from project"
+                  >
+                    Unbind
+                  </button>
+                </div>
+              `;
+            })
+            .join('');
+        } else {
+          groupsHtml = `
+            <div class="flex items-center gap-1 text-[10px] font-mono text-zinc-500 mt-1 px-0.5">
+              <i class="fa-brands fa-whatsapp text-zinc-600 text-[10px]"></i>
+              <span>No group bound</span>
+            </div>
+          `;
+        }
+
+        const safeAlias = escapeHtml(alias);
+        const safePath = escapeHtml(folderPath);
+
+        return `
+          <div class="p-2.5 rounded-lg bg-app-canvas border border-app-border hover:border-zinc-600 transition flex flex-col gap-1.5 group">
+            <!-- Top Row: Alias, Badges & Actions -->
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2 min-w-0">
+                <div class="w-6 h-6 rounded bg-app-subtle border border-app-border flex items-center justify-center text-white text-xs shrink-0">
+                  <i class="fa-solid fa-code text-[10px]"></i>
+                </div>
+                <div class="flex items-center gap-1.5 min-w-0">
+                  <span class="text-xs font-semibold text-white font-mono truncate" title="${safeAlias}">${safeAlias}</span>
+                  ${
+                    hasGroups
+                      ? `<span class="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 font-mono font-medium flex items-center gap-1 shrink-0"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>${boundGroups.length} GROUP${boundGroups.length > 1 ? 'S' : ''}</span>`
+                      : `<span class="text-[9px] px-1.5 py-0.5 rounded bg-zinc-800/80 text-zinc-500 border border-zinc-700/60 font-mono shrink-0">UNBOUND</span>`
+                  }
+                </div>
+              </div>
+
+              <!-- Action Buttons -->
+              <div class="flex items-center gap-1 shrink-0">
+                <button
+                  class="btn-open-folder text-[10px] font-mono px-2 py-1 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded border border-zinc-700/60 transition cursor-pointer flex items-center gap-1"
+                  data-path="${safePath}"
+                  title="Open folder in File Explorer"
+                >
+                  <i class="fa-regular fa-folder-open text-xs"></i>
+                  <span>Open</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Middle Row: Folder Path -->
+            <div class="text-[10px] font-mono text-app-tertiary truncate select-all px-0.5" title="${safePath}">
+              ${safePath}
+            </div>
+
+            <!-- Bottom Section: WhatsApp Group Bindings -->
+            <div class="pt-1 border-t border-app-borderSubtle">
+              <div class="text-[9px] font-mono uppercase text-app-tertiary flex items-center justify-between">
+                <span>WhatsApp Group Binding</span>
+                ${hasGroups ? `<span class="text-emerald-400 font-mono text-[9px]">${boundGroups.length} Active</span>` : ''}
+              </div>
+              ${groupsHtml}
+            </div>
+          </div>
+        `;
+      })
+      .join('');
+  }
+
+  function renderFriendsList(friends) {
+    if (!friendsListContainer) return;
+    const friendList = Array.isArray(friends) ? friends : [];
+    if (badgeFriendsCount) {
+      badgeFriendsCount.textContent = `${friendList.length} REGISTERED`;
+    }
+    if (friendList.length === 0) {
+      friendsListContainer.innerHTML = `
+        <div class="p-2.5 rounded bg-app-canvas border border-app-border text-center text-app-tertiary text-xs font-mono">
+          No friends added yet.
+        </div>`;
+      return;
+    }
+
+    friendsListContainer.innerHTML = friendList
+      .map((f) => {
+        const safeName = escapeHtml(f.name || 'Friend');
+        const safeGithub = escapeHtml(f.github || '');
+        const safeId = escapeHtml(f.id || f.name);
+        const avatarLetter = (f.name?.[0] || 'F').toUpperCase();
+        return `
+          <div class="flex items-center justify-between p-2 rounded bg-app-canvas border border-app-border">
+            <div class="flex items-center gap-2 min-w-0">
+              <div class="w-6 h-6 rounded-full bg-app-subtle border border-app-border flex items-center justify-center text-white text-[10px] font-mono font-bold shrink-0">
+                ${avatarLetter}
+              </div>
+              <div class="flex flex-col min-w-0">
+                <span class="text-xs font-medium text-white truncate">${safeName}</span>
+                <span class="text-[10px] font-mono text-zinc-400 flex items-center gap-1 truncate">
+                  <i class="fa-brands fa-github text-[10px] text-zinc-500"></i>
+                  <span>@${safeGithub}</span>
+                </span>
+              </div>
+            </div>
+            <button
+              class="btn-remove-friend text-[10px] text-zinc-500 hover:text-red-400 hover:bg-red-500/10 p-1 rounded border border-transparent hover:border-red-500/30 transition cursor-pointer shrink-0"
+              data-id="${safeId}"
+              data-name="${safeName}"
+              title="Remove friend from directory"
+            >
+              <span class="material-symbols-outlined text-[13px]">delete</span>
+            </button>
+          </div>
+        `;
+      })
+      .join('');
   }
 
   // State Synchronizer
@@ -319,9 +513,34 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (tabWorkspaceIcon) tabWorkspaceIcon.textContent = 'lock';
     }
 
-    // 4. Projects
-    if (state.activeProject && state.projects?.[state.activeProject]) {
+    // 4. Projects, Master Directory & Autopilot
+    const masterDir = state.masterDir || '';
+    if (masterDirInputOnboarding && document.activeElement !== masterDirInputOnboarding) {
+      masterDirInputOnboarding.value = masterDir;
+    }
+    if (masterDirInputWorkspace && document.activeElement !== masterDirInputWorkspace) {
+      masterDirInputWorkspace.value = masterDir;
+    }
+    if (masterDirWorkspaceBadge) {
+      masterDirWorkspaceBadge.textContent = masterDir ? 'Active' : 'Not set (defaults to ~/Documents)';
+    }
+
+    if (state.projects) {
+      const projCount = Object.keys(state.projects).length;
+      if (badgeMountedCount) {
+        badgeMountedCount.textContent = `${projCount} MOUNTED`;
+      }
+      renderProjectsList(state.projects, state.activeProject, state.groupBindings);
+    }
+
+    if (activeProjectPath && state.activeProject && state.projects?.[state.activeProject]) {
       activeProjectPath.textContent = state.projects[state.activeProject];
+    }
+    if (typeof state.autopilot === 'boolean') {
+      setAutopilotUI(state.autopilot);
+    }
+    if (state.friends) {
+      renderFriendsList(state.friends);
     }
   }
 
@@ -446,6 +665,45 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   });
 
+  // Autopilot Toggle Button
+  const btnToggleAutopilot = document.getElementById('btn-toggle-autopilot');
+  const autopilotPill = document.getElementById('autopilot-pill');
+  const autopilotIcon = document.getElementById('autopilot-icon');
+  let isAutopilot = false;
+
+  function setAutopilotUI(enabled) {
+    isAutopilot = Boolean(enabled);
+    if (!autopilotPill || !btnToggleAutopilot) return;
+    if (isAutopilot) {
+      autopilotPill.textContent = 'ON';
+      autopilotPill.className = 'px-1.5 py-0.2 rounded text-[9px] font-mono uppercase bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 font-bold';
+      btnToggleAutopilot.className = 'flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-emerald-950/40 border border-emerald-500/40 transition text-xs font-mono cursor-pointer shadow-sm';
+      if (autopilotIcon) autopilotIcon.className = 'material-symbols-outlined text-[14px] text-emerald-400';
+    } else {
+      autopilotPill.textContent = 'OFF';
+      autopilotPill.className = 'px-1.5 py-0.2 rounded text-[9px] font-mono uppercase bg-zinc-800 text-zinc-400 border border-zinc-700';
+      btnToggleAutopilot.className = 'flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-app-surface hover:bg-zinc-800 border border-app-border transition text-xs font-mono cursor-pointer';
+      if (autopilotIcon) autopilotIcon.className = 'material-symbols-outlined text-[14px] text-zinc-400';
+    }
+  }
+
+  if (btnToggleAutopilot) {
+    btnToggleAutopilot.addEventListener('click', async () => {
+      const next = !isAutopilot;
+      setAutopilotUI(next);
+      try {
+        const res = await api?.toggleAutopilot(next);
+        if (res?.success) {
+          setAutopilotUI(res.autopilot);
+          appendLog('info', `✈️ Autopilot mode ${res.autopilot ? 'ENABLED' : 'DISABLED'}`);
+        }
+      } catch (err) {
+        setAutopilotUI(!next);
+        appendLog('error', `Failed to toggle Autopilot: ${err.message}`);
+      }
+    });
+  }
+
   // Handle Save (Unique Call-Sign)
   btnSaveHandle.addEventListener('click', async () => {
     const handle = botTagInput.value.trim();
@@ -470,6 +728,80 @@ document.addEventListener('DOMContentLoaded', async () => {
       appendLog('warn', `⚠️ ${errMsg}`);
     }
   });
+
+  // Master Directory Handlers (Browse & Save)
+  async function handleMasterDirSave(targetPath, source) {
+    try {
+      const res = await api?.setMasterDir(targetPath);
+      if (res?.success) {
+        if (masterDirInputOnboarding) masterDirInputOnboarding.value = res.masterDir;
+        if (masterDirInputWorkspace) masterDirInputWorkspace.value = res.masterDir;
+        if (masterDirBadgeOnboarding) {
+          masterDirBadgeOnboarding.textContent = res.masterDir ? 'Saved ✓' : 'Cleared';
+          masterDirBadgeOnboarding.className = 'text-[11px] text-emerald-400 font-mono';
+        }
+        if (masterDirWorkspaceBadge) {
+          masterDirWorkspaceBadge.textContent = res.masterDir ? 'Active' : 'Not set';
+        }
+        if (res.projects && badgeMountedCount) {
+          badgeMountedCount.textContent = `${Object.keys(res.projects).length} MOUNTED`;
+        }
+        appendLog('info', `📁 Master directory set to: ${res.masterDir || '(cleared)'}`);
+        await syncStatus();
+        const btn = source === 'onboarding' ? btnSaveMasterDirOnboarding : btnSaveMasterDirWorkspace;
+        if (btn) {
+          btn.textContent = 'Saved ✓';
+          setTimeout(() => { btn.textContent = 'Save'; }, 1500);
+        }
+      } else {
+        appendLog('error', `Failed to save master directory: ${res?.error || 'Unknown'}`);
+      }
+    } catch (err) {
+      appendLog('error', err.message);
+    }
+  }
+
+  async function handleMasterDirBrowse(source) {
+    try {
+      const res = await api?.pickMasterDir();
+      if (res?.success && res.masterDir) {
+        if (masterDirInputOnboarding) masterDirInputOnboarding.value = res.masterDir;
+        if (masterDirInputWorkspace) masterDirInputWorkspace.value = res.masterDir;
+        if (masterDirBadgeOnboarding) {
+          masterDirBadgeOnboarding.textContent = 'Saved ✓';
+          masterDirBadgeOnboarding.className = 'text-[11px] text-emerald-400 font-mono';
+        }
+        if (masterDirWorkspaceBadge) {
+          masterDirWorkspaceBadge.textContent = 'Active';
+        }
+        if (res.projects && badgeMountedCount) {
+          badgeMountedCount.textContent = `${Object.keys(res.projects).length} MOUNTED`;
+        }
+        appendLog('info', `📁 Selected master directory: ${res.masterDir}`);
+        await syncStatus();
+      }
+    } catch (err) {
+      appendLog('error', `Directory picker error: ${err.message}`);
+    }
+  }
+
+  if (btnBrowseMasterDirOnboarding) {
+    btnBrowseMasterDirOnboarding.addEventListener('click', () => handleMasterDirBrowse('onboarding'));
+  }
+  if (btnBrowseMasterDirWorkspace) {
+    btnBrowseMasterDirWorkspace.addEventListener('click', () => handleMasterDirBrowse('workspace'));
+  }
+
+  if (btnSaveMasterDirOnboarding) {
+    btnSaveMasterDirOnboarding.addEventListener('click', () => {
+      handleMasterDirSave(masterDirInputOnboarding?.value?.trim() || '', 'onboarding');
+    });
+  }
+  if (btnSaveMasterDirWorkspace) {
+    btnSaveMasterDirWorkspace.addEventListener('click', () => {
+      handleMasterDirSave(masterDirInputWorkspace?.value?.trim() || '', 'workspace');
+    });
+  }
 
   // Direct Prompt Runner in Workspace
   async function runPrompt() {
@@ -558,6 +890,113 @@ document.addEventListener('DOMContentLoaded', async () => {
     api.onOtaUpdated((info) => {
       appendLog('info', `⚡ Live OTA Update applied: ${info.commitHash}`);
       refreshOtaBadge();
+    });
+  }
+
+  // Projects List Interaction (Set Active, Open Folder, Unbind Group)
+  if (projectsListContainer) {
+    projectsListContainer.addEventListener('click', async (e) => {
+      // 1. Open Folder
+      const openFolderBtn = e.target.closest('.btn-open-folder');
+      if (openFolderBtn && api?.openFolder) {
+        const folderPath = openFolderBtn.dataset.path;
+        if (!folderPath) return;
+        try {
+          const res = await api.openFolder(folderPath);
+          if (res && !res.success) {
+            appendLog('warn', `⚠️ Could not open folder: ${res.error || folderPath}`);
+          }
+        } catch (err) {
+          appendLog('warn', `⚠️ Could not open folder: ${err.message}`);
+        }
+        return;
+      }
+
+      // 3. Unbind Group
+      const unbindBtn = e.target.closest('.btn-unbind-group');
+      if (unbindBtn && api?.bindGroup) {
+        const jid = unbindBtn.dataset.jid;
+        const alias = unbindBtn.dataset.alias;
+        if (!jid) return;
+        unbindBtn.disabled = true;
+        unbindBtn.textContent = '...';
+        try {
+          const res = await api.bindGroup(jid, null);
+          if (res?.success) {
+            appendLog('info', `🔓 Unbound group ${jid} from ${alias || 'project'}`);
+            await syncStatus();
+          } else {
+            appendLog('error', `Failed to unbind group: ${res?.error || 'Unknown error'}`);
+            unbindBtn.disabled = false;
+            unbindBtn.textContent = 'Unbind';
+          }
+        } catch (err) {
+          appendLog('error', `Error unbinding group: ${err.message}`);
+          unbindBtn.disabled = false;
+          unbindBtn.textContent = 'Unbind';
+        }
+        return;
+      }
+    });
+  }
+
+  // Friends Directory Interaction (Add Friend & Remove Friend)
+  if (btnAddFriend) {
+    btnAddFriend.addEventListener('click', async () => {
+      const name = inputFriendName?.value?.trim();
+      const github = inputFriendGithub?.value?.trim();
+      if (!name || !github) {
+        appendLog('warn', '⚠️ Please provide both a Name and GitHub username.');
+        return;
+      }
+      btnAddFriend.disabled = true;
+      btnAddFriend.textContent = 'Saving...';
+      try {
+        const res = await api?.addFriend(name, github);
+        if (res?.success) {
+          if (inputFriendName) inputFriendName.value = '';
+          if (inputFriendGithub) inputFriendGithub.value = '';
+          if (res.friends) renderFriendsList(res.friends);
+          appendLog('info', `👥 Added friend: ${res.friend.name} (@${res.friend.github})`);
+          btnAddFriend.textContent = 'Saved ✓';
+          setTimeout(() => {
+            btnAddFriend.disabled = false;
+            btnAddFriend.innerHTML = '<span class="material-symbols-outlined text-[13px]">add</span><span>Save Friend</span>';
+          }, 1500);
+        } else {
+          appendLog('error', `Failed to add friend: ${res?.error || 'Unknown'}`);
+          btnAddFriend.disabled = false;
+          btnAddFriend.innerHTML = '<span class="material-symbols-outlined text-[13px]">add</span><span>Save Friend</span>';
+        }
+      } catch (err) {
+        appendLog('error', `Error adding friend: ${err.message}`);
+        btnAddFriend.disabled = false;
+        btnAddFriend.innerHTML = '<span class="material-symbols-outlined text-[13px]">add</span><span>Save Friend</span>';
+      }
+    });
+  }
+
+  if (friendsListContainer) {
+    friendsListContainer.addEventListener('click', async (e) => {
+      const removeBtn = e.target.closest('.btn-remove-friend');
+      if (!removeBtn) return;
+      const id = removeBtn.dataset.id;
+      const name = removeBtn.dataset.name;
+      if (!id && !name) return;
+      removeBtn.disabled = true;
+      try {
+        const res = await api?.removeFriend(id || name);
+        if (res?.success) {
+          appendLog('info', `🗑️ Removed friend: ${name || id}`);
+          if (res.friends) renderFriendsList(res.friends);
+        } else {
+          appendLog('warn', `⚠️ Could not remove friend: ${res?.error || 'Not found'}`);
+          removeBtn.disabled = false;
+        }
+      } catch (err) {
+        appendLog('error', `Error removing friend: ${err.message}`);
+        removeBtn.disabled = false;
+      }
     });
   }
 

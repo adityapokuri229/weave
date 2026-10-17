@@ -1,6 +1,7 @@
 import {
   makeWASocket,
   useMultiFileAuthState,
+  makeCacheableSignalKeyStore,
   DisconnectReason,
   fetchLatestBaileysVersion,
   downloadContentFromMessage,
@@ -42,6 +43,25 @@ import {
   prewarmAllBoundProjects,
 } from './agent.js';
 import { geminiClient } from './gemini-client.js';
+import { routeAutopilotIntent } from './autopilot/router.js';
+import {
+  createProjectUnderMaster,
+  switchGroupProject,
+  unbindGroupProject,
+  getGroupProjectStatus,
+  listProjectsForGroup,
+  getValidatedMasterDir,
+} from './autopilot/workspace.js';
+import {
+  handleCollaboratorRequest,
+  resolvePendingCollaborator,
+  executeCollaboratorInvite,
+} from './autopilot/friends.js';
+import {
+  createPendingClarification,
+  resolvePendingClarification,
+} from './autopilot/clarification.js';
+import { fullAutoDebouncer } from './autopilot/debouncer.js';
 
 const AUTH_DIR = path.join(DATA_DIR, 'auth_info_baileys');
 const CONTACTS_FILE = path.join(DATA_DIR, 'contacts.json');
@@ -624,17 +644,20 @@ function extractTriggeredBody(sock, msg, text) {
   const trimmedText = (text || '').trim();
   const lowerText = trimmedText.toLowerCase();
   const trigger = CONFIG.triggerPrefix;
+  const jid = msg.key?.remoteJid;
 
-  // Strictly ignore any message addressed to @agent so it never collides with an existing @agent bot
-  if (
-    lowerText === '@agent' ||
-    lowerText.startsWith('@agent ') ||
-    lowerText.startsWith('@agent\n')
-  ) {
-    return null;
+  const state = loadProjectsState();
+  const isFullAuto = Boolean(state.fullAutoGroups?.[jid]);
+  const hasPendingClarification = Boolean(state.pendingClarifications?.[jid]);
+  const hasPendingCollaborator = Boolean(state.pendingCollaborators?.[jid]);
+
+  // 0. Pending resolution or Full Auto group: automatically trigger on message text
+  if (hasPendingClarification || hasPendingCollaborator || isFullAuto) {
+    if (isStopWord(lowerText)) return '/stop';
+    return trimmedText;
   }
 
-  // 0. Swipe-replying "stop" to a task message belonging to this Weave instance
+  // 1. Swipe-replying "stop" to a task message belonging to this Weave instance
   if (isStopWord(lowerText)) {
     const quotedId = getQuotedStanzaId(msg);
     const quotedText = extractQuotedText(msg).toLowerCase();
@@ -645,21 +668,26 @@ function extractTriggeredBody(sock, msg, text) {
     const matchesTriggerText =
       quotedText === trigger ||
       quotedText.startsWith(trigger + ' ') ||
-      quotedText.startsWith(trigger + '\n');
+      quotedText.startsWith(trigger + '\n') ||
+      quotedText.startsWith('@agent') ||
+      quotedText.startsWith('@ap');
     if (matchesRunning || matchesQueued || matchesTriggerText) {
       return '/stop';
     }
   }
 
-  // 1. Explicit unique call-sign trigger prefix (e.g. "@weave ...")
-  if (
-    lowerText === trigger ||
-    lowerText.startsWith(trigger + ' ') ||
-    lowerText.startsWith(trigger + '\n')
-  ) {
-    const rest = trimmedText.slice(trigger.length).trim();
-    if (isStopWord(rest)) return '/stop';
-    return rest;
+  // 2. Explicit triggers: configured triggerPrefix (@weave), @agent, or @ap
+  const prefixes = [trigger.toLowerCase(), '@agent', '@ap'];
+  for (const prefix of prefixes) {
+    if (
+      lowerText === prefix ||
+      lowerText.startsWith(prefix + ' ') ||
+      lowerText.startsWith(prefix + '\n')
+    ) {
+      const rest = trimmedText.slice(prefix.length).trim();
+      if (isStopWord(rest)) return '/stop';
+      return rest || 'status';
+    }
   }
 
   // 2. Owner pending confirmation replies or /callsign command
@@ -1452,12 +1480,17 @@ async function processQueue(sock) {
       }
     }
   } finally {
-    currentRunningItem = false;
+    currentRunningItem = null;
     isProcessingQueue = false;
   }
 }
 
 async function processQueueItem(sock, item) {
+  if (item.cancelled) {
+    const cancelErr = new Error('Task was cancelled by user.');
+    cancelErr.cancelled = true;
+    throw cancelErr;
+  }
   const { jid, msg, projectAlias, projectDir, taskPrompt, continueSession } = item;
   const isGroup = jid.endsWith('@g.us');
   const owner = isOwner(msg);
@@ -1466,6 +1499,12 @@ async function processQueueItem(sock, item) {
   await reactToMessage(sock, msg, '⏳');
   const attachmentInfo = await downloadWhatsAppAttachment(msg, projectDir);
   const imagePath = attachmentInfo?.type === 'image' ? attachmentInfo.filePath : null;
+
+  if (item.cancelled) {
+    const cancelErr = new Error('Task was cancelled by user.');
+    cancelErr.cancelled = true;
+    throw cancelErr;
+  }
 
   try {
     const preState = loadProjectsState();
@@ -2001,9 +2040,20 @@ async function processQueueItem(sock, item) {
  */
 async function handleSlashCommand(sock, jid, msg, commandBody) {
   const parts = commandBody.trim().split(/\s+/);
-  const cmd = parts[0].toLowerCase();
-  const arg1 = parts[1];
-  const arg2 = parts.slice(2).join(' ');
+  let cmd = parts[0].toLowerCase();
+  let arg1 = parts[1];
+  let arg2 = parts.slice(2).join(' ');
+
+  if ((cmd === '/turn' || cmd === 'turn') && arg1?.toLowerCase() === 'off') {
+    cmd = '/turnoff';
+    arg1 = parts[2];
+    arg2 = parts.slice(3).join(' ');
+  }
+
+  if (!cmd.startsWith('/')) {
+    cmd = `/${cmd}`;
+  }
+
   const isGroup = jid.endsWith('@g.us');
   const owner = isOwner(msg);
   const state = loadProjectsState();
@@ -2083,6 +2133,9 @@ async function handleSlashCommand(sock, jid, msg, commandBody) {
       `🤖 *Weave Agent (${trig})* (${boundProject ? `\`${boundProject}\`` : 'unbound'})`,
       `• *${trig} <task>* — Run task`,
       `• *${trig} /screenshot [url]* — Capture page screenshot (add mobile for phone view)`,
+      `• *${trig} /projects* — List projects & show active project for this chat`,
+      `• *${trig} /project <alias>* | *${trig} /bind <alias>* — Switch active project in this chat`,
+      `• *${trig} /unbind* | *${trig} /turnoff* — Turn OFF active project in this chat`,
       `• *${trig} /btw <question>* — Ask Gemini directly without sending to Antigravity session`,
       `• *${trig} /new* — Reset/clear Antigravity session for current project`,
       `• *${trig} /push [msg]* — Commit & push`,
@@ -2097,7 +2150,7 @@ async function handleSlashCommand(sock, jid, msg, commandBody) {
         `• *${trig} /collab <github_user> [repo] [read|write|admin]* — Invite GitHub collaborator`,
         `• *${trig} /removecollab <github_user> [repo]* — Remove collaborator / invite`,
         `• *${trig} /collabs [repo]* — List repo collaborators & pending invites`,
-        `• *${trig} /bind <project>* | *${trig} /unbind* | *${trig} /projects* | *${trig} /addproject <alias> <path>*`,
+        `• *${trig} /addproject <alias> <path>* — Register new local project folder`,
         `• *${trig} /autopush on|off* | *${trig} /shutdown* | *${trig} /wakeup*`,
         `• *${trig} /msg <Contact> <text>* | *${trig} /send [Contact :] <file>*`,
         `• *${trig} /livelocation <Contact> [hours]* | *${trig} /setlocation <place>* | *${trig} /stoplocation*`,
@@ -2955,137 +3008,201 @@ async function handleSlashCommand(sock, jid, msg, commandBody) {
     return true;
   }
 
-  // --- OWNER-ONLY COMMANDS (/bind, /unbind, /projects, /project, /addproject) ---
+  // --- PROJECT MANAGEMENT COMMANDS (/bind, /unbind, /turnoff, /projects, /project, /addproject) ---
   if (
-    ['/bind', '/unbind', '/projects', '/project', '/addproject'].includes(cmd)
+    ['/bind', '/unbind', '/turnoff', '/projects', '/project', '/addproject'].includes(cmd)
   ) {
-    if (!owner) {
-      await sendReply(
-        sock,
-        jid,
-        `🔒 Only the bot owner can manage project bindings.`,
-        msg
-      );
-      return true;
-    }
-
-    if (cmd === '/bind') {
-      if (!arg1) {
+    if (cmd === '/addproject') {
+      if (!owner) {
         await sendReply(
           sock,
           jid,
-          `⚠️ Usage: *${CONFIG.triggerPrefix} /bind <project-alias>*\nExample: *${CONFIG.triggerPrefix} /bind wisewallets*`,
+          `🔒 Only the bot owner can add new project folders.`,
           msg
         );
         return true;
       }
-      const key = arg1.toLowerCase();
-      const matchedAlias = state.projects[arg1]
-        ? arg1
-        : state.projects[key]
-        ? key
-        : null;
-
-      if (!matchedAlias) {
+    } else if (cmd !== '/projects') {
+      const canManage = owner || isSenderAuthorized(msg);
+      if (!canManage) {
         await sendReply(
           sock,
           jid,
-          `❌ Project \`${arg1}\` not found.\nSend *${CONFIG.triggerPrefix} /projects* in your private chat to see available projects, or *${CONFIG.triggerPrefix} /addproject ${arg1} ~/path/to/folder*.`,
+          `🔒 Only authorized users can manage project bindings.`,
           msg
         );
         return true;
       }
-
-      state.groupBindings = state.groupBindings || {};
-      state.groupBindings[jid] = matchedAlias;
-      if (state.disabledGroups?.[jid]) {
-        delete state.disabledGroups[jid];
-      }
-      persistFresh((fresh) => {
-        fresh.groupBindings = fresh.groupBindings || {};
-        fresh.groupBindings[jid] = matchedAlias;
-        if (fresh.disabledGroups?.[jid]) delete fresh.disabledGroups[jid];
-      });
-
-      await sendReply(
-        sock,
-        jid,
-        `🔒 Bound this group to \`${matchedAlias}\`.`,
-        msg
-      );
-      return true;
-    }
-
-    if (cmd === '/unbind') {
-      if (state.groupBindings?.[jid]) {
-        const prev = state.groupBindings[jid];
-        persistFresh((fresh) => {
-          if (fresh.groupBindings?.[jid]) delete fresh.groupBindings[jid];
-        });
-        await sendReply(
-          sock,
-          jid,
-          `🔓 Unlinked this group from \`${prev}\`.`,
-          msg
-        );
-      } else {
-        await sendReply(sock, jid, `ℹ️ This group is not bound to any project.`, msg);
-      }
-      return true;
     }
 
     if (cmd === '/projects') {
-      const lines = Object.entries(state.projects).map(([alias, dir]) => {
-        return `• *${alias}* → \`${dir}\``;
-      });
-      await sendReply(
-        sock,
-        jid,
-        `📂 *Projects:*\n${lines.join('\n')}`,
-        msg
-      );
-      return true;
+      const projectEntries = Object.entries(state.projects || {});
+      if (projectEntries.length === 0) {
+        await sendReply(sock, jid, `📂 *Projects:*\nNo projects registered yet.`, msg);
+        return true;
+      }
+
+      if (isGroup) {
+        const boundAlias = state.groupBindings?.[jid] || null;
+        const hasBound = Boolean(boundAlias && state.projects[boundAlias]);
+
+        const lines = projectEntries.map(([alias, dir]) => {
+          const isCurrentGroupActive =
+            hasBound && alias.toLowerCase() === boundAlias.toLowerCase();
+          if (isCurrentGroupActive) {
+            return `• 🟢 *${alias}* [ON / ACTIVE] → \`${dir}\``;
+          } else {
+            return `• ⚪ *${alias}* [OFF] → \`${dir}\``;
+          }
+        });
+
+        let reply = `📂 *Projects for this Group:*\n`;
+        if (hasBound) {
+          reply += `🟢 *Active project:* \`${boundAlias}\` (strictly 1 active)\n\n`;
+        } else {
+          reply += `⚪ *Active project:* _None currently active_ (all available)\n\n`;
+        }
+        reply += lines.join('\n');
+        reply += `\n\n💡 *Group Project Controls:*\n`;
+        reply += `• Turn ON / Switch: *${CONFIG.triggerPrefix} /project <alias>* (or */bind <alias>*)\n`;
+        reply += `• Turn OFF: *${CONFIG.triggerPrefix} /unbind* (or */turnoff*)`;
+
+        await sendReply(sock, jid, reply, msg);
+        return true;
+      } else {
+        const active = state.activeProject;
+        const lines = projectEntries.map(([alias, dir]) => {
+          const isActive = alias.toLowerCase() === (active || '').toLowerCase();
+          return isActive
+            ? `• 🟢 *${alias}* [ACTIVE] → \`${dir}\``
+            : `• ⚪ *${alias}* → \`${dir}\``;
+        });
+
+        let reply = `📂 *Available Projects:*\n`;
+        reply += `🟢 *Global Active:* \`${active}\`\n\n`;
+        reply += lines.join('\n');
+        reply += `\n\n💡 Switch active project: *${CONFIG.triggerPrefix} /project <alias>*`;
+
+        await sendReply(sock, jid, reply, msg);
+        return true;
+      }
     }
 
-    if (cmd === '/project') {
+    if (cmd === '/bind' || cmd === '/project') {
       if (!arg1) {
         await sendReply(
           sock,
           jid,
-          `⚠️ Usage: *${CONFIG.triggerPrefix} /project <alias>*`,
+          `⚠️ Usage: *${CONFIG.triggerPrefix} ${cmd} <project-alias>*\nExample: *${CONFIG.triggerPrefix} ${cmd} demo*`,
           msg
         );
         return true;
       }
       const key = arg1.toLowerCase();
-      const matchedAlias = state.projects[arg1]
-        ? arg1
-        : state.projects[key]
-        ? key
-        : null;
+      const matchedAlias = Object.keys(state.projects || {}).find(
+        (k) => k.toLowerCase() === key
+      );
+
       if (!matchedAlias) {
-        await sendReply(sock, jid, `❌ Project \`${arg1}\` not found.`, msg);
+        await sendReply(
+          sock,
+          jid,
+          `❌ Project \`${arg1}\` not found.\nSend *${CONFIG.triggerPrefix} /projects* to see available projects, or *${CONFIG.triggerPrefix} /addproject ${arg1} ~/path/to/folder*.`,
+          msg
+        );
         return true;
       }
+
       if (isGroup) {
+        const oldProject = state.groupBindings?.[jid] || null;
+
+        state.groupBindings = state.groupBindings || {};
+        state.groupBindings[jid] = matchedAlias;
+        if (state.disabledGroups?.[jid]) {
+          delete state.disabledGroups[jid];
+        }
+
         persistFresh((fresh) => {
           fresh.groupBindings = fresh.groupBindings || {};
           fresh.groupBindings[jid] = matchedAlias;
+          if (fresh.disabledGroups?.[jid]) delete fresh.disabledGroups[jid];
         });
-        await sendReply(
-          sock,
-          jid,
-          `🔒 Bound this group to project *${matchedAlias}*.`,
-          msg
-        );
+
+        if (oldProject && oldProject.toLowerCase() !== matchedAlias.toLowerCase()) {
+          await sendReply(
+            sock,
+            jid,
+            `🔄 Switched active project in this group from \`${oldProject}\` to \`${matchedAlias}\`.`,
+            msg
+          );
+        } else if (oldProject && oldProject.toLowerCase() === matchedAlias.toLowerCase()) {
+          await sendReply(
+            sock,
+            jid,
+            `ℹ️ Project \`${matchedAlias}\` is already active in this group.`,
+            msg
+          );
+        } else {
+          await sendReply(
+            sock,
+            jid,
+            `🔒 Bound this group to \`${matchedAlias}\` (turned ON).`,
+            msg
+          );
+        }
+        return true;
       } else {
+        const oldActive = state.activeProject;
         persistFresh((fresh) => {
           fresh.activeProject = matchedAlias;
         });
+        if (oldActive && oldActive.toLowerCase() !== matchedAlias.toLowerCase()) {
+          await sendReply(
+            sock,
+            jid,
+            `🔄 Switched active project from \`${oldActive}\` to \`${matchedAlias}\`.`,
+            msg
+          );
+        } else {
+          await sendReply(
+            sock,
+            jid,
+            `✅ Active project is \`${matchedAlias}\`.`,
+            msg
+          );
+        }
+        return true;
+      }
+    }
+
+    if (cmd === '/unbind' || cmd === '/turnoff') {
+      if (isGroup || state.groupBindings?.[jid]) {
+        if (state.groupBindings?.[jid]) {
+          const prev = state.groupBindings[jid];
+          state.groupBindings = state.groupBindings || {};
+          delete state.groupBindings[jid];
+          persistFresh((fresh) => {
+            if (fresh.groupBindings?.[jid]) delete fresh.groupBindings[jid];
+          });
+          await sendReply(
+            sock,
+            jid,
+            `🔓 Turned OFF active project for this group (was \`${prev}\`).`,
+            msg
+          );
+        } else {
+          await sendReply(
+            sock,
+            jid,
+            `ℹ️ No active project is currently turned ON in this group.`,
+            msg
+          );
+        }
+      } else {
         await sendReply(
           sock,
           jid,
-          `✅ Active project switched to *${matchedAlias}*.`,
+          `ℹ️ Project unbinding only applies to groups. Global active project: \`${state.activeProject}\`.`,
           msg
         );
       }
@@ -3174,6 +3291,8 @@ async function handleSlashCommand(sock, jid, msg, commandBody) {
     }
 
     const active = getActiveTaskInfo();
+    const runningItem = currentRunningItem;
+
     // Only allow stopping if owner OR if the running task belongs to this group's bound project
     if (active && !owner && isGroup && active.projectAlias !== boundProject) {
       await sendReply(
@@ -3184,12 +3303,33 @@ async function handleSlashCommand(sock, jid, msg, commandBody) {
       );
       return true;
     }
-    const runningMsg = currentRunningItem?.msg;
+
+    if (runningItem && !owner && isGroup && runningItem.jid !== jid && runningItem.projectAlias !== boundProject) {
+      await sendReply(
+        sock,
+        jid,
+        `🔒 Cannot stop a task running for another group.`,
+        msg
+      );
+      return true;
+    }
+
+    let stoppedSomething = false;
+
+    if (runningItem) {
+      runningItem.cancelled = true;
+      stoppedSomething = true;
+    }
+
     const stopped = stopActiveTask();
     if (stopped) {
+      stoppedSomething = true;
+    }
+
+    if (stoppedSomething) {
       await reactToMessage(sock, msg, '🛑');
-      if (runningMsg) {
-        await reactToMessage(sock, runningMsg, '🛑');
+      if (runningItem?.msg) {
+        await reactToMessage(sock, runningItem.msg, '🛑');
       }
       await sendReply(
         sock,
@@ -3197,9 +3337,24 @@ async function handleSlashCommand(sock, jid, msg, commandBody) {
         `🛑 Stopped task.`,
         msg
       );
-    } else {
-      await sendReply(sock, jid, `ℹ️ No task is currently running.`, msg);
+      return true;
     }
+
+    // If no active task was running, check if there are any queued tasks for this chat to cancel
+    const queuedIdx = taskQueue.findIndex(
+      (item) => item.jid === jid || (owner && !isGroup)
+    );
+    if (queuedIdx !== -1) {
+      const [removed] = taskQueue.splice(queuedIdx, 1);
+      await reactToMessage(sock, msg, '🛑');
+      if (removed.msg) {
+        await reactToMessage(sock, removed.msg, '🛑');
+      }
+      await sendReply(sock, jid, `🛑 Cancelled queued task.`, msg);
+      return true;
+    }
+
+    await sendReply(sock, jid, `ℹ️ No task is currently running.`, msg);
     return true;
   }
 
@@ -3331,11 +3486,14 @@ export async function startWhatsAppBot() {
   try {
     const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
     const { version } = await fetchLatestBaileysVersion();
-
+    const baileysLogger = pino({ level: 'silent' });
     sock = makeWASocket({
       version,
-      auth: state,
-      logger: pino({ level: 'silent' }),
+      auth: {
+        creds: state.creds,
+        keys: makeCacheableSignalKeyStore(state.keys, baileysLogger),
+      },
+      logger: baileysLogger,
       printQRInTerminal: false,
       markOnlineOnConnect: true,
       shouldSyncHistoryMessage: () => false,
@@ -3756,6 +3914,282 @@ async function handleIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfte
         }
       }
 
+      // =============================================================
+      // AUTOPILOT MODE & OPERATING AGENT STATE MACHINE
+      // =============================================================
+      const isAutopilot = Boolean(currentState.autopilot);
+      const isFullAutoGroup = Boolean(currentState.fullAutoGroups?.[jid]);
+
+      // 1. Resolve Pending Collaborator Verification (if user was asked about an unknown friend)
+      if (currentState.pendingCollaborators?.[jid]) {
+        const collabResolution = resolvePendingCollaborator(jid, rawBody);
+        if (collabResolution?.resolved) {
+          const { username, friend, newlyAdded, projectDir: targetProjDir, permission } = collabResolution;
+          await reactToMessage(sock, msg, '⏳');
+          try {
+            const res = await executeCollaboratorInvite({
+              username,
+              permission,
+              projectDir: targetProjDir || (currentState.groupBindings?.[jid] ? currentState.projects[currentState.groupBindings[jid]] : currentState.projects[currentState.activeProject]),
+            });
+            await reactToMessage(sock, msg, '🤝');
+            const notice = newlyAdded
+              ? `\n💾 *Saved "${friend.name}" (@${username}) to your Friends list for next time.*`
+              : '';
+            await sendReply(
+              sock,
+              jid,
+              res.isAlready
+                ? `✅ *@${username}* is already a collaborator on \`${res.owner}/${res.repo}\` (${res.permission}).${notice}`
+                : `🤝 Invited *${friend.name}* (\`@${username}\`) to \`${res.owner}/${res.repo}\` (${res.permission}) — ${res.invitationUrl}${notice}`,
+              msg
+            );
+          } catch (err) {
+            await sendReply(sock, jid, `❌ Failed to invite @${username}: ${err.message}`, msg);
+          }
+          return;
+        }
+      }
+
+      // 2. Resolve Pending Ambiguity Clarification (user replied with "1", "2", "3" or option text)
+      if (currentState.pendingClarifications?.[jid]) {
+        const clarificationRes = resolvePendingClarification(jid, rawBody);
+        if (clarificationRes?.resolved) {
+          const { chosenOption, originalPrompt } = clarificationRes;
+          await sendReply(sock, jid, `👍 *Option ${chosenOption.index}: ${chosenOption.label}* — Proceeding...`, msg);
+          rawBody = originalPrompt;
+        }
+      }
+
+      // 3. Administrative Triggers (@agent initialize, @agent full auto)
+      const lowerRaw = rawBody.toLowerCase().trim();
+      if (
+        lowerRaw === 'initialize' ||
+        lowerRaw === '@agent initialize' ||
+        lowerRaw === '@ap initialize' ||
+        lowerRaw.endsWith(' initialize')
+      ) {
+        let masterDir = '';
+        try {
+          masterDir = getValidatedMasterDir();
+        } catch (err) {
+          await sendReply(sock, jid, `⚠️ *Master Directory Required*\n${err.message}`, msg);
+          return;
+        }
+
+        const listInfo = listProjectsForGroup(jid);
+        const bound = listInfo.boundAlias;
+        const available = listInfo.projects || [];
+
+        const projBullets = available.length > 0
+          ? available.map(p => `• *${p}*${p === bound ? ' _(Active in this group)_' : ''}`).join('\n')
+          : '_No subproject folders yet._';
+
+        const initReply = [
+          `🚀 *Weave Autopilot Agent Initialized!*`,
+          `📁 *Master Directory:* \`${masterDir}\``,
+          bound ? `🟢 *Current Active Project:* \`${bound}\`` : `⚪ *Current Status:* Unbound (No active project in this group)`,
+          '',
+          `📂 *Available Projects:*`,
+          projBullets,
+          '',
+          `💡 *What would you like to do?*`,
+          `• Say: *"start a new project called <name>"* to create a folder`,
+          `• Say: *"switch to <name>"* to work on an existing project`,
+          `• Say: *"@ap fullauto"* to enable hands-free autonomous mode`,
+        ].join('\n');
+
+        await sendReply(sock, jid, initReply, msg);
+        return;
+      }
+
+      if (
+        lowerRaw === 'fullauto' ||
+        lowerRaw === 'full auto' ||
+        lowerRaw === '@agent fullauto' ||
+        lowerRaw === '@agent full auto' ||
+        lowerRaw === '@ap fullauto' ||
+        lowerRaw === '@ap full auto' ||
+        lowerRaw.endsWith(' fullauto') ||
+        lowerRaw.endsWith(' full auto')
+      ) {
+        const nextState = !isFullAutoGroup;
+        currentState.fullAutoGroups = currentState.fullAutoGroups || {};
+        currentState.fullAutoGroups[jid] = nextState;
+        saveProjectsState(currentState);
+
+        await sendReply(
+          sock,
+          jid,
+          nextState
+            ? `🚀 *Full Auto ENGAGED for this group!*\nI am now actively listening to all messages here. You don't need to mention @ap anymore.\n_(Say "@ap fullauto" again anytime to revert to mention mode)._`
+            : `⏸️ *Full Auto DISENGAGED.*\nReverted to mention mode (tag @ap to talk to me).`,
+          msg
+        );
+        return;
+      }
+
+      // 4. Autopilot Intent Routing (Conversational AI Classifier)
+      if (isAutopilot && !rawBody.startsWith('/')) {
+        const recentChat = (chatMessageHistory.get(jid) || []).slice(-5);
+        const routeResult = await routeAutopilotIntent({
+          prompt: rawBody,
+          groupJid: jid,
+          recentHistory: recentChat,
+        });
+
+        console.log(`✈️ [Autopilot Router] Lane=${routeResult.lane} Confidence=${routeResult.confidence}`);
+
+        // Lane 1: manage_collaborator
+        if (routeResult.lane === 'manage_collaborator' && routeResult.collaborator?.name) {
+          const req = handleCollaboratorRequest({
+            requestedName: routeResult.collaborator.name,
+            role: routeResult.collaborator.role || 'write',
+            groupJid: jid,
+            projectDir: currentState.groupBindings?.[jid] ? currentState.projects[currentState.groupBindings[jid]] : currentState.projects[currentState.activeProject],
+          });
+
+          if (req.status === 'unknown') {
+            await sendReply(sock, jid, req.replyPrompt, msg);
+            return;
+          }
+
+          if (req.status === 'known') {
+            await reactToMessage(sock, msg, '⏳');
+            try {
+              const res = await executeCollaboratorInvite({
+                username: req.username,
+                permission: req.permission,
+                projectDir: currentState.groupBindings?.[jid] ? currentState.projects[currentState.groupBindings[jid]] : currentState.projects[currentState.activeProject],
+              });
+              await reactToMessage(sock, msg, '🤝');
+              await sendReply(
+                sock,
+                jid,
+                res.isAlready
+                  ? `✅ *@${req.username}* is already a collaborator on \`${res.owner}/${res.repo}\` (${res.permission}).`
+                  : `🤝 Invited *${req.friend.name}* (\`@${req.username}\`) to \`${res.owner}/${res.repo}\` (${res.permission}) — ${res.invitationUrl}`,
+                msg
+              );
+            } catch (err) {
+              await sendReply(sock, jid, `❌ Failed to invite @${req.username}: ${err.message}`, msg);
+            }
+            return;
+          }
+        }
+
+        // Lane 2: capture_screenshot
+        if (routeResult.lane === 'capture_screenshot') {
+          const target = routeResult.screenshot?.target || '';
+          const isMobile = Boolean(routeResult.screenshot?.isMobile);
+          rawBody = `/screenshot ${target}${isMobile ? ' mobile' : ''}`.trim();
+        }
+
+        // Lane 3: manage_workspace
+        if (routeResult.lane === 'manage_workspace' && routeResult.workspace?.action) {
+          const action = routeResult.workspace.action;
+          const projectName = routeResult.workspace.projectName;
+
+          if (action === 'create' && projectName) {
+            try {
+              const res = createProjectUnderMaster(projectName, jid);
+              await sendReply(
+                sock,
+                jid,
+                `📁 *Created & Bound Project: \`${res.alias}\`*\nPath: \`${res.path}\`\nThis group is now actively working on \`${res.alias}\`.`,
+                msg
+              );
+            } catch (err) {
+              await sendReply(sock, jid, `⚠️ Could not create project: ${err.message}`, msg);
+            }
+            return;
+          }
+
+          if (action === 'switch' && projectName) {
+            try {
+              const res = switchGroupProject(projectName, jid);
+              await sendReply(
+                sock,
+                jid,
+                `🔄 *Switched Active Project to: \`${res.alias}\`*\nPath: \`${res.path}\`\nAll coding tasks in this group will now target this project.`,
+                msg
+              );
+            } catch (err) {
+              await sendReply(sock, jid, `⚠️ Could not switch project: ${err.message}`, msg);
+            }
+            return;
+          }
+
+          if (action === 'list') {
+            try {
+              const listInfo = listProjectsForGroup(jid);
+              const bullets = listInfo.projects.map(
+                p => `• *${p}*${p === listInfo.boundAlias ? ' _(Active in this group)_' : ''}`
+              ).join('\n') || '_No projects found._';
+
+              await sendReply(
+                sock,
+                jid,
+                `📂 *Available Projects in Master Directory:*\n${bullets}\n\n_Master Directory: \`${listInfo.masterDir}\`_`,
+                msg
+              );
+            } catch (err) {
+              await sendReply(sock, jid, `⚠️ Could not list projects: ${err.message}`, msg);
+            }
+            return;
+          }
+
+          if (action === 'status') {
+            const st = getGroupProjectStatus(jid);
+            await sendReply(
+              sock,
+              jid,
+              st.bound
+                ? `📍 *Current Project:* \`${st.alias}\`\nPath: \`${st.path}\`\nMaster Directory: \`${st.masterDir}\``
+                : `⚪ No project is currently bound to this group.\nMaster Directory: \`${st.masterDir || 'Not configured'}\``,
+              msg
+            );
+            return;
+          }
+
+          if (action === 'unbind') {
+            const unb = unbindGroupProject(jid);
+            await sendReply(
+              sock,
+              jid,
+              `🔓 *Turned OFF project in this chat.*\nUnbound from \`${unb.previous || 'project'}\`.`,
+              msg
+            );
+            return;
+          }
+        }
+
+        // Lane 4: chat_reply
+        if (routeResult.lane === 'chat_reply' && routeResult.chatReply?.responseText) {
+          await sendReply(sock, jid, routeResult.chatReply.responseText, msg);
+          return;
+        }
+
+        // Lane 5: ask_clarification
+        if (routeResult.lane === 'ask_clarification' && routeResult.clarification) {
+          const formattedPrompt = createPendingClarification(
+            jid,
+            rawBody,
+            routeResult.clarification.question,
+            routeResult.clarification.options
+          );
+          await sendReply(sock, jid, formattedPrompt, msg);
+          return;
+        }
+
+        // Lane 6: run_coding_task
+        if (routeResult.lane === 'run_coding_task') {
+          if (routeResult.codingTask?.instructions) {
+            rawBody = routeResult.codingTask.instructions;
+          }
+        }
+      }
+
       // Fast-path: natural language GitHub collaborator requests from the owner
       // (e.g. "add @octocat as collaborator to wisewallets", "invite https://github.com/user as a collaborator", "remove octocat from collaborators")
       if (owner && !rawBody.startsWith('/')) {
@@ -3849,6 +4283,7 @@ async function handleIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfte
         if (
           lowerBody.includes('screenshot') ||
           lowerBody.includes('screen shot') ||
+          /\bss\b/i.test(lowerBody) ||
           lowerBody.includes('capture the page') ||
           lowerBody.includes('capture page') ||
           lowerBody.includes('visual test') ||
@@ -3898,7 +4333,11 @@ async function handleIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfte
       }
 
       // Check if it's a slash command or control command
-      const isControlCmd = ['help', 'shutdown', 'shtudown', 'wakeup', 'resume', 'start'].includes(rawBody.toLowerCase().trim());
+      const lowerRawTrim = rawBody.toLowerCase().trim();
+      const isControlCmd = [
+        'help', 'shutdown', 'shtudown', 'wakeup', 'resume', 'start',
+        'projects', 'unbind', 'turnoff', 'turn off'
+      ].includes(lowerRawTrim) || lowerRawTrim.startsWith('project ') || lowerRawTrim.startsWith('bind ');
       if (rawBody.startsWith('/') || isControlCmd) {
         const handled = await handleSlashCommand(sock, jid, msg, rawBody);
         if (handled) return;

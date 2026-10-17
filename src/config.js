@@ -279,18 +279,22 @@ export const CONFIG = {
 };
 
 /**
- * Automatically scans ~/ and ~/Documents and ~/Desktop for project folders.
+ * Automatically scans the user's Master Directory (if set) for project folders.
+ * Avoids blindly indexing random user directories like ~/Applications, ~/Desktop, etc.
  */
-function discoverLocalProjects() {
-  const discovered = {
-    demo: CONFIG.defaultProjectDir,
-  };
+function discoverLocalProjects(customMasterDir = null) {
+  const discovered = {};
 
-  const searchRoots = [
-    HOME_DIR,
-    path.join(HOME_DIR, 'Documents'),
-    path.join(HOME_DIR, 'Desktop'),
-  ];
+  const searchRoots = [];
+
+  if (customMasterDir && typeof customMasterDir === 'string') {
+    const resolvedMaster = customMasterDir.startsWith('~')
+      ? path.join(os.homedir(), customMasterDir.slice(1))
+      : path.resolve(customMasterDir);
+    if (!searchRoots.includes(resolvedMaster)) {
+      searchRoots.push(resolvedMaster);
+    }
+  }
 
   for (const root of searchRoots) {
     if (!fs.existsSync(root)) continue;
@@ -320,11 +324,21 @@ function discoverLocalProjects() {
  * Includes `groupBindings` which maps a WhatsApp group JID -> locked projectAlias.
  */
 export function loadProjectsState() {
-  const discovered = discoverLocalProjects();
+  let existingMasterDir = null;
+  if (fs.existsSync(PROJECTS_FILE)) {
+    try {
+      const existing = JSON.parse(fs.readFileSync(PROJECTS_FILE, 'utf8'));
+      if (existing.masterDir) existingMasterDir = existing.masterDir;
+    } catch {}
+  }
+
+  const discovered = discoverLocalProjects(existingMasterDir);
 
   if (!fs.existsSync(PROJECTS_FILE)) {
+    const firstAlias = Object.keys(discovered)[0] || '';
     const initial = {
-      activeProject: 'demo',
+      activeProject: firstAlias,
+      masterDir: '',
       projects: discovered,
       groupBindings: {},
       conversations: {},
@@ -340,14 +354,12 @@ export function loadProjectsState() {
     saved.projects = { ...discovered, ...(saved.projects || {}) };
     let healed = false;
     for (const [alias, dir] of Object.entries(saved.projects)) {
-      if (
-        typeof dir === 'string' &&
-        (dir.includes('app.asar') || (alias === 'demo' && !fs.existsSync(dir)))
-      ) {
-        saved.projects[alias] = CONFIG.defaultProjectDir;
+      if (typeof dir === 'string' && dir.includes('app.asar')) {
+        delete saved.projects[alias];
         healed = true;
       }
     }
+    saved.masterDir = typeof saved.masterDir === 'string' ? saved.masterDir : '';
     saved.groupBindings = saved.groupBindings || {};
     saved.conversations = saved.conversations || {};
     saved.pendingEmailDrafts = saved.pendingEmailDrafts || {};
@@ -355,10 +367,15 @@ export function loadProjectsState() {
     saved.disabledGroups = saved.disabledGroups || {};
     saved.deploymentUrls = saved.deploymentUrls || {};
     saved.pendingProjectConfirmations = saved.pendingProjectConfirmations || {};
-    // Validate activeProject still exists; fall back instead of crashing callers.
+    saved.autopilot = saved.autopilot ?? false;
+    saved.friends = Array.isArray(saved.friends) ? saved.friends : [];
+    saved.fullAutoGroups = saved.fullAutoGroups || {};
+    saved.pendingClarifications = saved.pendingClarifications || {};
+    saved.pendingCollaborators = saved.pendingCollaborators || {};
+    // Validate activeProject still exists; fall back to first available project
+    const availableAliases = Object.keys(saved.projects);
     if (!saved.projects[saved.activeProject] || !fs.existsSync(saved.projects[saved.activeProject])) {
-      saved.activeProject = 'demo';
-      saved.projects.demo = CONFIG.defaultProjectDir;
+      saved.activeProject = availableAliases[0] || '';
       healed = true;
     }
     if (healed) {
@@ -377,6 +394,7 @@ export function loadProjectsState() {
     }
     return {
       activeProject: 'demo',
+      masterDir: '',
       projects: discovered,
       groupBindings: {},
       conversations: {},
@@ -385,8 +403,77 @@ export function loadProjectsState() {
       disabledGroups: {},
       deploymentUrls: {},
       pendingProjectConfirmations: {},
+      autopilot: false,
+      friends: [],
+      fullAutoGroups: {},
+      pendingClarifications: {},
+      pendingCollaborators: {},
     };
   }
+}
+
+/**
+ * Checks whether a target file/folder path strictly resides within the configured Master Directory.
+ */
+export function isPathWithinMasterDir(targetPath, masterDir) {
+  if (!masterDir || !targetPath) return false;
+  try {
+    const resolvedMaster = path.resolve(masterDir);
+    const resolvedTarget = path.resolve(targetPath);
+    return resolvedTarget.startsWith(resolvedMaster + path.sep) || resolvedTarget === resolvedMaster;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Gets all registered friends (Name -> GitHub username mapping).
+ */
+export function getFriends() {
+  const state = loadProjectsState();
+  return Array.isArray(state.friends) ? state.friends : [];
+}
+
+/**
+ * Adds or updates a friend in the directory.
+ */
+export function addFriend(name, github) {
+  if (!name || !github) throw new Error('Name and GitHub username are required');
+  const state = loadProjectsState();
+  state.friends = Array.isArray(state.friends) ? state.friends : [];
+  const normalizedGithub = String(github).replace(/^@/, '').replace(/^https?:\/\/github\.com\//, '').trim();
+  const trimmedName = String(name).trim();
+  const existingIdx = state.friends.findIndex(f => f.name.toLowerCase() === trimmedName.toLowerCase());
+  const friendObj = {
+    id: existingIdx >= 0 ? state.friends[existingIdx].id : `friend_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    name: trimmedName,
+    github: normalizedGithub,
+    updatedAt: Date.now()
+  };
+  if (existingIdx >= 0) {
+    state.friends[existingIdx] = friendObj;
+  } else {
+    state.friends.push(friendObj);
+  }
+  saveProjectsState(state);
+  return friendObj;
+}
+
+/**
+ * Removes a friend by id, name, or github username.
+ */
+export function removeFriend(nameOrId) {
+  if (!nameOrId) return false;
+  const state = loadProjectsState();
+  state.friends = Array.isArray(state.friends) ? state.friends : [];
+  const target = String(nameOrId).trim().toLowerCase();
+  const initialLen = state.friends.length;
+  state.friends = state.friends.filter(f => f.id !== nameOrId && f.name.toLowerCase() !== target && f.github.toLowerCase() !== target);
+  if (state.friends.length !== initialLen) {
+    saveProjectsState(state);
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -626,3 +713,52 @@ export function resolveProjectAndTask(rawTaskText, jid = null) {
     matchedPattern: matchedPattern || null,
   };
 }
+
+/**
+ * Binds a group to a project (strictly one active project per group at a time).
+ * Overwrites any previously active project for this group.
+ */
+export function bindGroupToProject(groupJid, projectAlias) {
+  const state = loadProjectsState();
+  const cleanAlias = (projectAlias || '').trim().toLowerCase();
+  const matchedAlias = Object.keys(state.projects || {}).find(
+    (k) => k.toLowerCase() === cleanAlias
+  );
+  if (!matchedAlias) {
+    throw new Error(`Project alias "${projectAlias}" does not exist.`);
+  }
+
+  const prevAlias = state.groupBindings?.[groupJid] || null;
+  state.groupBindings = state.groupBindings || {};
+  state.groupBindings[groupJid] = matchedAlias;
+  if (state.disabledGroups?.[groupJid]) {
+    delete state.disabledGroups[groupJid];
+  }
+  saveProjectsState(state);
+  return { prevAlias, newAlias: matchedAlias, state };
+}
+
+/**
+ * Unbinds / turns OFF the active project for a group.
+ */
+export function unbindGroupProject(groupJid) {
+  const state = loadProjectsState();
+  const prevAlias = state.groupBindings?.[groupJid] || null;
+  if (state.groupBindings?.[groupJid]) {
+    delete state.groupBindings[groupJid];
+    saveProjectsState(state);
+  }
+  return { prevAlias, state };
+}
+
+/**
+ * Returns the currently active project alias for a given JID or global active project.
+ */
+export function getActiveProjectForJid(jid = null) {
+  const state = loadProjectsState();
+  if (jid && jid.endsWith('@g.us')) {
+    return state.groupBindings?.[jid] || null;
+  }
+  return state.activeProject || 'demo';
+}
+

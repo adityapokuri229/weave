@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, shell, screen } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, screen, dialog } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath, pathToFileURL } from 'url';
@@ -225,8 +225,49 @@ ipcMain.handle('weave:get-status', async () => {
     ota: getOtaStatus(),
     projects: state.projects,
     activeProject: state.activeProject,
+    masterDir: state.masterDir || '',
     groupBindings: state.groupBindings,
+    autopilot: Boolean(state.autopilot),
+    friends: state.friends || [],
   };
+});
+
+ipcMain.handle('weave:pick-master-dir', async () => {
+  if (!mainWindow) return { canceled: true };
+  const res = await dialog.showOpenDialog(mainWindow, {
+    title: 'Select Master Projects Directory',
+    properties: ['openDirectory', 'createDirectory'],
+  });
+  if (res.canceled || !res.filePaths || res.filePaths.length === 0) {
+    return { canceled: true };
+  }
+  const chosenPath = res.filePaths[0];
+  const state = configMod.loadProjectsState();
+  state.masterDir = chosenPath;
+  configMod.saveProjectsState(state);
+  const refreshed = configMod.loadProjectsState();
+  return { success: true, masterDir: chosenPath, projects: refreshed.projects };
+});
+
+ipcMain.handle('weave:set-master-dir', async (_event, dirPath) => {
+  const cleanPath = (dirPath || '').trim();
+  const state = configMod.loadProjectsState();
+  if (!cleanPath) {
+    state.masterDir = '';
+    configMod.saveProjectsState(state);
+    const refreshed = configMod.loadProjectsState();
+    return { success: true, masterDir: '', projects: refreshed.projects };
+  }
+  const resolved = cleanPath.startsWith('~')
+    ? path.join(path.resolve(process.env.HOME || ''), cleanPath.slice(1))
+    : path.resolve(cleanPath);
+  if (!fs.existsSync(resolved)) {
+    return { success: false, error: 'Directory does not exist on disk.' };
+  }
+  state.masterDir = resolved;
+  configMod.saveProjectsState(state);
+  const refreshed = configMod.loadProjectsState();
+  return { success: true, masterDir: resolved, projects: refreshed.projects };
 });
 
 ipcMain.handle('weave:google-login', async () => {
@@ -284,15 +325,77 @@ ipcMain.handle('weave:add-project', async (_event, { alias, folderPath }) => {
   return { success: true, projects: state.projects };
 });
 
+ipcMain.handle('weave:set-active-project', async (_event, alias) => {
+  const cleanAlias = (alias || '').trim().toLowerCase();
+  const state = configMod.loadProjectsState();
+  const matchedKey = Object.keys(state.projects || {}).find(
+    (k) => k.toLowerCase() === cleanAlias
+  );
+  if (!matchedKey) {
+    return { success: false, error: `Project "${alias}" not found.` };
+  }
+  state.activeProject = matchedKey;
+  configMod.saveProjectsState(state);
+  return { success: true, activeProject: matchedKey };
+});
+
+ipcMain.handle('weave:open-folder', async (_event, folderPath) => {
+  if (folderPath && fs.existsSync(folderPath)) {
+    try {
+      await shell.openPath(folderPath);
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  }
+  return { success: false, error: 'Directory does not exist.' };
+});
+
 ipcMain.handle('weave:bind-group', async (_event, { groupJid, alias }) => {
   const state = configMod.loadProjectsState();
-  if (alias && state.projects[alias]) {
-    state.groupBindings[groupJid] = alias;
+  if (alias) {
+    const cleanAlias = alias.trim().toLowerCase();
+    const matched = Object.keys(state.projects || {}).find(
+      (k) => k.toLowerCase() === cleanAlias
+    );
+    if (matched) {
+      state.groupBindings[groupJid] = matched;
+    }
   } else {
     delete state.groupBindings[groupJid];
   }
   configMod.saveProjectsState(state);
   return { success: true, groupBindings: state.groupBindings };
+});
+
+ipcMain.handle('weave:toggle-autopilot', async (_event, enabled) => {
+  const state = configMod.loadProjectsState();
+  state.autopilot = typeof enabled === 'boolean' ? enabled : !state.autopilot;
+  configMod.saveProjectsState(state);
+  return { success: true, autopilot: state.autopilot };
+});
+
+ipcMain.handle('weave:get-friends', async () => {
+  const friends = configMod.getFriends();
+  return { success: true, friends };
+});
+
+ipcMain.handle('weave:add-friend', async (_event, { name, github }) => {
+  try {
+    const friend = configMod.addFriend(name, github);
+    return { success: true, friend, friends: configMod.getFriends() };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('weave:remove-friend', async (_event, nameOrId) => {
+  try {
+    const removed = configMod.removeFriend(nameOrId);
+    return { success: removed, friends: configMod.getFriends() };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
 });
 
 ipcMain.handle('weave:run-prompt', async (_event, { prompt, projectAlias }) => {
@@ -308,13 +411,29 @@ ipcMain.handle('weave:run-prompt', async (_event, { prompt, projectAlias }) => {
     });
     return { success: true, result };
   } catch (err) {
+    if (err.cancelled) {
+      console.warn(`🛑 Task was cancelled by user: "${prompt}"`);
+      return { success: false, cancelled: true, error: 'Task was cancelled by user.' };
+    }
     return { success: false, error: err.message };
   }
 });
 
 ipcMain.handle('weave:stop-task', async () => {
-  agentMod.stopActiveTask();
-  return { success: true };
+  const stopped = agentMod.stopActiveTask();
+  if (stopped) {
+    console.warn(
+      `🛑 Stopped active task on "${stopped.projectAlias || 'default'}": ${stopped.taskPrompt || ''}`
+    );
+  } else {
+    console.log('ℹ️ No active task is currently running.');
+  }
+  sendToRenderer('weave:status-update', {
+    status: 'task_stopped',
+    stopped,
+    activeTask: null,
+  });
+  return { success: true, stopped };
 });
 
 // Listen for OTA updates (triggered via WhatsApp `/update` or background timer)

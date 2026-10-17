@@ -87,7 +87,7 @@ export class GeminiClient {
    * @param {string} prompt - The user prompt
    * @param {string|null} [systemInstruction] - Optional system prompt
    */
-  async generateContent(prompt, systemInstruction = null) {
+  async generateContent(prompt, systemInstruction = null, generationConfig = null) {
     const apiKey = this.apiKey || process.env.GEMINI_API_KEY || '';
 
     const contents = [
@@ -103,6 +103,9 @@ export class GeminiClient {
       const body = { contents };
       if (systemInstruction) {
         body.systemInstruction = { parts: [{ text: systemInstruction }] };
+      }
+      if (generationConfig) {
+        body.generationConfig = generationConfig;
       }
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -130,6 +133,9 @@ export class GeminiClient {
       const requestBody = { contents };
       if (systemInstruction) {
         requestBody.systemInstruction = { parts: [{ text: systemInstruction }] };
+      }
+      if (generationConfig) {
+        requestBody.generationConfig = generationConfig;
       }
 
       const cloudCodePayload = {
