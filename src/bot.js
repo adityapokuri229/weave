@@ -26,7 +26,20 @@ import {
   resolveProjectAndTask,
   PROJECT_PHONETIC_PATTERNS,
   updateTriggerPrefix,
+  isGroupInitialized,
+  markGroupInitialized,
+  getGroupActiveProject,
+  setGroupActiveProject,
+  resetAllState,
+  getAllInitializedGroups,
 } from './config.js';
+import { TEMPLATES } from './autopilot/templates.js';
+import {
+  sendChoicePoll,
+  sendReactionFallback,
+  handlePollVote,
+  handleReactionVote,
+} from './autopilot/polls.js';
 import { transcribeAudioFile } from './transcribe.js';
 import { buildGoogleCalendarUrl, createIcsFile, sendCalendarInviteDirectly } from './calendar.js';
 import { captureWebScreenshot, getProjectDeploymentUrl } from './qa.js';
@@ -3616,9 +3629,78 @@ export async function startWhatsAppBot() {
         }
       }
     });
+
+    sock.ev.on('messages.update', async (updates) => {
+      for (const item of updates) {
+        try {
+          const pollVote = await handlePollVote(sock, item);
+          if (pollVote?.resolved) {
+            await handleVoteResolution(sock, pollVote);
+          }
+        } catch (err) {
+          console.error('⚠️ Error handling message update:', err?.message || err);
+        }
+      }
+    });
   } finally {
     isStartingBot = false;
   }
+}
+
+async function handleVoteResolution(sock, voteRes) {
+  const { chosenOption, pending, voterJid, groupJid } = voteRes;
+  console.log(`🗳️ Handling vote resolution: option="${chosenOption}" context="${pending.context}" group="${groupJid}"`);
+
+  if (pending.context === 'switch_project') {
+    try {
+      const res = switchGroupProject(chosenOption, groupJid);
+      await sendReply(sock, groupJid, TEMPLATES.switch_project({ projectName: res.alias }));
+    } catch (err) {
+      await sendReply(sock, groupJid, `⚠️ Couldn't switch project: ${err.message}`);
+    }
+    return;
+  }
+
+  if (pending.context === 'activate_project_for_task') {
+    try {
+      const res = switchGroupProject(chosenOption, groupJid);
+      await sendReply(sock, groupJid, `activated "${res.alias}". proceeding with task... 🚀`);
+      const state = loadProjectsState();
+      const projectDir = state.projects[res.alias] || res.path;
+      taskQueue.push({
+        jid: groupJid,
+        msg: null,
+        projectAlias: res.alias,
+        projectDir,
+        taskPrompt: pending.originalTask,
+        continueSession: true,
+      });
+      processQueue(sock).catch((err) => {
+        console.error('⚠️ processQueue failed:', err?.message || err);
+      });
+    } catch (err) {
+      await sendReply(sock, groupJid, `⚠️ Failed to activate project: ${err.message}`);
+    }
+    return;
+  }
+
+  // Generic choice resolution: resume the original task with the voted option
+  const state = loadProjectsState();
+  const activeAlias = getGroupActiveProject(groupJid) || state.activeProject;
+  const projectDir = (activeAlias && state.projects[activeAlias]) || CONFIG.defaultProjectDir;
+
+  await sendReply(sock, groupJid, `got it: "${chosenOption}". on it 🫡`);
+  taskQueue.push({
+    jid: groupJid,
+    msg: null,
+    projectAlias: activeAlias,
+    projectDir,
+    taskPrompt: `${pending.originalTask}\n(User selected choice: ${chosenOption})`,
+    continueSession: true,
+  });
+  processQueue(sock).catch((err) => {
+    console.error('⚠️ processQueue failed:', err?.message || err);
+  });
 }
 
 async function handleIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfter = 0) {
@@ -3667,6 +3749,25 @@ async function handleIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfte
       if (!msg.key.id) return;
       if (sentMessageIds.has(msg.key.id) || processedMessageIds.has(msg.key.id)) return;
 
+      // 1. Check for incoming Poll Vote or Reaction Vote
+      try {
+        const pollVote = await handlePollVote(sock, msg);
+        if (pollVote?.resolved) {
+          recordProcessedMessageId(msg.key.id);
+          await handleVoteResolution(sock, pollVote);
+          return;
+        }
+
+        const reactionVote = await handleReactionVote(sock, msg);
+        if (reactionVote?.resolved) {
+          recordProcessedMessageId(msg.key.id);
+          await handleVoteResolution(sock, reactionVote);
+          return;
+        }
+      } catch (voteErr) {
+        console.warn('⚠️ Vote processing error:', voteErr?.message || voteErr);
+      }
+
       // Skip text-less messages (stickers, reactions, location-only pings
       // without captions are handled via their captions/attachment download).
       const text = extractMessageText(msg);
@@ -3676,6 +3777,55 @@ async function handleIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfte
         !!extractImageMessage(msg) ||
         !!extractVideoMessage(msg) ||
         !!audioMsg;
+
+      const jid = msg.key?.remoteJid;
+      const isGroup = jid && jid.endsWith('@g.us');
+
+      // 2. SECTION 3 INITIALIZATION GATE
+      // "Until someone sends @agent initialize in a group, the agent must never interact there,
+      // even if pinged or mentioned. After initialization it responds normally. Initialization is saved per group."
+      if (isGroup) {
+        const isInit = isGroupInitialized(jid);
+        const cleanText = (text || '').trim().toLowerCase();
+        const isInitCmd =
+          cleanText === '@agent initialize' ||
+          cleanText === 'agent initialize' ||
+          cleanText === '@ap initialize' ||
+          cleanText === '@weave initialize' ||
+          cleanText === `${CONFIG.triggerPrefix.toLowerCase()} initialize` ||
+          cleanText === 'initialize' ||
+          cleanText.endsWith(' initialize');
+
+        if (!isInit) {
+          if (isInitCmd) {
+            recordProcessedMessageId(msg.key.id);
+            const sender = msg.key.participant || jid;
+            markGroupInitialized(jid, sender);
+
+            let masterDir = '';
+            let bound = null;
+            let projects = [];
+            try {
+              masterDir = getValidatedMasterDir();
+              const listInfo = listProjectsForGroup(jid);
+              bound = listInfo.boundAlias;
+              projects = listInfo.projects || [];
+            } catch {}
+
+            const initReply = TEMPLATES.welcome_init({
+              masterDir,
+              activeProject: bound,
+              projects,
+            });
+            await sendReply(sock, jid, initReply, msg);
+            return;
+          }
+
+          // Silent gate: Group not initialized. Never interact.
+          console.log(`🔇 Group ${jid} not initialized. Dropping message.`);
+          return;
+        }
+      }
 
       console.log(`🔍 [Incoming Msg] JID=${msg.key?.remoteJid} fromMe=${msg.key?.fromMe} text="${text}" hasAudio=${!!audioMsg} hasAttach=${hasAttachment}`);
 
@@ -3708,8 +3858,6 @@ async function handleIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfte
         return;
       }
 
-      const jid = msg.key.remoteJid;
-      const isGroup = jid.endsWith('@g.us');
       const owner = isOwner(msg);
       const currentState = loadProjectsState();
       let rawBody = rawTriggeredBody;
@@ -4038,155 +4186,179 @@ async function handleIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfte
           recentHistory: recentChat,
         });
 
-        console.log(`✈️ [Autopilot Router] Lane=${routeResult.lane} Confidence=${routeResult.confidence}`);
+        console.log(`✈️ [Autopilot Router] Intent=${routeResult.intent}`);
 
-        // Lane 1: manage_collaborator
-        if (routeResult.lane === 'manage_collaborator' && routeResult.collaborator?.name) {
-          const req = handleCollaboratorRequest({
-            requestedName: routeResult.collaborator.name,
-            role: routeResult.collaborator.role || 'write',
-            groupJid: jid,
-            projectDir: currentState.groupBindings?.[jid] ? currentState.projects[currentState.groupBindings[jid]] : currentState.projects[currentState.activeProject],
-          });
+        // Lane 1: system_command
+        if (routeResult.intent === 'system_command' && routeResult.systemCommand) {
+          const cmd = routeResult.systemCommand;
+          const projectName = routeResult.projectName;
 
-          if (req.status === 'unknown') {
-            await sendReply(sock, jid, req.replyPrompt, msg);
-            return;
-          }
-
-          if (req.status === 'known') {
-            await reactToMessage(sock, msg, '⏳');
+          if (cmd === 'list_projects') {
             try {
-              const res = await executeCollaboratorInvite({
-                username: req.username,
-                permission: req.permission,
-                projectDir: currentState.groupBindings?.[jid] ? currentState.projects[currentState.groupBindings[jid]] : currentState.projects[currentState.activeProject],
-              });
-              await reactToMessage(sock, msg, '🤝');
+              const listInfo = listProjectsForGroup(jid);
               await sendReply(
                 sock,
                 jid,
-                res.isAlready
-                  ? `✅ *@${req.username}* is already a collaborator on \`${res.owner}/${res.repo}\` (${res.permission}).`
-                  : `🤝 Invited *${req.friend.name}* (\`@${req.username}\`) to \`${res.owner}/${res.repo}\` (${res.permission}) — ${res.invitationUrl}`,
+                TEMPLATES.list_projects({
+                  projects: listInfo.projects,
+                  activeProject: listInfo.boundAlias,
+                }),
                 msg
               );
             } catch (err) {
-              await sendReply(sock, jid, `❌ Failed to invite @${req.username}: ${err.message}`, msg);
+              await sendReply(sock, jid, `⚠️ ${err.message}`, msg);
             }
             return;
           }
-        }
 
-        // Lane 2: capture_screenshot
-        if (routeResult.lane === 'capture_screenshot') {
-          const target = routeResult.screenshot?.target || '';
-          const isMobile = Boolean(routeResult.screenshot?.isMobile);
-          rawBody = `/screenshot ${target}${isMobile ? ' mobile' : ''}`.trim();
-        }
-
-        // Lane 3: manage_workspace
-        if (routeResult.lane === 'manage_workspace' && routeResult.workspace?.action) {
-          const action = routeResult.workspace.action;
-          const projectName = routeResult.workspace.projectName;
-
-          if (action === 'create' && projectName) {
+          if (cmd === 'create_project') {
+            if (!projectName) {
+              await sendReply(sock, jid, TEMPLATES.missing_project_name({ action: 'create' }), msg);
+              return;
+            }
             try {
               const res = createProjectUnderMaster(projectName, jid);
               await sendReply(
                 sock,
                 jid,
-                `📁 *Created & Bound Project: \`${res.alias}\`*\nPath: \`${res.path}\`\nThis group is now actively working on \`${res.alias}\`.`,
+                TEMPLATES.create_project({
+                  projectName: res.alias,
+                  folderPath: res.path,
+                }),
                 msg
               );
             } catch (err) {
-              await sendReply(sock, jid, `⚠️ Could not create project: ${err.message}`, msg);
+              await sendReply(sock, jid, `⚠️ ${err.message}`, msg);
             }
             return;
           }
 
-          if (action === 'switch' && projectName) {
+          if (cmd === 'switch_project') {
+            if (!projectName) {
+              const listInfo = listProjectsForGroup(jid);
+              const choices = (listInfo.projects || []).filter((p) => p !== listInfo.boundAlias);
+              if (choices.length === 0) {
+                await sendReply(sock, jid, `no other projects in master dir to switch to.`, msg);
+                return;
+              }
+              await sendChoicePoll(sock, {
+                groupJid: jid,
+                allowedVoterJid: msg.key.participant || jid,
+                question: 'which project do you want to switch this group to?',
+                options: choices,
+                context: 'switch_project',
+                originalTask: rawBody,
+              });
+              return;
+            }
             try {
               const res = switchGroupProject(projectName, jid);
               await sendReply(
                 sock,
                 jid,
-                `🔄 *Switched Active Project to: \`${res.alias}\`*\nPath: \`${res.path}\`\nAll coding tasks in this group will now target this project.`,
+                TEMPLATES.switch_project({ projectName: res.alias }),
                 msg
               );
             } catch (err) {
-              await sendReply(sock, jid, `⚠️ Could not switch project: ${err.message}`, msg);
-            }
-            return;
-          }
-
-          if (action === 'list') {
-            try {
               const listInfo = listProjectsForGroup(jid);
-              const bullets = listInfo.projects.map(
-                p => `• *${p}*${p === listInfo.boundAlias ? ' _(Active in this group)_' : ''}`
-              ).join('\n') || '_No projects found._';
-
               await sendReply(
                 sock,
                 jid,
-                `📂 *Available Projects in Master Directory:*\n${bullets}\n\n_Master Directory: \`${listInfo.masterDir}\`_`,
+                TEMPLATES.project_not_found({
+                  projectName,
+                  availableProjects: listInfo.projects,
+                }),
                 msg
               );
-            } catch (err) {
-              await sendReply(sock, jid, `⚠️ Could not list projects: ${err.message}`, msg);
             }
             return;
           }
 
-          if (action === 'status') {
+          if (cmd === 'current_project') {
             const st = getGroupProjectStatus(jid);
             await sendReply(
               sock,
               jid,
-              st.bound
-                ? `📍 *Current Project:* \`${st.alias}\`\nPath: \`${st.path}\`\nMaster Directory: \`${st.masterDir}\``
-                : `⚪ No project is currently bound to this group.\nMaster Directory: \`${st.masterDir || 'Not configured'}\``,
+              TEMPLATES.current_project({
+                projectName: st.bound ? st.alias : null,
+                folderPath: st.path,
+              }),
               msg
             );
             return;
           }
 
-          if (action === 'unbind') {
+          if (cmd === 'unbind_project') {
             const unb = unbindGroupProject(jid);
             await sendReply(
               sock,
               jid,
-              `🔓 *Turned OFF project in this chat.*\nUnbound from \`${unb.previous || 'project'}\`.`,
+              TEMPLATES.unbind_project({ previousProject: unb.previous }),
               msg
             );
             return;
           }
         }
 
-        // Lane 4: chat_reply
-        if (routeResult.lane === 'chat_reply' && routeResult.chatReply?.responseText) {
-          await sendReply(sock, jid, routeResult.chatReply.responseText, msg);
+        // Lane 2: choice_needed
+        if (routeResult.intent === 'choice_needed' && routeResult.choiceQuestion) {
+          await sendChoicePoll(sock, {
+            groupJid: jid,
+            allowedVoterJid: msg.key.participant || jid,
+            question: routeResult.choiceQuestion,
+            options: routeResult.choiceOptions || ['yes', 'no'],
+            context: routeResult.choiceContext || 'user_choice',
+            originalTask: rawBody,
+          });
           return;
         }
 
-        // Lane 5: ask_clarification
-        if (routeResult.lane === 'ask_clarification' && routeResult.clarification) {
-          const formattedPrompt = createPendingClarification(
-            jid,
-            rawBody,
-            routeResult.clarification.question,
-            routeResult.clarification.options
-          );
-          await sendReply(sock, jid, formattedPrompt, msg);
+        // Lane 3: chat
+        if (routeResult.intent === 'chat' && routeResult.chatReplyText) {
+          await sendReply(sock, jid, routeResult.chatReplyText, msg);
           return;
         }
 
-        // Lane 6: run_coding_task
-        if (routeResult.lane === 'run_coding_task') {
-          if (routeResult.codingTask?.instructions) {
-            rawBody = routeResult.codingTask.instructions;
+        // Lane 4: laptop_task
+        if (routeResult.intent === 'laptop_task') {
+          const activeAlias = getGroupActiveProject(jid);
+          if (!activeAlias) {
+            const listInfo = listProjectsForGroup(jid);
+            if (listInfo.projects && listInfo.projects.length > 0) {
+              await sendChoicePoll(sock, {
+                groupJid: jid,
+                allowedVoterJid: msg.key.participant || jid,
+                question: 'no active project in this group rn. which one should we work on?',
+                options: listInfo.projects,
+                context: 'activate_project_for_task',
+                originalTask: rawBody,
+              });
+              return;
+            } else {
+              await sendReply(sock, jid, TEMPLATES.no_active_project(), msg);
+              return;
+            }
           }
+
+          const state = loadProjectsState();
+          const projectDir = state.projects[activeAlias];
+          const taskInstructions = routeResult.laptopTaskInstructions || rawBody;
+
+          await reactToMessage(sock, msg, '⚡');
+
+          taskQueue.push({
+            jid,
+            msg,
+            projectAlias: activeAlias,
+            projectDir,
+            taskPrompt: taskInstructions,
+            continueSession: true,
+          });
+
+          processQueue(sock).catch((err) => {
+            console.error('⚠️ processQueue failed:', err?.message || err);
+          });
+          return;
         }
       }
 

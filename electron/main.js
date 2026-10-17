@@ -227,6 +227,7 @@ ipcMain.handle('weave:get-status', async () => {
     activeProject: state.activeProject,
     masterDir: state.masterDir || '',
     groupBindings: state.groupBindings,
+    initializedGroups: configMod.getAllInitializedGroups(),
     autopilot: Boolean(state.autopilot),
     friends: state.friends || [],
   };
@@ -373,6 +374,15 @@ ipcMain.handle('weave:toggle-autopilot', async (_event, enabled) => {
   state.autopilot = typeof enabled === 'boolean' ? enabled : !state.autopilot;
   configMod.saveProjectsState(state);
   return { success: true, autopilot: state.autopilot };
+});
+
+ipcMain.handle('weave:reset-state', async (_event, { preserveMasterDir = true } = {}) => {
+  try {
+    const newState = configMod.resetAllState({ preserveMasterDir });
+    return { success: true, state: newState };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
 });
 
 ipcMain.handle('weave:get-friends', async () => {

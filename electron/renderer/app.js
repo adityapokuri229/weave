@@ -124,6 +124,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   const workspaceBotStatusTag = document.getElementById('workspace-bot-status-tag');
   const activeProjectPath = document.getElementById('active-project-path');
   const projectsListContainer = document.getElementById('projects-list-container');
+  const groupsListContainer = document.getElementById('groups-list-container');
+  const badgeGroupsCount = document.getElementById('badge-groups-count');
+  const btnResetState = document.getElementById('btn-reset-state');
 
   // Friends & Collaborators Directory Elements
   const friendsListContainer = document.getElementById('friends-list-container');
@@ -299,6 +302,69 @@ document.addEventListener('DOMContentLoaded', async () => {
                 ${hasGroups ? `<span class="text-emerald-400 font-mono text-[9px]">${boundGroups.length} Active</span>` : ''}
               </div>
               ${groupsHtml}
+            </div>
+          </div>
+        `;
+      })
+      .join('');
+  }
+
+  function renderGroupsList(initializedGroups = [], projects = {}, groupBindings = {}) {
+    if (!groupsListContainer) return;
+    const groupList = Array.isArray(initializedGroups) ? initializedGroups : [];
+    if (badgeGroupsCount) {
+      badgeGroupsCount.textContent = `${groupList.length} INITIALIZED`;
+    }
+
+    if (groupList.length === 0) {
+      groupsListContainer.innerHTML = `
+        <div class="p-3 rounded bg-app-canvas border border-app-border text-center text-app-tertiary text-xs font-mono">
+          No groups initialized yet.<br/>
+          <span class="text-zinc-500 text-[10px]">Send <strong class="text-white">@agent initialize</strong> in any WhatsApp group to get started.</span>
+        </div>`;
+      return;
+    }
+
+    const projectAliases = Object.keys(projects || {});
+
+    groupsListContainer.innerHTML = groupList
+      .map((g) => {
+        const jid = g.jid;
+        const cleanJid = escapeHtml(jid);
+        const shortJid = escapeHtml(jid.replace('@g.us', ''));
+        const activeProject = g.activeProject || groupBindings?.[jid] || null;
+        const hasActive = Boolean(activeProject);
+
+        const optionsHtml = projectAliases
+          .map((p) => {
+            const selected = activeProject && activeProject.toLowerCase() === p.toLowerCase() ? 'selected' : '';
+            return `<option value="${escapeHtml(p)}" ${selected}>${escapeHtml(p)}</option>`;
+          })
+          .join('');
+
+        return `
+          <div class="p-2.5 rounded-lg bg-app-canvas border border-app-border flex flex-col gap-2">
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-1.5 min-w-0">
+                <i class="fa-brands fa-whatsapp text-emerald-400 text-sm"></i>
+                <span class="text-xs font-semibold text-white font-mono truncate" title="${cleanJid}">Group ${shortJid}</span>
+              </div>
+              <span class="text-[9px] px-1.5 py-0.5 rounded font-mono ${hasActive ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' : 'bg-zinc-800 text-zinc-400 border border-zinc-700'}">
+                ${hasActive ? `🟢 ${escapeHtml(activeProject)}` : '⚪ UNBOUND'}
+              </span>
+            </div>
+
+            <div class="flex items-center gap-2 pt-1 border-t border-app-borderSubtle">
+              <span class="text-[10px] font-mono text-app-tertiary shrink-0">Active Project:</span>
+              <select class="select-group-project bg-app-surface border border-app-border rounded px-2 py-0.5 text-xs text-white font-mono focus:outline-none flex-1" data-jid="${cleanJid}">
+                <option value="" ${!hasActive ? 'selected' : ''}>-- Select Project --</option>
+                ${optionsHtml}
+              </select>
+              ${
+                hasActive
+                  ? `<button class="btn-unbind-group-item text-[10px] text-zinc-400 hover:text-red-400 px-2 py-0.5 rounded border border-zinc-700 transition cursor-pointer" data-jid="${cleanJid}">Unbind</button>`
+                  : ''
+              }
             </div>
           </div>
         `;
@@ -531,6 +597,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         badgeMountedCount.textContent = `${projCount} MOUNTED`;
       }
       renderProjectsList(state.projects, state.activeProject, state.groupBindings);
+    }
+
+    if (state.initializedGroups || state.groupBindings) {
+      renderGroupsList(state.initializedGroups, state.projects, state.groupBindings);
     }
 
     if (activeProjectPath && state.activeProject && state.projects?.[state.activeProject]) {
@@ -996,6 +1066,76 @@ document.addEventListener('DOMContentLoaded', async () => {
       } catch (err) {
         appendLog('error', `Error removing friend: ${err.message}`);
         removeBtn.disabled = false;
+      }
+    });
+  }
+
+  // Initialized Groups Interactions (Switch project & Unbind)
+  if (groupsListContainer) {
+    groupsListContainer.addEventListener('change', async (e) => {
+      const select = e.target.closest('.select-group-project');
+      if (select && api?.bindGroup) {
+        const jid = select.dataset.jid;
+        const newAlias = select.value.trim();
+        if (!jid) return;
+        try {
+          appendLog('info', `🔄 Setting active project for group ${jid} to "${newAlias || 'unbound'}"...`);
+          const res = await api.bindGroup(jid, newAlias || null);
+          if (res?.success) {
+            await syncStatus();
+          } else {
+            appendLog('error', `Failed to bind group: ${res?.error}`);
+          }
+        } catch (err) {
+          appendLog('error', err.message);
+        }
+      }
+    });
+
+    groupsListContainer.addEventListener('click', async (e) => {
+      const unbindBtn = e.target.closest('.btn-unbind-group-item');
+      if (unbindBtn && api?.bindGroup) {
+        const jid = unbindBtn.dataset.jid;
+        if (!jid) return;
+        unbindBtn.disabled = true;
+        unbindBtn.textContent = '...';
+        try {
+          appendLog('info', `🔓 Unbinding active project from group ${jid}...`);
+          const res = await api.bindGroup(jid, null);
+          if (res?.success) {
+            await syncStatus();
+          } else {
+            appendLog('error', `Failed to unbind group: ${res?.error}`);
+            unbindBtn.disabled = false;
+            unbindBtn.textContent = 'Unbind';
+          }
+        } catch (err) {
+          appendLog('error', err.message);
+          unbindBtn.disabled = false;
+          unbindBtn.textContent = 'Unbind';
+        }
+      }
+    });
+  }
+
+  // Clean Slate Reset Button Handler
+  if (btnResetState) {
+    btnResetState.addEventListener('click', async () => {
+      const ok = confirm(
+        '⚠️ Clean Slate Reset:\n\nThis will remove all project bindings, initialized groups, pending polls, and caches.\nYour configured Master Directory path will be preserved.\n\nAre you sure you want to proceed?'
+      );
+      if (!ok) return;
+      try {
+        appendLog('info', '🧹 Resetting Weave state to clean slate...');
+        const res = await api?.resetState(true);
+        if (res?.success) {
+          appendLog('info', '✅ State reset successfully. Clean slate active.');
+          await syncStatus();
+        } else {
+          appendLog('error', `Reset failed: ${res?.error}`);
+        }
+      } catch (err) {
+        appendLog('error', `Reset error: ${err.message}`);
       }
     });
   }
