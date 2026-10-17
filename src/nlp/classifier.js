@@ -19,7 +19,8 @@ export function fastFuzzyClassify(rawText, { availableProjects = [], boundProjec
   // -1. Swiggy Food & Instamart Groceries
   if (
     /\b(?:swiggy|instamart)\b/i.test(clean) ||
-    /^(?:(?:please\s+)?(?:order|buy|get|search|find)\s+(?:me\s+)?(?:food|grocer(?:y|ies)|pizza|biryani|burger|milk|eggs|bread))\b/i.test(clean) ||
+    /\b(?:order|buy|find|search|get|suggest|craving)\b.*\b(?:food|grocer(?:y|ies)|dishes|restaurant|restaurants|pizza|biryani|burger|burgers|cake|cakes|dessert|desserts|ice\s*cream|pastr(?:y|ies)|milk|eggs|bread|curd|snack|snacks|meal|meals|lunch|dinner|breakfast)\b/i.test(clean) ||
+    /\b(?:that\s+i\s+can\s+order|order\s+online|order\s+food)\b/i.test(clean) ||
     /^(?:view\s+cart|show\s+cart|my\s+cart|clear\s+cart|cart|checkout|apply\s+coupon)\b/i.test(clean) ||
     /^(?:order|buy)\s+\d+\s+.+?(?:\s+from\s+[a-zA-Z0-9\s'’]+)?$/i.test(clean) ||
     /^(?:menu|show\s+menu)\s+(?:for|of|from)\s+[a-zA-Z0-9\s'’]+$/i.test(clean) ||

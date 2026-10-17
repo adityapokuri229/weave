@@ -85,24 +85,34 @@ export function parseSwiggyEntities(rawText) {
     };
   }
 
-  // 7. Instamart Grocery Search or Addition
+  // 7. Generic Swiggy Invocation (e.g. "swiggy?", "order from swiggy please", "swiggy")
+  if (/^(?:swiggy\??|order\s+(?:from\s+)?swiggy(?:\s+please)?|open\s+swiggy|swiggy\s+food)$/i.test(lower)) {
+    return { action: 'welcome', service: 'food' };
+  }
+
+  // 8. Instamart Grocery Search or Addition
   const isInstamart =
     lower.includes('instamart') ||
     lower.includes('grocery') ||
     lower.includes('groceries') ||
     /\b(?:buy|get|need)\s+(?:amul|nandini|milk|eggs|bread|curd|chips|potatoes?|onions?|tomatoes?|coke|soft\s+drink)\b/i.test(lower);
 
-  // 8. Item Addition (e.g. "Add 2 Margherita pizzas", "Order 1 chicken biryani from meghana")
+  // 9. Item Addition (e.g. "Add 2 Margherita pizzas", "Order 1 chicken biryani from meghana")
   const addMatch = text.match(/(?:add|order|get|buy)\s+(?:me\s+)?(\d+)?\s*(.+?)(?:\s+from\s+([a-zA-Z0-9\s'’]+))?$/i);
   if (addMatch && !/\b(?:cabs?|taxis?|rides?|ubers?|olas?)\b/i.test(lower)) {
     const quantity = parseInt(addMatch[1], 10) || 1;
     let itemName = (addMatch[2] || '').trim();
     const restaurant = addMatch[3] ? addMatch[3].trim() : null;
 
-    // Filter out common filler words
-    itemName = itemName.replace(/^(?:an?|the|some)\s+/i, '').replace(/\s+(?:to\s+cart|please)$/i, '').trim();
+    // Filter out common filler words and prefixes
+    itemName = itemName
+      .replace(/^(?:an?|the|some)\s+/i, '')
+      .replace(/\s+(?:to\s+cart|please)$/i, '')
+      .replace(/^(?:from\s+swiggy|swiggy)\b/i, '')
+      .trim();
 
-    if (itemName && !['order', 'food', 'swiggy', 'swiggy order', 'groceries'].includes(itemName.toLowerCase())) {
+    const ignoredWords = ['order', 'food', 'swiggy', 'swiggy order', 'groceries', 'something', 'anything', 'item', 'items'];
+    if (itemName && !ignoredWords.includes(itemName.toLowerCase())) {
       return {
         action: 'cart_add',
         service: isInstamart ? 'instamart' : 'food',
@@ -113,16 +123,25 @@ export function parseSwiggyEntities(rawText) {
     }
   }
 
-  // 9. General Search (Restaurants, Food items, or Groceries)
-  const cleanSearch = text
-    .replace(/^(?:(?:please\s+)?(?:search|find|show|look\s+up|order)\s+(?:for\s+)?(?:me\s+)?(?:food|swiggy|restaurants?|dishes?)?)/i, '')
-    .replace(/\b(?:on|from|in)\s+swiggy\b/gi, '')
-    .trim();
+  // 10. General Search (Restaurants, Food items, Cakes, Groceries)
+  let cleanSearch = text;
+  cleanSearch = cleanSearch.replace(/^(?:yo|hey|hi|hello|please|can you|could you|would you)\s+/i, '');
+  cleanSearch = cleanSearch.replace(/^(?:find|search|show|get|suggest|look\s*up|order)\s+(?:for\s+)?(?:me\s+)?(?:some\s+)?(?:good\s+)?(?:food|dishes?|restaurants?)?\s*/i, '');
+  cleanSearch = cleanSearch.replace(/\b(?:on|from|in)\s+swiggy\b/gi, '');
+  cleanSearch = cleanSearch.replace(/\b(?:that\s+i\s+can\s+order|available\s+to\s+order|to\s+order|online|near\s+me|around\s+here|nearby|please)\b/gi, '');
+  cleanSearch = cleanSearch.replace(/^[,\s?.-]+|[,\s?.-]+$/g, '').trim();
+
+  if (!cleanSearch || /^(?:swiggy|food|groceries|something)$/i.test(cleanSearch)) {
+    return {
+      action: 'welcome',
+      service: isInstamart ? 'instamart' : 'food',
+    };
+  }
 
   return {
     action: isInstamart ? 'search_instamart' : 'search',
     service: isInstamart ? 'instamart' : 'food',
-    query: cleanSearch || (isInstamart ? 'milk and snacks' : 'biryani'),
+    query: cleanSearch,
   };
 }
 
@@ -356,6 +375,11 @@ export async function handleSwiggyRequest({ text, msg, intentResult, jid }) {
       return `🎉 *Swiggy Cloud Connected!*\n• Account: Verified\n• Live Addresses & Cart Sync: Active\n\nReady to search and order. Try:\n• _"Find biryani near me"_\n• _"Show menu for Domino's"_`;
     }
     return `🍽️ *No Swiggy Login Needed!*\n\nYou don't need to sign in to use Weave with Swiggy. Just text what you want:\n• _"Order 1 Margherita Pizza from Domino's"_\n• _"Buy 2 milk from Instamart"_\n\nWeave builds your cart, applies discounts, and gives you a *1-Tap Swiggy App Link*. When you tap it, your phone's Swiggy app opens directly with your existing login and saved addresses ready for UPI payment!`;
+  }
+
+  // Welcome / Generic Swiggy Prompt
+  if (entities.action === 'welcome') {
+    return `🍽️ *Welcome to Swiggy on Weave!*\n\nTell me what you're craving or pick an option:\n• 🍰 *Cakes & Desserts* (e.g. Warm Oven, Corner House)\n• 🍕 *Pizza* (e.g. Domino's)\n• 🍗 *Biryani* (e.g. Meghana Foods, Empire)\n• 🍔 *Burgers* (e.g. Truffles)\n• ⚡ *Instamart Groceries* (Milk, bread, eggs, snacks)\n\n👉 *Examples:*\n• _"Find cakes near me"_\n• _"Order 1 Margherita Pizza from Domino's"_\n• _"Buy 2 milk from Instamart"_`;
   }
 
   // 1. Order Tracking

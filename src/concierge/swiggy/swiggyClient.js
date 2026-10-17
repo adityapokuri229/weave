@@ -71,12 +71,22 @@ const MOCK_DATA = {
     {
       id: 'rest_corner_house',
       name: 'Corner House Ice Creams',
-      cuisine: 'Desserts, Ice Creams, Sundaes',
+      cuisine: 'Desserts, Ice Creams, Sundaes, Cakes',
       rating: 4.8,
       deliveryTimeMins: 20,
       priceForTwo: 300,
       area: 'Indiranagar',
       imageUrl: 'https://media-assets.swiggy.com/swiggy/image/upload/fl_lossy,f_auto,q_auto,w_660/j0wwh99d6g9m67l8e7j6',
+    },
+    {
+      id: 'rest_warm_oven',
+      name: 'Warm Oven Cakes & Desserts',
+      cuisine: 'Cakes, Pastries, Bakery, Desserts',
+      rating: 4.5,
+      deliveryTimeMins: 24,
+      priceForTwo: 350,
+      area: 'Indiranagar',
+      imageUrl: 'https://media-assets.swiggy.com/swiggy/image/upload/fl_lossy,f_auto,q_auto,w_660/e0839ff574213e6f35b3899ebf1fc597',
     },
   ],
   menus: {
@@ -110,6 +120,12 @@ const MOCK_DATA = {
       { id: 'item_ch1', name: 'Death By Chocolate (DBC)', price: 260, veg: true, bestseller: true },
       { id: 'item_ch2', name: 'Hot Caramello Sundae', price: 210, veg: true, bestseller: true },
       { id: 'item_ch3', name: 'Trilogy Sundae', price: 230, veg: true, bestseller: false },
+    ],
+    rest_warm_oven: [
+      { id: 'item_wo1', name: 'German Chocolate Cake (500g)', price: 499, veg: true, bestseller: true },
+      { id: 'item_wo2', name: 'Red Velvet Pastry', price: 129, veg: true, bestseller: true },
+      { id: 'item_wo3', name: 'Death By Chocolate Jar Cake', price: 169, veg: true, bestseller: true },
+      { id: 'item_wo4', name: 'Black Forest Cake (500g)', price: 449, veg: true, bestseller: false },
     ],
   },
   instamartItems: [
@@ -211,15 +227,19 @@ export class SwiggyMcpClient {
       }
 
       case 'search_restaurants': {
-        const query = (args.query || '').toLowerCase().trim();
+        const rawQ = (args.query || '').toLowerCase().trim();
+        const query = rawQ.replace(/s$/, ''); // e.g. "cakes" -> "cake", "pizzas" -> "pizza"
         let matches = MOCK_DATA.restaurants;
         if (query) {
-          matches = matches.filter(
-            (r) =>
+          matches = matches.filter((r) => {
+            const hasRestMatch =
               r.name.toLowerCase().includes(query) ||
               r.cuisine.toLowerCase().includes(query) ||
-              r.area.toLowerCase().includes(query)
-          );
+              r.area.toLowerCase().includes(query);
+            if (hasRestMatch) return true;
+            const menuItems = MOCK_DATA.menus[r.id] || [];
+            return menuItems.some((item) => item.name.toLowerCase().includes(query));
+          });
         }
         return {
           restaurants: matches.length > 0 ? matches : MOCK_DATA.restaurants.slice(0, 3),
