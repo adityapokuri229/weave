@@ -52,27 +52,6 @@ export async function dispatchIntent({
 }) {
   const { intent, confidence } = intentResult;
 
-  // 0. Check for Pending Ride Clarification Reply (e.g. user answered "1" or "2")
-  const rideClarification = resolvePendingRideClarification(jid, rawBody);
-  if (rideClarification) {
-    await reactToMessage(sock, msg, '🚖');
-    try {
-      const booking = await confirmAndDispatchRide({
-        pickup: rideClarification.pickup,
-        dropoff: rideClarification.dropoff,
-        selectedRide: rideClarification.selectedRide,
-        userJid: jid,
-        userName: msg?.pushName || 'Passenger',
-      });
-      const card = formatBookingConfirmationCard(booking);
-      await sendReply(sock, jid, card, msg);
-    } catch (err) {
-      console.error('[Ride Clarification Dispatch] Error:', err);
-      await sendReply(sock, jid, `❌ Failed to confirm ride: ${err.message}`, msg);
-    }
-    return { handled: true };
-  }
-
   // 1. Task Control (Stop, Status, Context Reset, Append)
   if (intent === INTENTS.TASK_CONTROL) {
     const action = intentResult.taskControl?.action || 'status';
