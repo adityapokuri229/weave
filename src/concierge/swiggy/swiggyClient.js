@@ -29,7 +29,7 @@ const MOCK_DATA = {
   ],
   restaurants: [
     {
-      id: 'rest_meghana',
+      id: '121603',
       name: 'Meghana Foods',
       cuisine: 'Biryani, Andhra, South Indian',
       rating: 4.5,
@@ -39,7 +39,7 @@ const MOCK_DATA = {
       imageUrl: 'https://media-assets.swiggy.com/swiggy/image/upload/fl_lossy,f_auto,q_auto,w_660/xqwpuhgnsaf18nxdgahm',
     },
     {
-      id: 'rest_dominos',
+      id: '10575',
       name: "Domino's Pizza",
       cuisine: 'Pizzas, Italian, Pastas, Desserts',
       rating: 4.4,
@@ -49,7 +49,7 @@ const MOCK_DATA = {
       imageUrl: 'https://media-assets.swiggy.com/swiggy/image/upload/fl_lossy,f_auto,q_auto,w_660/d206f0e4b85098ffb4f4c9c1c4e97d1e',
     },
     {
-      id: 'rest_truffles',
+      id: '428',
       name: 'Truffles',
       cuisine: 'Burgers, American, Continental, Desserts',
       rating: 4.6,
@@ -59,7 +59,7 @@ const MOCK_DATA = {
       imageUrl: 'https://media-assets.swiggy.com/swiggy/image/upload/fl_lossy,f_auto,q_auto,w_660/cd832d61721be0e37a23b6e39544e269',
     },
     {
-      id: 'rest_empire',
+      id: '5032',
       name: 'Hotel Empire',
       cuisine: 'North Indian, Kebabs, Biryani, Mughlai',
       rating: 4.2,
@@ -69,7 +69,7 @@ const MOCK_DATA = {
       imageUrl: 'https://media-assets.swiggy.com/swiggy/image/upload/fl_lossy,f_auto,q_auto,w_660/weuqb2wew6y2zffehsbb',
     },
     {
-      id: 'rest_corner_house',
+      id: '23678',
       name: 'Corner House Ice Creams',
       cuisine: 'Desserts, Ice Creams, Sundaes, Cakes',
       rating: 4.8,
@@ -79,7 +79,7 @@ const MOCK_DATA = {
       imageUrl: 'https://media-assets.swiggy.com/swiggy/image/upload/fl_lossy,f_auto,q_auto,w_660/j0wwh99d6g9m67l8e7j6',
     },
     {
-      id: 'rest_warm_oven',
+      id: '18973',
       name: 'Warm Oven Cakes & Desserts',
       cuisine: 'Cakes, Pastries, Bakery, Desserts',
       rating: 4.5,
@@ -90,42 +90,61 @@ const MOCK_DATA = {
     },
   ],
   menus: {
-    rest_meghana: [
+    '121603': [
       { id: 'item_m1', name: 'Meghana Special Chicken Biryani', price: 340, veg: false, bestseller: true },
       { id: 'item_m2', name: 'Paneer Biryani', price: 290, veg: true, bestseller: true },
       { id: 'item_m3', name: 'Boneless Chicken 65', price: 310, veg: false, bestseller: false },
       { id: 'item_m4', name: 'Guntur Chicken Dry', price: 320, veg: false, bestseller: true },
     ],
-    rest_dominos: [
+    rest_meghana: [
+      { id: 'item_m1', name: 'Meghana Special Chicken Biryani', price: 340, veg: false, bestseller: true },
+      { id: 'item_m2', name: 'Paneer Biryani', price: 290, veg: true, bestseller: true },
+    ],
+    '10575': [
       { id: 'item_d1', name: 'Margherita Pizza (Regular)', price: 159, veg: true, bestseller: true },
       { id: 'item_d2', name: 'Farmhouse Pizza (Medium)', price: 399, veg: true, bestseller: true },
       { id: 'item_d3', name: 'Pepper Barbecue Chicken Pizza (Medium)', price: 449, veg: false, bestseller: true },
       { id: 'item_d4', name: 'Garlic Breadsticks with Dip', price: 139, veg: true, bestseller: true },
       { id: 'item_d5', name: 'Choco Lava Cake', price: 109, veg: true, bestseller: true },
     ],
-    rest_truffles: [
+    rest_dominos: [
+      { id: 'item_d1', name: 'Margherita Pizza (Regular)', price: 159, veg: true, bestseller: true },
+    ],
+    '428': [
       { id: 'item_t1', name: 'All American Cheese Burger', price: 220, veg: false, bestseller: true },
       { id: 'item_t2', name: 'Crispy Veg Burger', price: 180, veg: true, bestseller: true },
       { id: 'item_t3', name: 'Peri Peri French Fries', price: 140, veg: true, bestseller: true },
       { id: 'item_t4', name: 'Ferrero Rocher Shake', price: 210, veg: true, bestseller: true },
     ],
-    rest_empire: [
+    rest_truffles: [
+      { id: 'item_t1', name: 'All American Cheese Burger', price: 220, veg: false, bestseller: true },
+    ],
+    '5032': [
       { id: 'item_e1', name: 'Empire Special Chicken Kebab (Quarter)', price: 175, veg: false, bestseller: true },
       { id: 'item_e2', name: 'Butter Chicken Masala', price: 280, veg: false, bestseller: true },
       { id: 'item_e3', name: 'Paneer Butter Masala', price: 240, veg: true, bestseller: true },
       { id: 'item_e4', name: 'Butter Naan', price: 50, veg: true, bestseller: true },
       { id: 'item_e5', name: 'Coin Parotta (2 pcs)', price: 60, veg: true, bestseller: true },
     ],
-    rest_corner_house: [
+    rest_empire: [
+      { id: 'item_e1', name: 'Empire Special Chicken Kebab (Quarter)', price: 175, veg: false, bestseller: true },
+    ],
+    '23678': [
       { id: 'item_ch1', name: 'Death By Chocolate (DBC)', price: 260, veg: true, bestseller: true },
       { id: 'item_ch2', name: 'Hot Caramello Sundae', price: 210, veg: true, bestseller: true },
       { id: 'item_ch3', name: 'Trilogy Sundae', price: 230, veg: true, bestseller: false },
     ],
-    rest_warm_oven: [
+    rest_corner_house: [
+      { id: 'item_ch1', name: 'Death By Chocolate (DBC)', price: 260, veg: true, bestseller: true },
+    ],
+    '18973': [
       { id: 'item_wo1', name: 'German Chocolate Cake (500g)', price: 499, veg: true, bestseller: true },
       { id: 'item_wo2', name: 'Red Velvet Pastry', price: 129, veg: true, bestseller: true },
       { id: 'item_wo3', name: 'Death By Chocolate Jar Cake', price: 169, veg: true, bestseller: true },
       { id: 'item_wo4', name: 'Black Forest Cake (500g)', price: 449, veg: true, bestseller: false },
+    ],
+    rest_warm_oven: [
+      { id: 'item_wo1', name: 'German Chocolate Cake (500g)', price: 499, veg: true, bestseller: true },
     ],
   },
   instamartItems: [
@@ -248,9 +267,11 @@ export class SwiggyMcpClient {
       }
 
       case 'get_restaurant_menu': {
-        const restId = args.restaurantId || 'rest_meghana';
-        const restaurant = MOCK_DATA.restaurants.find((r) => r.id === restId) || MOCK_DATA.restaurants[0];
-        const menuItems = MOCK_DATA.menus[restId] || MOCK_DATA.menus.rest_meghana;
+        const restId = String(args.restaurantId || '18973');
+        const restaurant =
+          MOCK_DATA.restaurants.find((r) => r.id === restId || r.id === `rest_${restId}` || `rest_${r.id}` === restId) ||
+          MOCK_DATA.restaurants[0];
+        const menuItems = MOCK_DATA.menus[restId] || MOCK_DATA.menus[restaurant.id] || MOCK_DATA.menus['18973'] || [];
         return {
           restaurant,
           categories: [

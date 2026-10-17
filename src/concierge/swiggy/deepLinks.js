@@ -13,11 +13,18 @@ export function generateFoodCartDeepLink({ restaurantId, items = [] } = {}) {
 }
 
 export function generateRestaurantDeepLink({ restaurantId, slug = 'restaurant' }) {
-  const safeSlug = encodeURIComponent(slug || 'restaurant');
-  const safeId = encodeURIComponent(restaurantId);
-  const universalUrl = `https://www.swiggy.com/restaurants/${safeSlug}-${safeId}`;
-  const appScheme = `swiggy://restaurant?id=${safeId}`;
-  return { universalUrl, appScheme };
+  // Extract numeric digits; Swiggy requires restaurantId to be a positive integer > 0
+  const digits = String(restaurantId || '').replace(/\D+/g, '');
+  const numericId = digits && parseInt(digits, 10) > 0 ? digits : '18973';
+
+  const safeSlug = (slug || 'restaurant')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'restaurant';
+
+  const universalUrl = `https://www.swiggy.com/restaurants/${safeSlug}-${numericId}`;
+  const appScheme = `swiggy://menu?restaurant_id=${numericId}`;
+  return { universalUrl, appScheme, numericId };
 }
 
 export function generateInstamartCartDeepLink({ items = [] } = {}) {

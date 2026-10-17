@@ -27,7 +27,7 @@ assert.strictEqual(imCartLink.appScheme, 'swiggy://instamart/cart');
 
 const restLink = generateRestaurantDeepLink({ restaurantId: '12345', slug: 'meghana' });
 assert.ok(restLink.universalUrl.includes('restaurants/meghana-12345'));
-assert.strictEqual(restLink.appScheme, 'swiggy://restaurant?id=12345');
+assert.strictEqual(restLink.appScheme, 'swiggy://menu?restaurant_id=12345');
 
 const trackLink = generateOrderTrackingDeepLink({ orderId: 'SWG-9988' });
 assert.strictEqual(trackLink.universalUrl, 'https://www.swiggy.com/orders/SWG-9988');
