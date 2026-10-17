@@ -114,32 +114,35 @@ Edit `.env` to configure your environment:
 
 ---
 
-## 📖 Commands
+## 🗣️ Natural Language Interface (No Slash Commands Needed!)
 
-| Command | Description |
-| :--- | :--- |
-| `@weave <task>` | Execute a task on the active project directory |
-| `@weave [alias] <task>` | Run a task targeting a specific project alias |
-| `@weave -c <task>` | Continue the previous conversation context |
-| `@weave /projects` | List all discovered and registered projects |
-| `@weave /project <alias>` | Switch the active project folder |
-| `@weave /addproject <alias> <path>` | Register a new project directory |
-| `@weave /bind <alias>` | Lock the current WhatsApp group to a specific project *(Owner only)* |
-| `@weave /unbind` | Remove the project lock from the current group *(Owner only)* |
-| `@weave /screenshot [url]` | Take a headless screenshot preview |
-| `@weave /send <file>` | Send a file from your system to the chat |
-| `@weave /status` | Check the status of running tasks and queue |
-| `@weave /stop` | Cancel the currently running agent task |
-| `@weave /help` | Display list of available commands |
+Weave features a full **Natural Language Processing (NLP)** engine. You do not need to memorize or type slash commands — just address `@weave` in plain English as if speaking to a teammate:
+
+| Intent | How to Speak to Weave | What Happens |
+| :--- | :--- | :--- |
+| **Check Projects** | `@weave what projects do we have?` | Lists all discovered & registered projects |
+| **Switch Project** | `@weave switch this chat to portfolio-website` | Switches active project folder for this chat |
+| **Visual Preview** | `@weave show me what the landing page looks like on mobile` | Captures headless screenshot & sends image |
+| **Task Status** | `@weave what are you working on right now?` | Checks status of active agent task & queue |
+| **Stop / Abort** | `@weave stop what you're doing` | Immediately halts active running agent task |
+| **Git Push** | `@weave push these changes to GitHub with message 'fixed navbar'` | Commits & pushes repo |
+| **Collaborators** | `@weave invite @alex to collaborate on this repo` | Adds GitHub repository collaborator |
+| **File Retrieval**| `@weave send me package.json` | Finds and sends file directly into WhatsApp |
+| **Code & Build** | `@weave add dark mode toggle with persistent localStorage` | Antigravity AI modifies project code |
+| **Follow-up** | `@weave make that button rounded and emerald green` | Seamless multi-turn session continuation |
+| **Tech Q&A** | `@weave how does JWT refresh token rotation work?` | Instant conversational explanation |
+| **Agent Control** | `@weave go to sleep` / `@weave wake up` | Mutes or awakens agent in group |
+
+*(Legacy slash commands like `/status` or `/projects` remain supported for backward compatibility).*
 
 ---
 
 ## 💡 Example WhatsApp Prompts
 
 - `@weave create a modern hero section with Tailwind CSS and an emerald CTA button`
-- `@weave [mysite] add dark mode toggle with persistent localStorage`
-- `@weave -c make the cards responsive on mobile devices`
-- `@weave /screenshot http://localhost:3000`
+- `@weave show me what the site looks like on mobile`
+- `@weave switch to wisewallets`
+- `@weave push our changes to github`
 - **Voice Notes**: Send an audio message tagging `@weave` to prompt hands-free!
 
 ---

@@ -576,7 +576,7 @@ export function resolveProjectAndTask(rawTaskText, jid = null) {
     const boundAlias = state.groupBindings[jid];
     if (!boundAlias || !state.projects[boundAlias]) {
       const err = new Error(
-        `🔒 This WhatsApp group is not linked to a project yet.\nAsk the owner to link it using: *${CONFIG.triggerPrefix} /bind <project-name>*`
+        `🔒 This WhatsApp group is not connected to a project yet.\nAsk the owner to connect one by saying: *${CONFIG.triggerPrefix} switch to <project-name>* (or *${CONFIG.triggerPrefix} what projects do we have?*)`
       );
       err.code = 'UNBOUND_GROUP';
       throw err;

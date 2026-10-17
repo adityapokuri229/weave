@@ -62,6 +62,8 @@ import {
   resolvePendingClarification,
 } from './autopilot/clarification.js';
 import { fullAutoDebouncer } from './autopilot/debouncer.js';
+import { classifyUserIntent } from './nlp/classifier.js';
+import { dispatchIntent } from './nlp/dispatcher.js';
 
 const AUTH_DIR = path.join(DATA_DIR, 'auth_info_baileys');
 const CONTACTS_FILE = path.join(DATA_DIR, 'contacts.json');
@@ -2129,36 +2131,41 @@ async function handleSlashCommand(sock, jid, msg, commandBody) {
 
   if (cmd === '/help' || cmd === 'help') {
     const trig = CONFIG.triggerPrefix;
-    const helpLines = [
-      `🤖 *Weave Agent (${trig})* (${boundProject ? `\`${boundProject}\`` : 'unbound'})`,
-      `• *${trig} <task>* — Run task`,
-      `• *${trig} /screenshot [url]* — Capture page screenshot (add mobile for phone view)`,
-      `• *${trig} /projects* — List projects & show active project for this chat`,
-      `• *${trig} /project <alias>* | *${trig} /bind <alias>* — Switch active project in this chat`,
-      `• *${trig} /unbind* | *${trig} /turnoff* — Turn OFF active project in this chat`,
-      `• *${trig} /btw <question>* — Ask Gemini directly without sending to Antigravity session`,
-      `• *${trig} /new* — Reset/clear Antigravity session for current project`,
-      `• *${trig} /push [msg]* — Commit & push`,
-      `• *${trig} /status* — Check status`,
-      `• *${trig} /update* — Pull latest live OTA update without reinstalling`,
-      `• *${trig} /stop* — Stop task (or swipe-reply *stop*)`,
-    ];
+    const projLabel = boundProject ? `\`${boundProject}\`` : '_None (unbound)_';
+    const helpMessage = [
+      `👋 *Hi, I'm Weave!* Your natural language WhatsApp coding agent.`,
+      `📍 *Current Project:* ${projLabel}`,
+      '',
+      `No commands needed! Just speak to me like a teammate using *${trig}* followed by plain English:`,
+      '',
+      `💻 *Code & Features:*`,
+      `• *"${trig} add a dark mode toggle to the navbar"*`,
+      `• *"${trig} fix the crash when clicking checkout"*`,
+      `• *"${trig} make that button rounded and emerald green"*`,
+      '',
+      `📁 *Projects & Workspaces:*`,
+      `• *"${trig} what projects do we have?"*`,
+      `• *"${trig} switch this chat to portfolio-website"*`,
+      `• *"${trig} start a new project called payment-gateway"*`,
+      '',
+      `📸 *Visual UI Previews:*`,
+      `• *"${trig} show me what the landing page looks like on mobile"*`,
+      `• *"${trig} screenshot localhost:3000"*`,
+      '',
+      `🚀 *Git & GitHub:*`,
+      `• *"${trig} push our changes to github with message 'fixed navbar'"*`,
+      `• *"${trig} invite @alex to collaborate on this repo"*`,
+      '',
+      `📎 *Files & Sharing:*`,
+      `• *"${trig} send me package.json"*`,
+      '',
+      `🛑 *Control & Questions:*`,
+      `• *"${trig} what are you working on right now?"*`,
+      `• *"${trig} stop what you're doing"*`,
+      `• *"${trig} how does JWT refresh token rotation work?"*`,
+    ].join('\n');
 
-    if (owner) {
-      helpLines.push(
-        `• *${trig} /callsign <@handle>* — Change unique agent call-sign`,
-        `• *${trig} /collab <github_user> [repo] [read|write|admin]* — Invite GitHub collaborator`,
-        `• *${trig} /removecollab <github_user> [repo]* — Remove collaborator / invite`,
-        `• *${trig} /collabs [repo]* — List repo collaborators & pending invites`,
-        `• *${trig} /addproject <alias> <path>* — Register new local project folder`,
-        `• *${trig} /autopush on|off* | *${trig} /shutdown* | *${trig} /wakeup*`,
-        `• *${trig} /msg <Contact> <text>* | *${trig} /send [Contact :] <file>*`,
-        `• *${trig} /livelocation <Contact> [hours]* | *${trig} /setlocation <place>* | *${trig} /stoplocation*`,
-        `• *${trig} /mailsetup <email> <app_pass>* | *confirm* | *cancel*`
-      );
-    }
-
-    await sendReply(sock, jid, helpLines.join('\n'), msg);
+    await sendReply(sock, jid, helpMessage, msg);
     return true;
   }
 
@@ -4029,310 +4036,7 @@ async function handleIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfte
         return;
       }
 
-      // 4. Autopilot Intent Routing (Conversational AI Classifier)
-      if (isAutopilot && !rawBody.startsWith('/')) {
-        const recentChat = (chatMessageHistory.get(jid) || []).slice(-5);
-        const routeResult = await routeAutopilotIntent({
-          prompt: rawBody,
-          groupJid: jid,
-          recentHistory: recentChat,
-        });
-
-        console.log(`✈️ [Autopilot Router] Lane=${routeResult.lane} Confidence=${routeResult.confidence}`);
-
-        // Lane 1: manage_collaborator
-        if (routeResult.lane === 'manage_collaborator' && routeResult.collaborator?.name) {
-          const req = handleCollaboratorRequest({
-            requestedName: routeResult.collaborator.name,
-            role: routeResult.collaborator.role || 'write',
-            groupJid: jid,
-            projectDir: currentState.groupBindings?.[jid] ? currentState.projects[currentState.groupBindings[jid]] : currentState.projects[currentState.activeProject],
-          });
-
-          if (req.status === 'unknown') {
-            await sendReply(sock, jid, req.replyPrompt, msg);
-            return;
-          }
-
-          if (req.status === 'known') {
-            await reactToMessage(sock, msg, '⏳');
-            try {
-              const res = await executeCollaboratorInvite({
-                username: req.username,
-                permission: req.permission,
-                projectDir: currentState.groupBindings?.[jid] ? currentState.projects[currentState.groupBindings[jid]] : currentState.projects[currentState.activeProject],
-              });
-              await reactToMessage(sock, msg, '🤝');
-              await sendReply(
-                sock,
-                jid,
-                res.isAlready
-                  ? `✅ *@${req.username}* is already a collaborator on \`${res.owner}/${res.repo}\` (${res.permission}).`
-                  : `🤝 Invited *${req.friend.name}* (\`@${req.username}\`) to \`${res.owner}/${res.repo}\` (${res.permission}) — ${res.invitationUrl}`,
-                msg
-              );
-            } catch (err) {
-              await sendReply(sock, jid, `❌ Failed to invite @${req.username}: ${err.message}`, msg);
-            }
-            return;
-          }
-        }
-
-        // Lane 2: capture_screenshot
-        if (routeResult.lane === 'capture_screenshot') {
-          const target = routeResult.screenshot?.target || '';
-          const isMobile = Boolean(routeResult.screenshot?.isMobile);
-          rawBody = `/screenshot ${target}${isMobile ? ' mobile' : ''}`.trim();
-        }
-
-        // Lane 3: manage_workspace
-        if (routeResult.lane === 'manage_workspace' && routeResult.workspace?.action) {
-          const action = routeResult.workspace.action;
-          const projectName = routeResult.workspace.projectName;
-
-          if (action === 'create' && projectName) {
-            try {
-              const res = createProjectUnderMaster(projectName, jid);
-              await sendReply(
-                sock,
-                jid,
-                `📁 *Created & Bound Project: \`${res.alias}\`*\nPath: \`${res.path}\`\nThis group is now actively working on \`${res.alias}\`.`,
-                msg
-              );
-            } catch (err) {
-              await sendReply(sock, jid, `⚠️ Could not create project: ${err.message}`, msg);
-            }
-            return;
-          }
-
-          if (action === 'switch' && projectName) {
-            try {
-              const res = switchGroupProject(projectName, jid);
-              await sendReply(
-                sock,
-                jid,
-                `🔄 *Switched Active Project to: \`${res.alias}\`*\nPath: \`${res.path}\`\nAll coding tasks in this group will now target this project.`,
-                msg
-              );
-            } catch (err) {
-              await sendReply(sock, jid, `⚠️ Could not switch project: ${err.message}`, msg);
-            }
-            return;
-          }
-
-          if (action === 'list') {
-            try {
-              const listInfo = listProjectsForGroup(jid);
-              const bullets = listInfo.projects.map(
-                p => `• *${p}*${p === listInfo.boundAlias ? ' _(Active in this group)_' : ''}`
-              ).join('\n') || '_No projects found._';
-
-              await sendReply(
-                sock,
-                jid,
-                `📂 *Available Projects in Master Directory:*\n${bullets}\n\n_Master Directory: \`${listInfo.masterDir}\`_`,
-                msg
-              );
-            } catch (err) {
-              await sendReply(sock, jid, `⚠️ Could not list projects: ${err.message}`, msg);
-            }
-            return;
-          }
-
-          if (action === 'status') {
-            const st = getGroupProjectStatus(jid);
-            await sendReply(
-              sock,
-              jid,
-              st.bound
-                ? `📍 *Current Project:* \`${st.alias}\`\nPath: \`${st.path}\`\nMaster Directory: \`${st.masterDir}\``
-                : `⚪ No project is currently bound to this group.\nMaster Directory: \`${st.masterDir || 'Not configured'}\``,
-              msg
-            );
-            return;
-          }
-
-          if (action === 'unbind') {
-            const unb = unbindGroupProject(jid);
-            await sendReply(
-              sock,
-              jid,
-              `🔓 *Turned OFF project in this chat.*\nUnbound from \`${unb.previous || 'project'}\`.`,
-              msg
-            );
-            return;
-          }
-        }
-
-        // Lane 4: chat_reply
-        if (routeResult.lane === 'chat_reply' && routeResult.chatReply?.responseText) {
-          await sendReply(sock, jid, routeResult.chatReply.responseText, msg);
-          return;
-        }
-
-        // Lane 5: ask_clarification
-        if (routeResult.lane === 'ask_clarification' && routeResult.clarification) {
-          const formattedPrompt = createPendingClarification(
-            jid,
-            rawBody,
-            routeResult.clarification.question,
-            routeResult.clarification.options
-          );
-          await sendReply(sock, jid, formattedPrompt, msg);
-          return;
-        }
-
-        // Lane 6: run_coding_task
-        if (routeResult.lane === 'run_coding_task') {
-          if (routeResult.codingTask?.instructions) {
-            rawBody = routeResult.codingTask.instructions;
-          }
-        }
-      }
-
-      // Fast-path: natural language GitHub collaborator requests from the owner
-      // (e.g. "add @octocat as collaborator to wisewallets", "invite https://github.com/user as a collaborator", "remove octocat from collaborators")
-      if (owner && !rawBody.startsWith('/')) {
-        const normalizedCollabText = rawBody
-          .replace(/\[([^\]]+)\]\((https?:\/\/github\.com\/[^)]+)\)/gi, '$2')
-          .replace(/https?:\/\/github\.com\/([A-Za-z0-9_.-]+)/gi, '$1')
-          .trim();
-
-        const emailInTextMatch = normalizedCollabText.match(
-          /([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})/
-        );
-        const extractedEmail = emailInTextMatch ? emailInTextMatch[1] : '';
-
-        const addCollabMatch =
-          normalizedCollabText.match(
-            /^(?:please\s+)?(?:can\s+you\s+)?(?:add|invite)\s+@?([A-Za-z0-9_.-]+)(?:\s*\([^)]*\))?\s+(?:as\s+(?:a\s+)?)?(?:github\s+)?collaborator(?:\s+(?:on|to|in|for)\s+(?:the\s+)?(?:repo(?:sitory)?\s+|project\s+)?([A-Za-z0-9_./-]+))?/i
-          ) ||
-          normalizedCollabText.match(
-            /^(?:please\s+)?(?:can\s+you\s+)?(?:add|invite)\s+(?:github\s+)?collaborator\s+@?([A-Za-z0-9_.-]+)(?:\s*\([^)]*\))?(?:\s+(?:on|to|in|for)\s+(?:the\s+)?(?:repo(?:sitory)?\s+|project\s+)?([A-Za-z0-9_./-]+))?/i
-          );
-        const removeCollabMatch = normalizedCollabText.match(
-          /^(?:please\s+)?(?:can\s+you\s+)?(?:remove|delete|revoke|uninvite)\s+@?([A-Za-z0-9_.-]+)\s+(?:as\s+(?:a\s+)?)?(?:collaborator|from\s+collaborators)(?:\s+(?:on|from|in)\s+(?:the\s+)?(?:repo(?:sitory)?\s+|project\s+)?([A-Za-z0-9_./-]+))?/i
-        );
-        const listCollabMatch = normalizedCollabText.match(
-          /^(?:please\s+)?(?:list|show|get)\s+(?:all\s+)?(?:github\s+)?collaborators(?:\s+(?:on|for|in|of)\s+(?:the\s+)?(?:repo(?:sitory)?\s+|project\s+)?([A-Za-z0-9_./-]+))?$/i
-        );
-
-        const stopWords = new Set(['this', 'that', 'the', 'my', 'our', 'current', 'repo', 'repository', 'project', 'here']);
-        if (addCollabMatch) {
-          const user = addCollabMatch[1];
-          const repoCandidate = (addCollabMatch[2] || '').replace(/[,.!?]+$/, '');
-          const repoPart = repoCandidate && !stopWords.has(repoCandidate.toLowerCase()) ? ` ${repoCandidate}` : '';
-          const emailPart = extractedEmail ? ` ${extractedEmail}` : '';
-          rawBody = `/collab ${user}${repoPart}${emailPart}`;
-        } else if (removeCollabMatch) {
-          const user = removeCollabMatch[1];
-          const repoCandidate = (removeCollabMatch[2] || '').replace(/[,.!?]+$/, '');
-          const repoPart = repoCandidate && !stopWords.has(repoCandidate.toLowerCase()) ? ` ${repoCandidate}` : '';
-          rawBody = `/removecollab ${user}${repoPart}`;
-        } else if (listCollabMatch) {
-          const repoCandidate = (listCollabMatch[1] || '').replace(/[,.!?]+$/, '');
-          const repoPart = repoCandidate && !stopWords.has(repoCandidate.toLowerCase()) ? ` ${repoCandidate}` : '';
-          rawBody = `/collabs${repoPart}`;
-        }
-      }
-
-      // Fast-path: deployment / vercel URL query
-      // (e.g. "pull out the vercel link", "what is the deployment link", "where is it deployed")
-      if (!rawBody.startsWith('/')) {
-        const lowerBody = rawBody.toLowerCase();
-        if (
-          lowerBody.includes('vercel link') ||
-          lowerBody.includes('vercel url') ||
-          lowerBody.includes('deployment link') ||
-          lowerBody.includes('deployment url') ||
-          lowerBody.includes('deployed link') ||
-          lowerBody.includes('live link') ||
-          lowerBody.includes('live url')
-        ) {
-          let projectDir = CONFIG.defaultProjectDir;
-          let detectedAlias = null;
-          try {
-            const resolved = resolveProjectAndTask(rawBody, jid);
-            if (resolved.projectDir) {
-              projectDir = resolved.projectDir;
-              detectedAlias = resolved.projectAlias;
-            }
-          } catch {
-            const boundProject = isGroup ? currentState.groupBindings?.[jid] : currentState.activeProject;
-            projectDir = (boundProject && currentState.projects?.[boundProject]) || CONFIG.defaultProjectDir;
-            detectedAlias = boundProject;
-          }
-
-          const liveUrl = await getProjectDeploymentUrl(projectDir, detectedAlias);
-          if (liveUrl) {
-            await sendReply(
-              sock,
-              jid,
-              `🌐 *Live Deployment for \`${detectedAlias || 'project'}\`:*\n${liveUrl}`,
-              msg
-            );
-            return;
-          }
-        }
-      }
-
-      // Fast-path: natural language screenshot / visual inspection requests
-      // (e.g. "take a screenshot of the current page", "send me a screenshot of localhost 3000", "screenshot https://example.com mobile")
-      if (!rawBody.startsWith('/')) {
-        const lowerBody = rawBody.toLowerCase();
-        if (
-          lowerBody.includes('screenshot') ||
-          lowerBody.includes('screen shot') ||
-          /\bss\b/i.test(lowerBody) ||
-          lowerBody.includes('capture the page') ||
-          lowerBody.includes('capture page') ||
-          lowerBody.includes('visual test') ||
-          lowerBody.includes('qa test') ||
-          lowerBody.includes('landing page screenshot')
-        ) {
-          // Check if there is an explicit URL or port
-          const urlMatch = rawBody.match(/(?:https?:\/\/[^\s]+|localhost:[0-9]+|:[0-9]{2,5}|\b[0-9]{4,5}\b)/i);
-          const isMobile = lowerBody.includes('mobile') || lowerBody.includes('phone');
-          let target = urlMatch ? urlMatch[0] : '';
-
-          // If no specific URL was given, check if project has a live Vercel/GitHub deployment URL!
-          if (!target) {
-            let projectDir = CONFIG.defaultProjectDir;
-            let detectedAlias = null;
-            let resolved = null;
-            try {
-              resolved = resolveProjectAndTask(rawBody, jid);
-              if (resolved.projectDir) {
-                projectDir = resolved.projectDir;
-                detectedAlias = resolved.projectAlias;
-              }
-            } catch {
-              const boundProject = isGroup ? currentState.groupBindings?.[jid] : currentState.activeProject;
-              projectDir = (boundProject && currentState.projects?.[boundProject]) || CONFIG.defaultProjectDir;
-              detectedAlias = boundProject;
-            }
-
-
-            // 1. Try to discover live Vercel / GitHub Pages / deployment URL
-            const liveUrl = await getProjectDeploymentUrl(projectDir, detectedAlias);
-            if (liveUrl) {
-              target = liveUrl;
-            } else {
-              // 2. Fall back to local project index.html or dev server
-              const indexPath = path.join(projectDir, 'index.html');
-              if (fs.existsSync(indexPath)) {
-                target = `file://${indexPath}`;
-              } else {
-                target = 'http://localhost:3000';
-              }
-            }
-          }
-
-          rawBody = `/screenshot ${target}${isMobile ? ' mobile' : ''}`;
-        }
-      }
-
-      // Check if it's a slash command or control command
+      // Legacy slash commands or single control command keywords
       const lowerRawTrim = rawBody.toLowerCase().trim();
       const isControlCmd = [
         'help', 'shutdown', 'shtudown', 'wakeup', 'resume', 'start',
@@ -4343,19 +4047,63 @@ async function handleIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfte
         if (handled) return;
       }
 
-      // If owner sends a normal task in a group that is currently shut down, remind them to /wakeup first
+      // Natural Language Processing Pipeline (Zero Slash Commands Needed!)
+      let continueSession = replyingToBot;
+      const recentChat = (chatMessageHistory.get(jid) || []).slice(-5);
+      const senderDisplay = msg.pushName || (msg.key?.fromMe ? 'Owner' : getSenderNumber(msg));
+
+      const intentResult = await classifyUserIntent({
+        text: rawBody,
+        groupJid: jid,
+        recentHistory: recentChat,
+        senderName: senderDisplay,
+      });
+
+      console.log(`🤖 [NLP Dispatch] JID=${jid} Intent=${intentResult.intent} Confidence=${intentResult.confidence}`);
+
+      const dispatchResult = await dispatchIntent({
+        intentResult,
+        sock,
+        jid,
+        msg,
+        rawBody,
+        owner,
+        isGroup,
+        boundProject: isGroup ? currentState.groupBindings?.[jid] : currentState.activeProject,
+        state: currentState,
+        taskQueue,
+        currentRunningItem,
+        sendReply,
+        reactToMessage,
+        sendWhatsAppFile,
+      });
+
+      if (dispatchResult?.handled) {
+        return;
+      }
+
+      if (dispatchResult?.isCodingTask) {
+        rawBody = dispatchResult.taskPrompt || rawBody;
+        if (dispatchResult.continueSession) {
+          continueSession = true;
+        }
+        if (dispatchResult.targetProject) {
+          rawBody = `[${dispatchResult.targetProject}] ${rawBody}`;
+        }
+      }
+
+      // If owner sends a normal task in a group that is currently shut down, remind them to wake up first
       if (isGroup && currentState.disabledGroups?.[jid]) {
         await sendReply(
           sock,
           jid,
-          `🛑 *Agent is currently shut down in this group.*\nSend */wakeup* (or */start*) to turn it back on!`,
+          `🛑 *Weave is currently asleep in this group.*\nJust say *"wake up"* to turn it back on!`,
           msg
         );
         return;
       }
 
-      // Check for continuation flag (-c or --continue) OR automatic continuation when swipe-replying to the bot!
-      let continueSession = replyingToBot;
+      // Check for continuation flag (-c or --continue)
       if (rawBody.startsWith('-c ') || rawBody.startsWith('--continue ')) {
         continueSession = true;
         rawBody = rawBody.replace(/^(-c|--continue)\s+/, '').trim();
