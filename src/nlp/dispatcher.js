@@ -6,7 +6,6 @@ import {
   loadProjectsState,
   saveProjectsState,
   updateTriggerPrefix,
-  isOwner,
 } from '../config.js';
 import {
   listProjectsForGroup,
@@ -29,6 +28,20 @@ import {
 import { captureWebScreenshot, getProjectDeploymentUrl } from '../qa.js';
 import { checkAndApplyOtaUpdate, getOtaStatus } from '../ota.js';
 import { geminiClient } from '../gemini-client.js';
+import {
+  getRideEstimates,
+  formatRideComparisonMessage,
+} from '../concierge/cabs/cabService.js';
+import {
+  evaluateBestRide,
+  confirmAndDispatchRide,
+  formatBookingConfirmationCard,
+  storePendingRideClarification,
+  resolvePendingRideClarification,
+  getActiveBooking,
+  formatActiveBookingStatus,
+  cancelActiveBooking,
+} from '../concierge/cabs/bookingEngine.js';
 
 /**
  * Dispatches a classified intent to its corresponding handler.
@@ -52,6 +65,27 @@ export async function dispatchIntent({
   sendWhatsAppFile,
 }) {
   const { intent, confidence } = intentResult;
+
+  // 0. Check for Pending Ride Clarification Reply (e.g. user answered "1" or "2")
+  const rideClarification = resolvePendingRideClarification(jid, rawBody);
+  if (rideClarification) {
+    await reactToMessage(sock, msg, '🚖');
+    try {
+      const booking = await confirmAndDispatchRide({
+        pickup: rideClarification.pickup,
+        dropoff: rideClarification.dropoff,
+        selectedRide: rideClarification.selectedRide,
+        userJid: jid,
+        userName: msg?.pushName || 'Passenger',
+      });
+      const card = formatBookingConfirmationCard(booking);
+      await sendReply(sock, jid, card, msg);
+    } catch (err) {
+      console.error('[Ride Clarification Dispatch] Error:', err);
+      await sendReply(sock, jid, `❌ Failed to confirm ride: ${err.message}`, msg);
+    }
+    return { handled: true };
+  }
 
   // 1. Task Control (Stop, Status, Context Reset, Append)
   if (intent === INTENTS.TASK_CONTROL) {
@@ -545,7 +579,117 @@ export async function dispatchIntent({
     return { handled: true };
   }
 
-  // 8. Help / Capabilities Guide (Pure Natural Language UX - Zero Slash Commands!)
+  // 8. Cab & Ride Hailing (Autonomous End-to-End Booking & OTP)
+  if (intent === INTENTS.CAB_BOOKING) {
+    const action = intentResult.cabBooking?.action || 'book';
+    const destination = intentResult.cabBooking?.destination?.trim();
+    const pickup = intentResult.cabBooking?.pickup?.trim() || null;
+    const preferredTier = intentResult.cabBooking?.rideTier || null;
+
+    // A. Ride Status Query
+    if (action === 'status') {
+      const active = getActiveBooking(jid);
+      if (active) {
+        await sendReply(sock, jid, formatActiveBookingStatus(active), msg);
+      } else {
+        await sendReply(
+          sock,
+          jid,
+          `ℹ️ *No Active Rides Found.*\nYou don't currently have any active cab bookings.\n\n💡 _To book one, tell me: "book a cab to <destination>"_`,
+          msg
+        );
+      }
+      return { handled: true };
+    }
+
+    // B. Cancel Ride
+    if (action === 'cancel') {
+      const cancelled = cancelActiveBooking(jid);
+      if (cancelled) {
+        await reactToMessage(sock, msg, '🛑');
+        await sendReply(
+          sock,
+          jid,
+          `🛑 *Ride Cancelled.*\nYour booking (\`${cancelled.bookingId}\`) for the ${cancelled.driver.vehicle} (${cancelled.driver.name}) was cancelled.\n\nNo cancellation fee applied.`,
+          msg
+        );
+      } else {
+        await sendReply(sock, jid, `⚪ *Nothing to Cancel.*\nYou don't have an active cab booking running right now.`, msg);
+      }
+      return { handled: true };
+    }
+
+    // C. Needs Destination
+    if (!destination) {
+      await sendReply(
+        sock,
+        jid,
+        `🚖 *Where would you like to go?*\n\nTell me: *"book a cab to <destination>"* (e.g. *"book a cab to Kempegowda Airport"* or *"get me an auto to MG Road"*).`,
+        msg
+      );
+      return { handled: true };
+    }
+
+    await reactToMessage(sock, msg, '🚖');
+
+    try {
+      const estimates = await getRideEstimates({
+        pickupQuery: pickup || '',
+        destinationQuery: destination,
+        msg,
+        preferredTier,
+      });
+
+      // D. Price Comparison Only
+      if (action === 'compare') {
+        const card = formatRideComparisonMessage(estimates);
+        await sendReply(sock, jid, card, msg);
+        return { handled: true };
+      }
+
+      // E. Autonomous End-to-End Booking with OTP
+      const evaluation = evaluateBestRide(estimates.rideOptions, {
+        distanceKm: estimates.distanceKm,
+        preferredTier,
+        countryCode: estimates.pickup.countryCode,
+      });
+
+      // If there's a big trade-off (e.g. fastest vs cheapest), ask clarification
+      if (evaluation.needsClarification) {
+        storePendingRideClarification(jid, {
+          options: evaluation.options,
+          pickup: estimates.pickup,
+          dropoff: estimates.dropoff,
+        });
+        await sendReply(sock, jid, evaluation.prompt, msg);
+        return { handled: true };
+      }
+
+      // Otherwise, autonomously book the best ride!
+      const booking = await confirmAndDispatchRide({
+        pickup: estimates.pickup,
+        dropoff: estimates.dropoff,
+        selectedRide: evaluation.selected,
+        userJid: jid,
+        userName: msg?.pushName || 'Passenger',
+      });
+
+      const confirmationCard = formatBookingConfirmationCard(booking);
+      await sendReply(sock, jid, confirmationCard, msg);
+    } catch (err) {
+      console.error('[Cab Dispatcher] Error:', err);
+      await sendReply(
+        sock,
+        jid,
+        `❌ *Could not complete cab booking:*\n${err.message}\n\n💡 _Tip: Try providing specific landmarks, e.g. "book a cab from Indiranagar to Airport" or send a location pin._`,
+        msg
+      );
+    }
+
+    return { handled: true };
+  }
+
+  // 9. Help / Capabilities Guide (Pure Natural Language UX - Zero Slash Commands!)
   if (intent === INTENTS.HELP_GUIDE) {
     const trig = CONFIG.triggerPrefix;
     const projLabel = boundProject ? `\`${boundProject}\`` : '_None (unbound)_';
@@ -559,6 +703,11 @@ export async function dispatchIntent({
       `• *"${trig} add a dark mode toggle to the navbar"*`,
       `• *"${trig} fix the crash when clicking checkout"*`,
       `• *"${trig} make that button rounded and emerald green"*`,
+      '',
+      `🚖 *Cabs & Rides (1-Tap Booking):*`,
+      `• *"${trig} book a cab to the airport"*`,
+      `• *"${trig} compare cab prices to Times Square"*`,
+      `• *"${trig} get me an auto to MG Road"*`,
       '',
       `📁 *Projects & Workspaces:*`,
       `• *"${trig} what projects do we have?"*`,

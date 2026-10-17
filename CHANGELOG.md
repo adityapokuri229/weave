@@ -8,7 +8,23 @@ All notable changes to the Weave repository are documented in this file.
 
 ### 🚀 Major Additions & Features
 
-#### 1. Autopilot Multi-Lane Intent Routing System (`src/autopilot/`)
+#### 1. Autonomous Cab & Ride Booking Concierge (`src/concierge/cabs/`, `src/concierge/location.js`)
+- **Autonomous End-to-End Ride Dispatch**:
+  - Automatically assesses distance, traffic, and vehicle categories (Auto, Bike, Economy, Premier, XL).
+  - Selects the optimal economical option, dispatches the booking, and delivers the **4-digit Ride Start OTP / PIN** directly to WhatsApp.
+- **Intelligent Trade-off Clarifications**:
+  - Detects notable price vs. wait-time trade-offs and prompts the user with concise options (e.g. *Reply 1 for fastest, 2 for lowest fare*).
+- **Active Ride Tracking & Zero-Fee Cancellation**:
+  - Real-time ride status queries (`@weave where is my cab?`) showing updated driver ETA and repeating the OTP.
+  - One-tap cancellation (`@weave cancel cab`) with zero cancellation fees.
+- **Multi-Tier Location Engine (`src/concierge/location.js`)**:
+  - Automatically resolves pickup coordinates from shared WhatsApp location pins, saved locations (`/setlocation`), or IP geolocation.
+  - Geocodes text queries via OpenStreetMap Nominatim and calculates road distances/durations using OSRM routing.
+- **Global & Regional Support**:
+  - India: Auto (`🛺`), Bike (`🏍️`), Uber Go (`🚗`), Ola Mini (`🚙`), Uber Premier (`🚘`), Uber XL (`🚐`).
+  - US/Global: UberX, Lyft Standard, Uber Comfort, Uber Black, Uber XL, Lyft XL.
+
+#### 2. Autopilot Multi-Lane Intent Routing System (`src/autopilot/`)
 - **Semantic Classification Router (`router.js`, `guidelines.js`)**:
   - Implemented an intent classification engine powered by Gemini (`generateContent` with structured JSON schema) to classify plain English WhatsApp group messages into six distinct execution lanes:
     1. `manage_collaborator`: GitHub collaborator operations (adding, inviting, listing collaborators).
