@@ -11,6 +11,7 @@ import {
   DESIGN_PHILOSOPHIES,
   buildPortfolioData,
 } from './portfolioTemplates.js';
+import { synthesizePortfolioData } from './portfolioSynthesizer.js';
 import { captureWebScreenshot } from '../qa.js';
 import { loadProjectsState, saveProjectsState } from '../config.js';
 
@@ -106,12 +107,8 @@ export async function executePortfolioCreation({
   const projectDir = targetProjectDir || path.resolve(process.cwd(), 'demo-site');
   fs.mkdirSync(projectDir, { recursive: true });
 
-  // 1. Synthesize website copy based on domain and prompt
-  const portfolioData = buildPortfolioData({
-    prompt,
-    name: (prompt || '').match(/(shelter|dog|rescue|animal|cafe|coffee|bakery|restaurant|photo|studio|gym|fitness|hackathon|sprint)/i)
-      ? undefined
-      : (senderName || 'Alex Chen'),
+  // 1. Dynamically synthesize custom domain copy using local AI (agy CLI)
+  const portfolioData = await synthesizePortfolioData(prompt, {
     organizer: senderName || 'Founder',
   });
 
@@ -259,12 +256,10 @@ export async function iteratePortfolioDesign({ chatJid, feedbackText }) {
   // If user dictates custom content or adjustments
   let portfolioData = session.portfolioData;
   if (!portfolioData || !portfolioData.headline) {
-    portfolioData = buildPortfolioData({
-      prompt: session.portfolioData?.prompt || session.prompt || '',
-      name: (session.portfolioData?.prompt || '').match(/(shelter|dog|rescue|animal|cafe|coffee|bakery|restaurant|photo|studio|gym|fitness|hackathon|sprint)/i)
-        ? undefined
-        : session.portfolioData?.name,
-    });
+    portfolioData = await synthesizePortfolioData(
+      session.portfolioData?.prompt || session.prompt || feedbackText || '',
+      { organizer: session.portfolioData?.organizer || 'Founder' }
+    );
     session.portfolioData = portfolioData;
   }
 
