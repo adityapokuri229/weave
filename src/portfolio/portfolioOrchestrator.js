@@ -108,6 +108,7 @@ export async function executePortfolioCreation({
 
   // 1. Synthesize portfolio copy based on prompt
   const portfolioData = buildPortfolioData({
+    prompt,
     name: senderName || 'Alex Chen',
     tagline: prompt ? `Portfolio focused on: ${prompt}` : undefined,
   });

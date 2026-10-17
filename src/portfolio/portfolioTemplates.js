@@ -16,6 +16,70 @@ export const DESIGN_PHILOSOPHIES = {
  * Normalizes input data into structured portfolio content.
  */
 export function buildPortfolioData(custom = {}) {
+  const promptLower = String(custom.prompt || custom.tagline || '').toLowerCase();
+
+  if (promptLower.includes('hackathon')) {
+    const eventName = 'NexusHack 2026';
+    const role = 'Global 48-Hour Developer Sprint // October 23-25';
+    const tagline =
+      '500+ developers, designers, and innovators building next-gen autonomous systems. $25,000 in prizes.';
+    const philosophy =
+      'Code at the frontier. 48 hours to assemble prototypes that solve real-world problems with AI & distributed compute.';
+    const stats = [
+      { label: 'Prize Pool', value: '$25,000' },
+      { label: 'Builders Registered', value: '500+' },
+      { label: 'Sprint Duration', value: '48 Hours' },
+      { label: 'Industry Mentors', value: '30+' },
+    ];
+    const projects = [
+      {
+        title: 'Track 1: Agent Swarms',
+        category: 'Autonomous Workflows',
+        description: 'Multi-agent orchestration, tool usage, consensus algorithms, and task completion engines.',
+        tags: ['TypeScript', 'Gemini Flash', 'WebSockets'],
+        github: '#',
+        demo: '#',
+      },
+      {
+        title: 'Track 2: Real-time Multimodal',
+        category: 'Voice & Vision',
+        description: 'Sub-second audio streaming, computer vision pipelines, and interactive spatial computing.',
+        tags: ['WebRTC', 'PyTorch', 'Rust'],
+        github: '#',
+        demo: '#',
+      },
+      {
+        title: 'Track 3: Edge & Local AI',
+        category: 'Embedded Systems',
+        description: 'Quantized on-device LLM inference, local vector search, and offline-first applications.',
+        tags: ['C++', 'ONNX', 'WebAssembly'],
+        github: '#',
+        demo: '#',
+      },
+    ];
+    const skills = [
+      'Registration Open',
+      'October 23 Kickoff',
+      'Mentorship Hours',
+      'API Key Credits',
+      'Cloud Compute',
+      'Live Demos',
+    ];
+    return {
+      name: eventName,
+      role,
+      tagline,
+      philosophy,
+      stats,
+      projects,
+      skills,
+      email: 'team@nexushack.dev',
+      github: 'https://github.com',
+      twitter: 'https://twitter.com',
+      ...custom,
+    };
+  }
+
   const name = custom.name || 'Alex Chen';
   const role = custom.role || 'AI Systems Engineer & Full-Stack Architect';
   const tagline =

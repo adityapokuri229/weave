@@ -56,9 +56,10 @@ export function fastFuzzyClassify(rawText, { availableProjects = [], boundProjec
     }
   }
 
-  // 0.5. Portfolio Website Creation & Iteration (Stitch MCP + Netlify)
+  // 0.5. Website & Portfolio Creation & Iteration (Stitch MCP + Netlify)
   const isPortfolioCreation =
-    /\b(?:create|build|make|generate|design|setup|deploy)\b.*\b(?:portfolio|personal\s+website|personal\s+site)\b/i.test(clean) ||
+    /\b(?:create|build|make|generate|design|setup|deploy|need|want|host(?:ing)?)\b.*\b(?:website|landing\s+page|web\s+page|portfolio|site)\b/i.test(clean) ||
+    /\b(?:need\s+a\s+website|build\s+a\s+website|create\s+a\s+website|make\s+a\s+website|hackathon\s+website|deploy\s+to\s+netlify)\b/i.test(clean) ||
     /^(?:portfolio\s+website|create\s+portfolio|build\s+portfolio)\b/i.test(clean);
 
   const isPortfolioIteration =
