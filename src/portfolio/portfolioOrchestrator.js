@@ -164,6 +164,7 @@ export async function executePortfolioCreation({
       projectAlias,
       activePhilosophy: initialPhilosophy,
       siteUrl: netlifyDeploy.siteUrl || null,
+      siteId: netlifyDeploy.siteId || null,
       password: netlifyDeploy.password || null,
       claimUrl: netlifyDeploy.claimUrl || null,
       stitchProjectId,
@@ -196,10 +197,14 @@ export async function executePortfolioCreation({
 
   let deployNotice = '';
   if (netlifyDeploy.siteUrl) {
-    const claimSection = netlifyDeploy.claimUrl
-      ? `, or [claim it to your Netlify account](${netlifyDeploy.claimUrl})`
-      : '';
-    deployNotice = `The website has been deployed to Netlify: ${netlifyDeploy.siteUrl} (Preview password: \`${netlifyDeploy.password}\`${claimSection}).`;
+    if (netlifyDeploy.password) {
+      const claimSection = netlifyDeploy.claimUrl
+        ? `, or [claim it to your Netlify account](${netlifyDeploy.claimUrl})`
+        : '';
+      deployNotice = `🚀 *Live Website Deployed:* ${netlifyDeploy.siteUrl}\n🔑 *Preview password:* \`${netlifyDeploy.password}\`${claimSection}`;
+    } else {
+      deployNotice = `🚀 *Live Website Deployed:* ${netlifyDeploy.siteUrl}`;
+    }
   } else if (netlifyDeploy.isRateLimited) {
     deployNotice = `⚠️ *Netlify Notice:* The daily IP rate limit for anonymous deploys has been reached on this network. Your website has been fully compiled locally; set \`NETLIFY_AUTH_TOKEN\` in \`.env\` for live cloud deploys.`;
   } else {
@@ -273,7 +278,10 @@ export async function iteratePortfolioDesign({ chatJid, feedbackText }) {
   fs.writeFileSync(indexPath, updatedHtml, 'utf8');
 
   // Re-deploy to Netlify
-  const netlifyDeploy = await deployToNetlifyDrop(session.projectDir, { title: 'portfolio' });
+  const netlifyDeploy = await deployToNetlifyDrop(session.projectDir, {
+    title: session.projectAlias || 'portfolio',
+    siteId: session.siteId || null,
+  });
 
   // Capture updated screenshot directly from local HTML file!
   let updatedShotPath = null;
@@ -287,6 +295,7 @@ export async function iteratePortfolioDesign({ chatJid, feedbackText }) {
   // Update session
   session.activePhilosophy = updatedPhilosophy;
   session.siteUrl = netlifyDeploy.siteUrl || session.siteUrl || null;
+  session.siteId = netlifyDeploy.siteId || session.siteId || null;
   session.password = netlifyDeploy.password || session.password || null;
   session.claimUrl = netlifyDeploy.claimUrl || session.claimUrl || null;
   session.updatedAt = new Date().toISOString();
@@ -299,10 +308,14 @@ export async function iteratePortfolioDesign({ chatJid, feedbackText }) {
 
   let statusNotice = '';
   if (netlifyDeploy.siteUrl) {
-    const claimSection = netlifyDeploy.claimUrl
-      ? `, or [claim it to your Netlify account](${netlifyDeploy.claimUrl})`
-      : '';
-    statusNotice = `The updated website is live on Netlify: ${netlifyDeploy.siteUrl} (Preview password: \`${netlifyDeploy.password}\`${claimSection}).`;
+    if (netlifyDeploy.password) {
+      const claimSection = netlifyDeploy.claimUrl
+        ? `, or [claim it to your Netlify account](${netlifyDeploy.claimUrl})`
+        : '';
+      statusNotice = `🚀 *Live Website Updated:* ${netlifyDeploy.siteUrl}\n🔑 *Preview password:* \`${netlifyDeploy.password}\`${claimSection}`;
+    } else {
+      statusNotice = `🚀 *Live Website Updated:* ${netlifyDeploy.siteUrl}`;
+    }
   } else if (netlifyDeploy.isRateLimited) {
     statusNotice = `Design updated locally. (Netlify anonymous IP limit active; set \`NETLIFY_AUTH_TOKEN\` in \`.env\` to sync live).`;
   } else {
