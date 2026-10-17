@@ -106,11 +106,16 @@ export async function executePortfolioCreation({
   const projectDir = targetProjectDir || path.resolve(process.cwd(), 'demo-site');
   fs.mkdirSync(projectDir, { recursive: true });
 
-  // 1. Synthesize portfolio copy based on prompt
+  // 1. Synthesize portfolio / event copy based on prompt
+  const isHackathon = (prompt || '').toLowerCase().includes('hackathon');
   const portfolioData = buildPortfolioData({
     prompt,
-    name: senderName || 'Alex Chen',
-    tagline: prompt ? `Portfolio focused on: ${prompt}` : undefined,
+    eventName: isHackathon ? 'NexusHack 2026' : undefined,
+    name: isHackathon ? 'NexusHack 2026' : (senderName || 'Alex Chen'),
+    tagline: isHackathon
+      ? 'Global 48-Hour Developer Sprint // October 23-25'
+      : (prompt ? `Portfolio & Systems: ${prompt}` : undefined),
+    organizer: senderName || 'Founder',
   });
 
   // 2. Connect to Google Stitch MCP in background
@@ -143,16 +148,16 @@ export async function executePortfolioCreation({
   // 5. Deploy to Netlify Anonymous Drop
   const netlifyDeploy = await deployToNetlifyDrop(projectDir, { title: 'portfolio' });
 
-  // 6. Capture live preview screenshot
+  // 6. Capture live preview screenshot directly from local HTML
   let livePreviewScreenshot = null;
   try {
-    const liveShot = await captureWebScreenshot(netlifyDeploy.siteUrl, {
+    const liveShot = await captureWebScreenshot(indexPath, {
       width: 1280,
       height: 800,
     });
     livePreviewScreenshot = liveShot.filePath;
   } catch (err) {
-    console.warn('Failed to capture live Netlify screenshot:', err.message);
+    console.warn('Failed to capture live preview screenshot:', err.message);
     livePreviewScreenshot = variants[0]?.screenshotPath || null;
   }
 
@@ -164,9 +169,9 @@ export async function executePortfolioCreation({
       projectDir,
       projectAlias,
       activePhilosophy: initialPhilosophy,
-      siteUrl: netlifyDeploy.siteUrl,
-      password: netlifyDeploy.password,
-      claimUrl: netlifyDeploy.claimUrl,
+      siteUrl: netlifyDeploy.siteUrl || null,
+      password: netlifyDeploy.password || null,
+      claimUrl: netlifyDeploy.claimUrl || null,
       stitchProjectId,
       portfolioData,
       variants: variants.map((v) => ({
@@ -195,19 +200,27 @@ export async function executePortfolioCreation({
     }
   }
 
-  const claimSection = netlifyDeploy.claimUrl
-    ? `, or [claim it to your Netlify account](${netlifyDeploy.claimUrl})`
-    : '';
+  let deployNotice = '';
+  if (netlifyDeploy.siteUrl) {
+    const claimSection = netlifyDeploy.claimUrl
+      ? `, or [claim it to your Netlify account](${netlifyDeploy.claimUrl})`
+      : '';
+    deployNotice = `The website has been deployed to Netlify: ${netlifyDeploy.siteUrl} (Preview password: \`${netlifyDeploy.password}\`${claimSection}).`;
+  } else if (netlifyDeploy.isRateLimited) {
+    deployNotice = `⚠️ *Netlify Notice:* The daily IP rate limit for anonymous deploys has been reached on this network. Your website has been fully compiled locally; set \`NETLIFY_AUTH_TOKEN\` in \`.env\` for live cloud deploys.`;
+  } else {
+    deployNotice = `The website has been compiled locally in your workspace.`;
+  }
 
   const messageText = [
-    `The portfolio website has been deployed to Netlify: ${netlifyDeploy.siteUrl} (Preview password: \`${netlifyDeploy.password}\`${claimSection}).`,
+    deployNotice,
     ``,
     `🎨 *Google Stitch Design Variations Created:*`,
     `• *Option 1*: Obsidian Bento Grid (Dark Modern Tech)`,
     `• *Option 2*: Swiss Editorial Minimal (Clean & Typography-focused)`,
     `• *Option 3*: Neo-Brutalist Dynamic (Bold High-Contrast & Tactile)`,
     ``,
-    `_Reply right here in WhatsApp to choose a design or dictate changes (e.g. "make the accent cyan and add a publications section"), and I will update your live site!_`,
+    `_Reply right here in WhatsApp to choose a design (e.g. "option 2", "option 3") or dictate changes, and I will update your live site!_`,
     ``,
     ...directives,
   ].join('\n');
@@ -260,10 +273,10 @@ export async function iteratePortfolioDesign({ chatJid, feedbackText }) {
   // Re-deploy to Netlify
   const netlifyDeploy = await deployToNetlifyDrop(session.projectDir, { title: 'portfolio' });
 
-  // Capture updated screenshot
+  // Capture updated screenshot directly from local HTML file!
   let updatedShotPath = null;
   try {
-    const shot = await captureWebScreenshot(netlifyDeploy.siteUrl, { width: 1280, height: 800 });
+    const shot = await captureWebScreenshot(indexPath, { width: 1280, height: 800 });
     updatedShotPath = shot.filePath;
   } catch (err) {
     console.warn('Failed to capture updated screenshot:', err.message);
@@ -271,9 +284,9 @@ export async function iteratePortfolioDesign({ chatJid, feedbackText }) {
 
   // Update session
   session.activePhilosophy = updatedPhilosophy;
-  session.siteUrl = netlifyDeploy.siteUrl;
-  session.password = netlifyDeploy.password;
-  session.claimUrl = netlifyDeploy.claimUrl;
+  session.siteUrl = netlifyDeploy.siteUrl || session.siteUrl || null;
+  session.password = netlifyDeploy.password || session.password || null;
+  session.claimUrl = netlifyDeploy.claimUrl || session.claimUrl || null;
   session.updatedAt = new Date().toISOString();
   saveProjectsState(state);
 
@@ -282,15 +295,31 @@ export async function iteratePortfolioDesign({ chatJid, feedbackText }) {
     directives.push(`[SEND_FILE: HERE | ${updatedShotPath}]`);
   }
 
-  const claimSection = netlifyDeploy.claimUrl
-    ? `, or [claim it to your Netlify account](${netlifyDeploy.claimUrl})`
-    : '';
+  let statusNotice = '';
+  if (netlifyDeploy.siteUrl) {
+    const claimSection = netlifyDeploy.claimUrl
+      ? `, or [claim it to your Netlify account](${netlifyDeploy.claimUrl})`
+      : '';
+    statusNotice = `The updated website is live on Netlify: ${netlifyDeploy.siteUrl} (Preview password: \`${netlifyDeploy.password}\`${claimSection}).`;
+  } else if (netlifyDeploy.isRateLimited) {
+    statusNotice = `Design updated locally. (Netlify anonymous IP limit active; set \`NETLIFY_AUTH_TOKEN\` in \`.env\` to sync live).`;
+  } else {
+    statusNotice = `Design updated locally in project directory.`;
+  }
+
+  const philosophyLabels = {
+    [DESIGN_PHILOSOPHIES.BENTO]: 'Option 1: Obsidian Bento Grid (Dark Modern Tech)',
+    [DESIGN_PHILOSOPHIES.SWISS]: 'Option 2: Swiss Editorial Minimal (Clean Serif Typography)',
+    [DESIGN_PHILOSOPHIES.BRUTALIST]: 'Option 3: Neo-Brutalist Dynamic (Bold High-Contrast & Tactile)',
+  };
+  const activeLabel = philosophyLabels[updatedPhilosophy] || updatedPhilosophy.toUpperCase();
 
   const messageText = [
-    `✅ *Portfolio Updated!*`,
-    `The updated website is live on Netlify: ${netlifyDeploy.siteUrl} (Preview password: \`${netlifyDeploy.password}\`${claimSection}).`,
+    `✅ *Website Design Updated!*`,
+    `🎨 *Active Design:* *${activeLabel}*`,
+    statusNotice,
     ``,
-    `_Active Style: *${updatedPhilosophy.toUpperCase()}* — keep dictating changes or reply with any tweaks!_`,
+    `_Keep dictating changes (e.g. "option 1", "make font bigger", "change colors") to iterate!_`,
     ``,
     ...directives,
   ].join('\n');
@@ -300,5 +329,6 @@ export async function iteratePortfolioDesign({ chatJid, feedbackText }) {
     messageText,
     siteUrl: netlifyDeploy.siteUrl,
     updatedShotPath,
+    updatedPhilosophy,
   };
 }

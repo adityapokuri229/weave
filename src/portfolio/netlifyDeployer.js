@@ -99,18 +99,17 @@ export async function deployToNetlifyDrop(projectDir, { title = 'portfolio', sit
 
     // Handle Netlify Anonymous daily limit gracefully
     if (errorText.includes('daily limit for anonymous deploys')) {
-      const fallbackUrl = 'http://portfolio-preview.netlify.app';
       console.warn('[NetlifyDeployer] Daily limit for anonymous deploys reached on this IP.');
       return {
-        success: true,
+        success: false,
         isRateLimited: true,
-        siteUrl: fallbackUrl,
-        password: 'My-Drop-Site',
+        siteUrl: null,
+        password: null,
         claimUrl: null,
         siteId: null,
         rawOutput: errorText,
         formattedMessage:
-          `The ${title} website is built and ready! (Note: Netlify anonymous daily limit reached on this IP. Site preview generated locally; set \`NETLIFY_AUTH_TOKEN\` in \`.env\` for unlimited instant deploys).`,
+          `The ${title} website is built and compiled locally. Note: Netlify anonymous deploy limit was reached for this IP. Add \`NETLIFY_AUTH_TOKEN\` to \`.env\` for live cloud deploys.`,
       };
     }
 

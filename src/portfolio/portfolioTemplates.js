@@ -66,7 +66,7 @@ export function buildPortfolioData(custom = {}) {
       'Live Demos',
     ];
     return {
-      name: eventName,
+      name: custom.eventName || (custom.name && custom.name !== 'Alex Chen' && !custom.name.includes('Founder') ? custom.name : 'NexusHack 2026'),
       role,
       tagline,
       philosophy,
@@ -76,7 +76,7 @@ export function buildPortfolioData(custom = {}) {
       email: 'team@nexushack.dev',
       github: 'https://github.com',
       twitter: 'https://twitter.com',
-      ...custom,
+      prompt: custom.prompt,
     };
   }
 

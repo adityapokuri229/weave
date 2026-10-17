@@ -589,7 +589,7 @@ export async function dispatchIntent({
             sock,
             jid,
             iterRes.updatedShotPath,
-            `📸 *Updated Portfolio Preview*`,
+            `📸 *Updated Design Preview* (${iterRes.updatedPhilosophy ? iterRes.updatedPhilosophy.toUpperCase() : 'ACTIVE'})`,
             msg
           );
         }
@@ -617,25 +617,10 @@ export async function dispatchIntent({
         senderName: msg?.pushName || 'Founder / Architect',
       });
 
-      // Send live preview screenshot
-      if (result.livePreviewScreenshot && fs.existsSync(result.livePreviewScreenshot)) {
-        await sendWhatsAppFile(
-          sock,
-          jid,
-          result.livePreviewScreenshot,
-          `📸 *Live Portfolio Preview*\n🌐 *URL:* ${result.siteUrl}`,
-          msg
-        );
-      }
-
-      // Send alternative Stitch design variant screenshots
+      // Send all 3 Google Stitch design variations
       if (result.variants && result.variants.length > 0) {
         for (const v of result.variants) {
-          if (
-            v.screenshotPath &&
-            fs.existsSync(v.screenshotPath) &&
-            v.screenshotPath !== result.livePreviewScreenshot
-          ) {
+          if (v.screenshotPath && fs.existsSync(v.screenshotPath)) {
             await sendWhatsAppFile(
               sock,
               jid,
