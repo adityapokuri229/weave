@@ -7,6 +7,7 @@ import {
   generateOrderTrackingDeepLink,
 } from './deepLinks.js';
 import { extractLocationFromMessage } from '../location.js';
+import { naturalizeWithCustomModel, stripEmojis } from '../../nlp/fast-router.js';
 
 // In-memory session store mapped by WhatsApp JID
 const userSessions = new Map();
@@ -179,20 +180,18 @@ function calculateCartTotals(cart, coupon = null) {
  * Formats restaurant search results as an engaging WhatsApp card.
  */
 export function formatRestaurantListCard(restaurants, query) {
-  let card = `🍽️ *Swiggy Food Search:* "${query || 'Nearby'}"\n`;
-  card += `Found *${restaurants.length}* top-rated restaurants near you:\n\n`;
+  let card = `*Swiggy Food Search:* "${query || 'Nearby'}"\n`;
+  card += `Found ${restaurants.length} top-rated restaurants near you:\n\n`;
 
   restaurants.forEach((r, idx) => {
     const deepLink = generateRestaurantDeepLink({ restaurantId: r.id, slug: r.name });
     card += `*${idx + 1}. ${r.name}* (${r.area || 'Nearby'})\n`;
-    card += `   ⭐ *${r.rating}* • ⏱️ ${r.deliveryTimeMins} mins • ₹${r.priceForTwo} for two\n`;
-    card += `   🍴 _${r.cuisine}_\n`;
-    card += `   🔗 [View Menu](${deepLink.universalUrl})\n\n`;
+    card += `   Rating: ${r.rating} • ${r.deliveryTimeMins} mins • ₹${r.priceForTwo} for two\n`;
+    card += `   Cuisine: _${r.cuisine}_\n`;
+    card += `   Menu & Order: ${deepLink.universalUrl}\n\n`;
   });
 
-  card += `💡 *Next Steps:*\n`;
-  card += `• Reply *menu ${restaurants[0]?.name}* to view dishes\n`;
-  card += `• Reply *order 1 [dish] from ${restaurants[0]?.name}* to add to cart`;
+  card += `Reply with "menu <restaurant>" to see items, or "order 1 <dish> from <restaurant>" to add to cart.`;
   return card;
 }
 
@@ -201,21 +200,20 @@ export function formatRestaurantListCard(restaurants, query) {
  */
 export function formatMenuCard(menuData) {
   const rest = menuData.restaurant || { name: 'Restaurant Menu' };
-  let card = `📜 *${rest.name} — Menu*\n`;
-  if (rest.rating) card += `⭐ *${rest.rating}* • ⏱️ ${rest.deliveryTimeMins || 30} mins delivery\n\n`;
+  let card = `*${rest.name} — Menu*\n`;
+  if (rest.rating) card += `Rating: ${rest.rating} • ${rest.deliveryTimeMins || 30} mins delivery\n\n`;
 
   for (const cat of (menuData.categories || []).slice(0, 2)) {
     card += `*${cat.name}:*\n`;
     for (const item of (cat.items || []).slice(0, 5)) {
-      const vegDot = item.veg ? '🟢' : '🔴';
-      const best = item.bestseller ? ' ⭐' : '';
-      card += `  ${vegDot} *${item.name}*${best} — *₹${item.price}*\n`;
+      const typeTag = item.veg ? '[Veg]' : '[Non-Veg]';
+      const best = item.bestseller ? ' (Bestseller)' : '';
+      card += `  ${typeTag} *${item.name}*${best} — ₹${item.price}\n`;
     }
     card += `\n`;
   }
 
-  card += `🛒 *To add an item:* Reply *add 1 [item name]*\n`;
-  card += `💳 *To review cart:* Reply *cart* or *checkout*`;
+  card += `Reply "add 1 <item>" to add to cart, or "checkout" to pay.`;
   return card;
 }
 
@@ -223,17 +221,16 @@ export function formatMenuCard(menuData) {
  * Formats Instamart grocery catalog as a WhatsApp card.
  */
 export function formatInstamartListCard(items, query) {
-  let card = `⚡ *Swiggy Instamart Grocery Search:* "${query || 'Instant Essentials'}"\n`;
-  card += `🚀 *Delivering in 10 minutes*\n\n`;
+  let card = `*Swiggy Instamart Grocery Search:* "${query || 'Instant Essentials'}"\n`;
+  card += `Delivering in 10 minutes\n\n`;
 
   items.slice(0, 6).forEach((item, idx) => {
     card += `*${idx + 1}. ${item.name}*\n`;
-    card += `   📦 Pack: ${item.pack || 'Standard'} • *₹${item.price}*\n`;
-    card += `   🏷️ Category: _${item.category || 'Pantry'}_\n\n`;
+    card += `   Pack: ${item.pack || 'Standard'} • ₹${item.price}\n`;
+    card += `   Category: _${item.category || 'Pantry'}_\n\n`;
   });
 
-  card += `🛒 *To add to grocery cart:* Reply *add [qty] [item name]*\n`;
-  card += `💡 *Example:* _add 2 ${items[0]?.name || 'Nandini Toned Fresh Milk'}_`;
+  card += `Reply "add <qty> <item>" to add to cart (e.g. "add 2 ${items[0]?.name || 'Milk'}").`;
   return card;
 }
 
@@ -243,41 +240,37 @@ export function formatInstamartListCard(items, query) {
 export function formatCartSummaryCard(session) {
   const { cart, service, restaurantName, selectedCoupon } = session;
   if (!cart || cart.length === 0) {
-    return `🛒 *Your Swiggy Cart is empty.*\n\nReply with a dish or grocery to add items:\n• _"Order 1 Margherita Pizza from Domino's"_\n• _"Add 2 Amul Milk from Instamart"_`;
+    return `Your Swiggy Cart is empty.\n\nReply with a dish or grocery to add items:\n• "Order 1 Margherita Pizza from Domino's"\n• "Add 2 Amul Milk from Instamart"`;
   }
 
   const totals = calculateCartTotals(cart, selectedCoupon);
-  const icon = service === 'instamart' ? '⚡' : '🍽️';
   const heading = service === 'instamart' ? 'Swiggy Instamart Grocery Cart' : `Swiggy Cart: ${restaurantName || 'Food Delivery'}`;
 
-  let card = `${icon} *${heading}*\n`;
+  let card = `*${heading}*\n`;
   card += `──────────────────────\n`;
 
   cart.forEach((item) => {
     const itemTotal = item.price * (item.qty || 1);
-    const vegIndicator = item.veg !== undefined ? (item.veg ? '🟢' : '🔴') : '📦';
-    card += `${vegIndicator} *${item.name}* x ${item.qty || 1} = *₹${itemTotal}*\n`;
+    const typeIndicator = item.veg !== undefined ? (item.veg ? '[Veg]' : '[Non-Veg]') : '[Item]';
+    card += `${typeIndicator} *${item.name}* x ${item.qty || 1} = ₹${itemTotal}\n`;
   });
 
   card += `──────────────────────\n`;
-  card += `💵 *Subtotal:* ₹${totals.subtotal}\n`;
+  card += `Subtotal: ₹${totals.subtotal}\n`;
   if (selectedCoupon) {
     if (totals.discount > 0) {
-      card += `🏷️ *Coupon (${selectedCoupon.code}):* -₹${totals.discount}\n`;
+      card += `Coupon (${selectedCoupon.code}): -₹${totals.discount}\n`;
     } else if (selectedCoupon.minOrder && totals.subtotal < selectedCoupon.minOrder) {
-      card += `🏷️ *Coupon (${selectedCoupon.code}):* Add ₹${selectedCoupon.minOrder - totals.subtotal} more to unlock discount (Min ₹${selectedCoupon.minOrder})\n`;
+      card += `Coupon (${selectedCoupon.code}): Add ₹${selectedCoupon.minOrder - totals.subtotal} more to unlock discount (Min ₹${selectedCoupon.minOrder})\n`;
     } else {
-      card += `🏷️ *Coupon (${selectedCoupon.code}) applied*\n`;
+      card += `Coupon (${selectedCoupon.code}) applied\n`;
     }
   }
-  card += `🛵 *Delivery Fee:* ${totals.deliveryFee === 0 ? 'FREE' : `₹${totals.deliveryFee}`}\n`;
-  card += `🏛️ *Taxes & Platform:* ₹${totals.taxes + totals.platformFee}\n`;
-  card += `💰 *Grand Total: ₹${totals.grandTotal}*\n\n`;
+  card += `Delivery Fee: ${totals.deliveryFee === 0 ? 'FREE' : `₹${totals.deliveryFee}`}\n`;
+  card += `Taxes & Platform: ₹${totals.taxes + totals.platformFee}\n`;
+  card += `Grand Total: ₹${totals.grandTotal}\n\n`;
 
-  card += `👉 *Actions:*\n`;
-  card += `• Reply *checkout* to receive 1-tap payment link\n`;
-  card += `• Reply *apply coupon* for available discounts\n`;
-  card += `• Reply *clear cart* to remove all items`;
+  card += `Reply "checkout" to receive your 1-tap payment link, or "clear cart" to remove all items.`;
   return card;
 }
 
@@ -287,7 +280,7 @@ export function formatCartSummaryCard(session) {
 export function formatCheckoutHandoverCard(session) {
   const { cart, service, restaurantName, restaurantId, selectedCoupon, address } = session;
   if (!cart || cart.length === 0) {
-    return `⚠️ *Cannot checkout:* Your cart is currently empty.`;
+    return `Cannot checkout: Your cart is currently empty.`;
   }
 
   const totals = calculateCartTotals(cart, selectedCoupon);
@@ -299,9 +292,9 @@ export function formatCheckoutHandoverCard(session) {
   const addrLabel = address?.name || address?.addressLine || 'Home (Indiranagar)';
   const serviceLabel = service === 'instamart' ? 'Swiggy Instamart' : (restaurantName || 'Swiggy Food');
 
-  let card = `🧾 *Swiggy Order Checkout Summary*\n`;
+  let card = `*Swiggy Order Checkout Summary*\n`;
   card += `Store: *${serviceLabel}*\n`;
-  card += `📍 *Deliver to:* ${addrLabel}\n`;
+  card += `Deliver to: ${addrLabel}\n`;
   card += `──────────────────────\n`;
 
   cart.forEach((item) => {
@@ -309,16 +302,15 @@ export function formatCheckoutHandoverCard(session) {
   });
 
   card += `──────────────────────\n`;
-  card += `💰 *Final Payable: ₹${totals.grandTotal}*\n`;
+  card += `Final Payable: ₹${totals.grandTotal}\n`;
   if (totals.discount > 0) {
-    card += `🎉 _You saved ₹${totals.discount} with ${selectedCoupon?.code}!_\n`;
+    card += `Saved ₹${totals.discount} with ${selectedCoupon?.code}!\n`;
   }
   card += `\n`;
-  card += `🚀 *Complete Payment & Place Order:*\n`;
   card += `Tap the link below to open your pre-filled cart in the Swiggy mobile app or web and complete payment via UPI, GPay, or Card:\n\n`;
-  card += `👉 *[Open Swiggy App & Pay](${deepLink.checkoutUrl})*\n\n`;
-  card += `📲 _App Scheme:_ \`${deepLink.appScheme}\`\n\n`;
-  card += `⏳ _Items remain in your cart for the next 15 minutes._`;
+  card += `${deepLink.checkoutUrl}\n\n`;
+  card += `App Scheme: \`${deepLink.appScheme}\`\n\n`;
+  card += `Items remain in your cart for the next 15 minutes.`;
 
   return card;
 }
@@ -328,31 +320,30 @@ export function formatCheckoutHandoverCard(session) {
  */
 export function formatTrackingCard(trackData) {
   const deepLink = generateOrderTrackingDeepLink({ orderId: trackData.orderId, service: trackData.service });
-  const icon = trackData.service === 'instamart' ? '⚡' : '🛵';
 
-  let card = `${icon} *Swiggy Live Order Tracking*\n`;
+  let card = `*Swiggy Live Order Tracking*\n`;
   card += `Order ID: *${trackData.orderId}*\n`;
   card += `Status: *${trackData.statusDescription || trackData.status}*\n`;
-  card += `⏱️ *Estimated Delivery:* ~*${trackData.etaMins} mins*\n\n`;
+  card += `Estimated Delivery: ~${trackData.etaMins} mins\n\n`;
 
   if (trackData.deliveryPartner) {
-    card += `👤 *Delivery Partner:* ${trackData.deliveryPartner.name}\n`;
-    card += `📞 *Contact:* ${trackData.deliveryPartner.phone}\n`;
+    card += `Delivery Partner: ${trackData.deliveryPartner.name}\n`;
+    card += `Contact: ${trackData.deliveryPartner.phone}\n`;
     if (trackData.deliveryPartner.vehicle) {
-      card += `🛵 *Vehicle:* ${trackData.deliveryPartner.vehicle}\n`;
+      card += `Vehicle: ${trackData.deliveryPartner.vehicle}\n`;
     }
     card += `\n`;
   }
 
-  card += `📍 *Store/Restaurant:* ${trackData.restaurantOrStore || 'Swiggy Partner'}\n\n`;
-  card += `👉 *[Live Map & Swiggy Tracker](${deepLink.universalUrl})*`;
+  card += `Store: ${trackData.restaurantOrStore || 'Swiggy Partner'}\n\n`;
+  card += `Live Tracker: ${deepLink.universalUrl}`;
   return card;
 }
 
 /**
- * Main Concierge Request Handler for Swiggy Food & Instamart.
+ * Generates raw factual fallback reply for Swiggy Food & Instamart.
  */
-export async function handleSwiggyRequest({ text, msg, intentResult, jid }) {
+export async function _generateRawSwiggyReply({ text, msg, intentResult, jid }) {
   const session = getOrCreateSession(jid || 'default_user');
 
   // Check if user shared or quoted a location pin
@@ -372,14 +363,14 @@ export async function handleSwiggyRequest({ text, msg, intentResult, jid }) {
   if (entities.action === 'auth_status') {
     const status = getSwiggyAuthStatus();
     if (status.authenticated) {
-      return `🎉 *Swiggy Cloud Connected!*\n• Account: Verified\n• Live Addresses & Cart Sync: Active\n\nReady to search and order. Try:\n• _"Find biryani near me"_\n• _"Show menu for Domino's"_`;
+      return `Swiggy Cloud Connected!\n• Account: Verified\n• Live Addresses & Cart Sync: Active\n\nReady to search and order. Try:\n• "Find biryani near me"\n• "Show menu for Domino's"`;
     }
-    return `🍽️ *No Swiggy Login Needed!*\n\nYou don't need to sign in to use Weave with Swiggy. Just text what you want:\n• _"Order 1 Margherita Pizza from Domino's"_\n• _"Buy 2 milk from Instamart"_\n\nWeave builds your cart, applies discounts, and gives you a *1-Tap Swiggy App Link*. When you tap it, your phone's Swiggy app opens directly with your existing login and saved addresses ready for UPI payment!`;
+    return `No Swiggy Login Needed!\n\nYou don't need to sign in to use Weave with Swiggy. Just text what you want:\n• "Order 1 Margherita Pizza from Domino's"\n• "Buy 2 milk from Instamart"\n\nWeave builds your cart, applies discounts, and gives you a 1-Tap Swiggy App Link. When you tap it, your phone's Swiggy app opens directly with your existing login and saved addresses ready for UPI payment!`;
   }
 
   // Welcome / Generic Swiggy Prompt
   if (entities.action === 'welcome') {
-    return `🍽️ *Welcome to Swiggy on Weave!*\n\nTell me what you're craving or pick an option:\n• 🍰 *Cakes & Desserts* (e.g. Warm Oven, Corner House)\n• 🍕 *Pizza* (e.g. Domino's)\n• 🍗 *Biryani* (e.g. Meghana Foods, Empire)\n• 🍔 *Burgers* (e.g. Truffles)\n• ⚡ *Instamart Groceries* (Milk, bread, eggs, snacks)\n\n👉 *Examples:*\n• _"Find cakes near me"_\n• _"Order 1 Margherita Pizza from Domino's"_\n• _"Buy 2 milk from Instamart"_`;
+    return `Welcome to Swiggy on Weave!\n\nTell me what you want or pick an option:\n• Cakes & Desserts (e.g. Warm Oven, Corner House)\n• Pizza (e.g. Domino's)\n• Biryani (e.g. Meghana Foods, Empire)\n• Burgers (e.g. Truffles)\n• Instamart Groceries (Milk, bread, eggs, snacks)\n\nExamples:\n• "Find cakes near me"\n• "Order 1 Margherita Pizza from Domino's"\n• "Buy 2 milk from Instamart"`;
   }
 
   // 1. Order Tracking
@@ -395,7 +386,7 @@ export async function handleSwiggyRequest({ text, msg, intentResult, jid }) {
     session.cart = [];
     session.selectedCoupon = null;
     await swiggyMcpClient.callTool(session.service, 'flush_food_cart', {}).catch(() => {});
-    return `🗑️ *Your Swiggy cart has been cleared.*`;
+    return `Your Swiggy cart has been cleared.`;
   }
 
   // 3. View Cart
@@ -524,4 +515,19 @@ export async function handleSwiggyRequest({ text, msg, intentResult, jid }) {
   session.service = 'food';
   const foodRes = await swiggyMcpClient.callTool('food', 'search_restaurants', { query: entities.query });
   return formatRestaurantListCard(foodRes?.restaurants || [], entities.query);
+}
+
+/**
+ * Main Concierge Request Handler for Swiggy Food & Instamart.
+ * Takes the raw fallback card and runs it through the custom model (Tier 1 Fast Router / OpenRouter / Gemini)
+ * to deliver a natural, chill dev response with zero emojis and pristine deep links.
+ */
+export async function handleSwiggyRequest({ text, msg, intentResult, jid, naturalize = true }) {
+  const rawReply = await _generateRawSwiggyReply({ text, msg, intentResult, jid });
+
+  if (!naturalize) {
+    return rawReply;
+  }
+
+  return await naturalizeWithCustomModel({ userText: text, rawReply });
 }

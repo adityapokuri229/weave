@@ -184,3 +184,60 @@ export async function queryCustomRouterChat({ systemPrompt, userMessage, tempera
     return null;
   }
 }
+
+/**
+ * Takes factual/fallback text and runs it through the custom model (or Gemini fallback)
+ * to deliver a chill, lowkey dev response free of corporate jargon and emoji spam.
+ */
+export async function naturalizeWithCustomModel({ userText, rawReply, links = [] }) {
+  if (!rawReply) return rawReply;
+
+  // Extract all URLs and swiggy:// deep links from rawReply if not explicitly provided
+  const extractedLinks = new Set(links);
+  const urlMatches = rawReply.match(/https?:\/\/[^\s)\]]+/g) || [];
+  urlMatches.forEach((u) => extractedLinks.add(u));
+  const schemeMatches = rawReply.match(/swiggy:\/\/[^\s)\]`]+/g) || [];
+  schemeMatches.forEach((s) => extractedLinks.add(s));
+
+  const systemPrompt =
+    'You are Weave, a chill dev assistant on WhatsApp. Reply direct, natural, and lowkey like a dev friend texting. Absolutely NO emojis. Zero emojis. No corporate AI jargon, marketing fluff, or robotic templates. Keep it concise (1-3 sentences). Always include all links and URLs cleanly.';
+
+  const userMessage = `User asked: "${userText || 'order food'}"
+Factual info to deliver:
+${rawReply}
+
+Reply in your chill dev voice. Include all links exactly as provided.`;
+
+  // 1. Try Custom Router on OpenRouter / local QLoRA model
+  let reply = await queryCustomRouterChat({
+    systemPrompt,
+    userMessage,
+    temperature: 0.3,
+  });
+
+  // 2. Fallback to Gemini Client if custom router fails
+  if (!reply) {
+    try {
+      const res = await geminiClient.generateContent(userMessage, systemPrompt);
+      reply = res.text?.trim() || null;
+    } catch (err) {
+      console.warn('[FastRouter] Gemini naturalization fallback note:', err.message);
+    }
+  }
+
+  // 3. If model succeeded, ensure emojis are stripped and essential links are retained
+  if (reply) {
+    let clean = stripEmojis(reply);
+    // Ensure all critical links are present
+    for (const link of extractedLinks) {
+      if (!clean.includes(link.substring(0, 30))) {
+        clean += `\n${link}`;
+      }
+    }
+    return clean.trim();
+  }
+
+  // 4. If all AI models are offline/unavailable, return deterministic rawReply stripped of emojis
+  return stripEmojis(rawReply);
+}
+

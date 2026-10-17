@@ -102,6 +102,7 @@ async function testFullFlow() {
   const searchCard = await handleSwiggyRequest({
     text: 'swiggy biryani',
     jid: testJid,
+    naturalize: false,
   });
   assert.ok(searchCard.includes('Swiggy Food Search'), 'Should return search card');
   assert.ok(searchCard.includes('Meghana Foods'), 'Should list Meghana Foods');
@@ -110,6 +111,7 @@ async function testFullFlow() {
   const menuCard = await handleSwiggyRequest({
     text: "show menu for Domino's",
     jid: testJid,
+    naturalize: false,
   });
   assert.ok(menuCard.includes("Domino's Pizza — Menu"), 'Should return menu card');
 
@@ -117,6 +119,7 @@ async function testFullFlow() {
   const cartCard1 = await handleSwiggyRequest({
     text: "Order 1 Margherita Pizza from Domino's",
     jid: testJid,
+    naturalize: false,
   });
   assert.ok(cartCard1.includes('Swiggy Cart'), 'Should return cart summary');
   assert.ok(cartCard1.includes('Margherita Pizza'), 'Cart should contain Margherita Pizza');
@@ -125,6 +128,7 @@ async function testFullFlow() {
   const couponCard = await handleSwiggyRequest({
     text: 'apply coupon WELCOME50',
     jid: testJid,
+    naturalize: false,
   });
   assert.ok(couponCard.includes('WELCOME50'), 'Coupon should be applied');
 
@@ -132,6 +136,7 @@ async function testFullFlow() {
   const checkoutCard = await handleSwiggyRequest({
     text: 'checkout',
     jid: testJid,
+    naturalize: false,
   });
   assert.ok(checkoutCard.includes('Checkout Summary'), 'Should render checkout card');
   assert.ok(checkoutCard.includes('https://www.swiggy.com/cart'), 'Should include 1-tap checkout link');
@@ -142,6 +147,7 @@ async function testFullFlow() {
   const imCard = await handleSwiggyRequest({
     text: 'Buy 2 Nandini Toned Fresh Milk from instamart',
     jid: imJid,
+    naturalize: false,
   });
   assert.ok(imCard.includes('Instamart Grocery Cart'), 'Should return Instamart cart');
   assert.ok(imCard.includes('Nandini Toned Fresh Milk'), 'Cart should contain Nandini Milk');
@@ -150,9 +156,20 @@ async function testFullFlow() {
   const trackCard = await handleSwiggyRequest({
     text: 'track my order #SWG-10293',
     jid: testJid,
+    naturalize: false,
   });
   assert.ok(trackCard.includes('Live Order Tracking'), 'Should return tracking card');
   assert.ok(trackCard.includes('Ramesh Kumar'), 'Should include delivery partner');
+
+  // Step H: Naturalize with Custom Model
+  const naturalReply = await handleSwiggyRequest({
+    text: 'swiggy biryani',
+    jid: testJid,
+    naturalize: true,
+  });
+  assert.ok(naturalReply && naturalReply.length > 0, 'Natural reply should not be empty');
+  assert.ok(!/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}]/u.test(naturalReply), 'Natural reply must have zero emojis');
+  assert.ok(naturalReply.includes('http') || naturalReply.includes('swiggy'), 'Natural reply should preserve Swiggy links');
 
   console.log('✅ End-to-end concierge flow tests passed.');
 }
