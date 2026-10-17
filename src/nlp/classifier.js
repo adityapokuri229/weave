@@ -1,5 +1,6 @@
 import { INTENTS, NLP_SYSTEM_PROMPT } from './intents.js';
 import { geminiClient } from '../gemini-client.js';
+import { queryFastRouter } from './fast-router.js';
 import { loadProjectsState, getFriends } from '../config.js';
 import { listProjectsForGroup } from '../autopilot/workspace.js';
 import { getActiveTaskInfo } from '../agent.js';
@@ -352,7 +353,40 @@ export async function classifyUserIntent({
     return fastResult;
   }
 
-  // --- Step 2: LLM Semantic Classifier ---
+  // --- Step 2: Tier 1 Fast Router (Custom Open-Weights / OpenRouter) ---
+  const fastRouterResult = await queryFastRouter({
+    text,
+    availableProjects,
+    boundProject,
+    recentHistory,
+  });
+
+  if (fastRouterResult && fastRouterResult.intent) {
+    console.log(`⚡ [FastRouter Tier 1] Intent=${fastRouterResult.intent} (Confidence: ${fastRouterResult.confidence || 0.95})`);
+
+    // Normalize format to match dispatcher expectations
+    if (fastRouterResult.intent === INTENTS.CODING_TASK && !fastRouterResult.codingTask) {
+      fastRouterResult.codingTask = {
+        instructions: fastRouterResult.instructions || text,
+        targetProject: fastRouterResult.targetProject || null,
+        isContinuation: false,
+      };
+    } else if (fastRouterResult.intent === INTENTS.CONVERSATIONAL_QA && !fastRouterResult.conversationalQa) {
+      fastRouterResult.conversationalQa = {
+        query: text,
+        directReply: fastRouterResult.directReply || null,
+      };
+    } else if (fastRouterResult.intent === INTENTS.WORKSPACE_MANAGEMENT && !fastRouterResult.workspace) {
+      fastRouterResult.workspace = {
+        action: fastRouterResult.action || 'list',
+        projectName: fastRouterResult.targetProject || null,
+      };
+    }
+
+    return fastRouterResult;
+  }
+
+  // --- Step 3: LLM Semantic Classifier Fallback (Gemini) ---
   const activeTask = getActiveTaskInfo();
   const workspaceContext = [
     `Current System Context:`,

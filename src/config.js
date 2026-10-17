@@ -276,6 +276,11 @@ export const CONFIG = {
   // Direct Gemini API
   geminiApiKey: process.env.GEMINI_API_KEY || '',
   geminiModel: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+
+  // Fast Router / Custom Open-Weights Model
+  routerBaseUrl: process.env.ROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
+  routerApiKey: process.env.ROUTER_API_KEY || '',
+  routerModel: process.env.ROUTER_MODEL || 'openrouter/free',
 };
 
 /**
