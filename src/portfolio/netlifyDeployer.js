@@ -2,6 +2,9 @@ import { execFile } from 'child_process';
 import util from 'util';
 import path from 'path';
 import fs from 'fs';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const execFileAsync = util.promisify(execFile);
 
