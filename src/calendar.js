@@ -197,6 +197,8 @@ export async function sendCalendarInviteDirectly({
     location ? `📍 Location: ${location}` : null,
     ``,
     `This event has been automatically added to your Google Calendar (${to}).`,
+    ``,
+    `Sent by Weave`,
   ]
     .filter(Boolean)
     .join('\n');

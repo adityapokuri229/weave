@@ -72,6 +72,12 @@ export class GoogleServices {
     const headers = await this.getAuthHeaders();
     const url = `${GOOGLE_API_BASE}/gmail/v1/users/me/messages/send`;
 
+    const emailSignature = 'Sent by Weave';
+    let formattedBody = (bodyText || '').trim();
+    if (!formattedBody.endsWith(emailSignature)) {
+      formattedBody = formattedBody ? `${formattedBody}\n\n${emailSignature}` : emailSignature;
+    }
+
     // Construct standard RFC 2822 email format
     const emailLines = [
       `From: ${from}`,
@@ -79,7 +85,7 @@ export class GoogleServices {
       `Subject: ${subject}`,
       'Content-Type: text/plain; charset=utf-8',
       '',
-      bodyText,
+      formattedBody,
     ];
 
     const rawMessage = emailLines.join('\r\n');

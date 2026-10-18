@@ -6,6 +6,7 @@ import {
   loadProjectsState,
   saveProjectsState,
   updateTriggerPrefix,
+  getConnectedUserEmail,
 } from '../config.js';
 import {
   listProjectsForGroup,
@@ -29,6 +30,7 @@ import { captureWebScreenshot, getProjectDeploymentUrl } from '../qa.js';
 import { checkAndApplyOtaUpdate, getOtaStatus } from '../ota.js';
 import { handleCabRequest } from '../concierge/cabs/cabService.js';
 import { handleSwiggyRequest } from '../concierge/swiggy/swiggyService.js';
+import { handleEmailRequest } from '../concierge/emailService.js';
 import {
   executePortfolioCreation,
   iteratePortfolioDesign,
@@ -56,6 +58,8 @@ export async function dispatchIntent({
   sendReply,
   reactToMessage,
   sendWhatsAppFile,
+  recentChatContext = '',
+  chatHistory = [],
 }) {
   const { intent, confidence } = intentResult;
 
@@ -573,6 +577,39 @@ export async function dispatchIntent({
     return { handled: true };
   }
 
+  // 8.4. Email & Conversation Summary (Catch-Up & Project Delivery)
+  if (intent === INTENTS.EMAIL) {
+    try {
+      const res = await handleEmailRequest({
+        text: rawBody,
+        rawBody,
+        intentResult,
+        jid,
+        msg,
+        owner,
+        isGroup,
+        boundProject,
+        state,
+        recentChatContext,
+        chatHistory,
+        sock,
+        sendReply,
+        reactToMessage,
+        sendWhatsAppFile,
+      });
+      return res;
+    } catch (err) {
+      console.error('[Dispatcher] Email Request Error:', err);
+      await sendReply(
+        sock,
+        jid,
+        `⚠️ *Could not process email request:* ${err.message}`,
+        msg
+      );
+      return { handled: true };
+    }
+  }
+
   // 8.5. Portfolio Creation & Stitch MCP Generation (Netlify Drop)
   if (intent === INTENTS.PORTFOLIO) {
     if (reactToMessage) {
@@ -730,10 +767,19 @@ export async function dispatchIntent({
 
   // 8.6. Product Discovery & Personalization: Handle founder's product emphasis while or after website build
   const activePortfolioSession = state?.portfolioSessions?.[jid];
-  const isWebsiteCreationOrIteration = intent === INTENTS.PORTFOLIO;
-  const isExplicitControl = intent === INTENTS.TASK_CONTROL || intent === INTENTS.WORKSPACE_MANAGEMENT || intent === INTENTS.GIT_GITHUB;
+  const isExplicitControl =
+    intent === INTENTS.TASK_CONTROL ||
+    intent === INTENTS.WORKSPACE_MANAGEMENT ||
+    intent === INTENTS.GIT_GITHUB ||
+    intent === INTENTS.EMAIL ||
+    intent === INTENTS.CAB_BOOKING ||
+    intent === INTENTS.SWIGGY;
 
-  if (activePortfolioSession && !isWebsiteCreationOrIteration && !isExplicitControl) {
+  const isEmailOrSummary =
+    intent === INTENTS.EMAIL ||
+    /\b(?:email|mail|summary|recap|catch\s*up|context|calendar|meeting)\b/i.test(rawBody);
+
+  if (activePortfolioSession && !isWebsiteCreationOrIteration && !isExplicitControl && !isEmailOrSummary) {
     const isProductDetailMessage =
       intent === INTENTS.CONVERSATIONAL_QA ||
       /\b(?:emphasize|highlight|feature|features|call\s*to\s*action|cta|goal|visitors?|product|service|audience|pricing|headline|logo|brand|order|book|sell|contact|signup|sign\s*up)\b/i.test(rawBody);

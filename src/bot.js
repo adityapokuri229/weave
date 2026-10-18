@@ -44,6 +44,7 @@ import {
   getRawMessage,
   getPendingPoll,
   markGroupDeinitialized,
+  getConnectedUserEmail,
 } from './config.js';
 import { TEMPLATES } from './autopilot/templates.js';
 import {
@@ -1351,11 +1352,17 @@ async function sendEmailWithAttachments({ to, subject, body, attachmentPaths = [
       path: p,
     }));
 
+  const emailSignature = 'Sent by Weave';
+  let formattedBody = (body || '').trim();
+  if (!formattedBody.endsWith(emailSignature)) {
+    formattedBody = formattedBody ? `${formattedBody}\n\n${emailSignature}` : emailSignature;
+  }
+
   const info = await transporter.sendMail({
     from: smtp.user,
     to,
     subject,
-    text: body,
+    text: formattedBody,
     attachments,
   });
 
@@ -1920,12 +1927,16 @@ async function processQueueItem(sock, item) {
           const thirdPipe = secondPipe === -1 ? -1 : payload.indexOf('|', secondPipe + 1);
           if (firstPipe === -1 || secondPipe === -1 || thirdPipe === -1) continue;
           let toEmail = payload.slice(0, firstPipe).trim();
-          if (['me', 'myself', 'owner', 'self'].includes(toEmail.toLowerCase())) {
-            toEmail = CONFIG.ownerEmail || '';
+          if (['me', 'myself', 'owner', 'self', 'to me', 'to myself'].includes(toEmail.toLowerCase())) {
+            toEmail = getConnectedUserEmail() || CONFIG.ownerEmail || '';
           }
           const subject = payload.slice(firstPipe + 1, secondPipe).trim();
           const rawAttachments = payload.slice(secondPipe + 1, thirdPipe).trim();
-          const emailBody = payload.slice(thirdPipe + 1).trim();
+          let emailBody = payload.slice(thirdPipe + 1).trim();
+          const emailSignature = 'Sent by Weave';
+          if (!emailBody.endsWith(emailSignature)) {
+            emailBody = emailBody ? `${emailBody}\n\n${emailSignature}` : emailSignature;
+          }
           if (!toEmail || !subject) continue;
 
           const resolvedAttachments = [];
@@ -5149,6 +5160,8 @@ async function _processIncomingMessage(sock, msg, type, nowSec, acceptMessagesAf
         sendReply,
         reactToMessage,
         sendWhatsAppFile,
+        recentChatContext: getRecentChatContext(jid),
+        chatHistory: chatMessageHistory.get(jid) || [],
       });
 
       if (dispatchResult?.handled) {

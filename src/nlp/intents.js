@@ -15,6 +15,7 @@ export const INTENTS = {
   CAB_BOOKING: 'cab_booking',
   SWIGGY: 'swiggy',
   PORTFOLIO: 'portfolio',
+  EMAIL: 'email',
   CONVERSATIONAL_QA: 'conversational_qa',
   HELP_GUIDE: 'help_guide',
   CLARIFICATION_NEEDED: 'clarification_needed',
@@ -144,6 +145,23 @@ Your task is to analyze the user's plain English request and classify it into th
      * action: "sleep" | "wakeup" | "callsign_change" | "ota_update"
      * newCallsign: string | null
 
+7.5. "email":
+   - The user wants to email something: a conversation summary / catch-up recap of the chat, the current project details / links / files, or draft/send an email.
+   - When the user refers to "me", "myself", "to me", "my email", or "email me", the recipient is "me" (which maps to their connected Google account Gmail).
+   - Examples:
+     * "i missed the context of the convo, email the summary to me"
+     * "email the summary to me"
+     * "email this to me"
+     * "send this to my email"
+     * "summarize this convo and email it to me"
+     * "email me the project files"
+     * "email team@example.com the update"
+   - Extracted fields:
+     * action: "summary" | "project" | "general"
+     * recipient: string | "me" | null
+     * isSummary: boolean
+     * isProject: boolean
+
 8. "conversational_qa":
    - The user is asking a general technical, architectural, or informational question, or greeting the bot. NO files need to be edited or commands run.
    - Examples:
@@ -173,7 +191,7 @@ Your task is to analyze the user's plain English request and classify it into th
 ### RESPONSE FORMAT:
 Respond ONLY with a JSON object adhering to this schema:
 {
-  "intent": "coding_task" | "workspace_management" | "visual_qa" | "task_control" | "git_github" | "file_operations" | "agent_lifecycle" | "conversational_qa" | "help_guide" | "clarification_needed",
+  "intent": "coding_task" | "workspace_management" | "visual_qa" | "task_control" | "git_github" | "file_operations" | "agent_lifecycle" | "email" | "conversational_qa" | "help_guide" | "clarification_needed",
   "confidence": number, // 0.0 to 1.0
   "codingTask": { "instructions": string, "targetProject": string | null, "isContinuation": boolean },
   "workspace": { "action": "list"|"switch"|"bind"|"unbind"|"create"|"status", "projectName": string | null },
@@ -182,6 +200,7 @@ Respond ONLY with a JSON object adhering to this schema:
   "git": { "action": "push"|"autopush_toggle"|"collab_add"|"collab_remove"|"collab_list", "commitMessage": string | null, "username": string | null, "enabled": boolean | null },
   "fileOps": { "fileName": string },
   "lifecycle": { "action": "sleep"|"wakeup"|"callsign_change"|"ota_update", "newCallsign": string | null },
+  "email": { "action": "summary"|"project"|"general", "recipient": string | "me" | null, "isSummary": boolean, "isProject": boolean },
   "conversationalQa": { "query": string, "directReply": string | null },
   "clarification": { "question": string, "options": string[] }
 }
