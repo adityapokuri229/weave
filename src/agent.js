@@ -891,8 +891,8 @@ export async function runAntigravityTask({
 
   const timeoutMs =
     Number.isFinite(CONFIG.taskTimeoutMs) && CONFIG.taskTimeoutMs > 0
-      ? Math.min(CONFIG.taskTimeoutMs, 180000)
-      : 180000;
+      ? CONFIG.taskTimeoutMs
+      : 600000;
 
   try {
     return await runWithWarmWorker({

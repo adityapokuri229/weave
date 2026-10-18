@@ -185,15 +185,21 @@ export function listProjectsForGroup(groupJid) {
     throw new Error(`Failed to read Master Directory: ${err.message}`);
   }
 
-  // Combine with state.projects that are inside masterDir
-  const projectSet = new Set(dirEntries);
+  // Combine with state.projects that are inside masterDir, normalizing case to prevent duplicate entries
+  const projectMap = new Map();
+  for (const name of dirEntries) {
+    projectMap.set(name.toLowerCase(), name);
+  }
   for (const [alias, dir] of Object.entries(state.projects || {})) {
     if (isPathWithinMasterDir(dir, masterDir)) {
-      projectSet.add(alias);
+      const base = path.basename(dir);
+      if (!projectMap.has(alias.toLowerCase())) {
+        projectMap.set(alias.toLowerCase(), alias);
+      }
     }
   }
 
-  const allProjects = Array.from(projectSet).sort();
+  const allProjects = Array.from(projectMap.values()).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
 
   // If the bound project was deleted from masterDir, unbind it!
   if (boundAlias && !allProjects.includes(boundAlias)) {
