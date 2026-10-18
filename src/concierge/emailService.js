@@ -2,6 +2,8 @@ import fs from 'fs';
 import path from 'path';
 import nodemailer from 'nodemailer';
 import { geminiClient } from '../gemini-client.js';
+import { googleAuth } from '../auth.js';
+import { googleServices } from '../google-services.js';
 import {
   CONFIG,
   loadProjectsState,
@@ -16,18 +18,40 @@ import { getProjectDeploymentUrl } from '../qa.js';
 export function getSmtpConfig() {
   const state = loadProjectsState();
   const saved = state?.smtp || {};
+  const connectedEmail = getConnectedUserEmail() || '';
   return {
     host: saved.host || CONFIG.smtpHost || 'smtp.gmail.com',
     port: Number(saved.port || CONFIG.smtpPort || 465),
-    user: saved.user || CONFIG.smtpUser || '',
+    user: saved.user || CONFIG.smtpUser || connectedEmail,
     pass: saved.pass || CONFIG.smtpPass || '',
   };
 }
 
 /**
- * Sends an email with optional attachments using Nodemailer.
+ * Sends an email with optional attachments using Google OAuth (Gmail API) or SMTP fallback.
  */
 export async function sendEmailDirect({ to, subject, body, attachmentPaths = [] }) {
+  // 1. If Google account is connected, prefer direct Gmail API (seamless, no app password required)
+  if (googleAuth.isAuthenticated()) {
+    try {
+      return await googleServices.sendEmail({
+        to,
+        subject,
+        body,
+        attachmentPaths,
+        from: googleAuth.getUserEmail() || getConnectedUserEmail() || undefined,
+      });
+    } catch (apiErr) {
+      const smtp = getSmtpConfig();
+      if (smtp.pass) {
+        console.warn(`[concierge] Gmail API send failed (${apiErr.message}), falling back to SMTP.`);
+      } else {
+        throw apiErr;
+      }
+    }
+  }
+
+  // 2. SMTP fallback
   const smtp = getSmtpConfig();
   if (!smtp.user || !smtp.pass) {
     const err = new Error('SMTP_NOT_CONFIGURED');
@@ -66,7 +90,7 @@ export async function sendEmailDirect({ to, subject, body, attachmentPaths = [] 
     attachments,
   });
 
-  return { messageId: info.messageId, attachmentsCount: attachments.length, from: smtp.user };
+  return { messageId: info.messageId, attachmentsCount: attachments.length, from: smtp.user, provider: 'smtp' };
 }
 
 /**
@@ -216,9 +240,9 @@ Tone: Crisp, insightful, helpful, perfectly formatted with markdown bullet point
     };
     saveProjectsState(preState);
 
-    // Attempt direct email dispatch via SMTP
+    // Attempt direct email dispatch via Gmail API / SMTP
     let emailSent = false;
-    let sendErrMessage = '';
+    let sendErrCode = '';
     try {
       await sendEmailDirect({
         to: targetEmail,
@@ -228,7 +252,7 @@ Tone: Crisp, insightful, helpful, perfectly formatted with markdown bullet point
       });
       emailSent = true;
     } catch (err) {
-      sendErrMessage = err.message;
+      sendErrCode = err.code || '';
     }
 
     if (emailSent) {
@@ -249,8 +273,12 @@ Tone: Crisp, insightful, helpful, perfectly formatted with markdown bullet point
         );
       }
     } else {
-      // SMTP not yet configured or failed: present the prepared summary directly so the user gets their catch-up!
+      // Direct email dispatch not completed: present the summary and clear guidance
       if (reactToMessage) await reactToMessage(sock, msg, '📝').catch(() => {});
+      const helpTip = sendErrCode === 'GMAIL_SCOPE_INSUFFICIENT'
+        ? `_💡 Google permission needed: Connect Google Account in Weave app to authorize Gmail sending, or reply *confirm* once granted!_`
+        : `_💡 Tip: Connect your Google account in Weave, or run \`/mailsetup ${targetEmail} <app-password>\` to automatically dispatch straight to your Gmail inbox!_`;
+
       await sendReply(
         sock,
         jid,
@@ -259,7 +287,7 @@ Tone: Crisp, insightful, helpful, perfectly formatted with markdown bullet point
           ``,
           summaryBody,
           ``,
-          `_💡 Tip: Run \`/mailsetup ${targetEmail} <app-password>\` to have summaries automatically dispatched straight to your Gmail inbox!_`,
+          helpTip,
         ].join('\n'),
         msg
       );
@@ -344,6 +372,7 @@ Tone: Crisp, insightful, helpful, perfectly formatted with markdown bullet point
     saveProjectsState(preState);
 
     let emailSent = false;
+    let sendErrCode = '';
     try {
       await sendEmailDirect({
         to: targetEmail,
@@ -352,7 +381,9 @@ Tone: Crisp, insightful, helpful, perfectly formatted with markdown bullet point
         attachmentPaths: attachments,
       });
       emailSent = true;
-    } catch {}
+    } catch (err) {
+      sendErrCode = err.code || '';
+    }
 
     if (emailSent) {
       if (reactToMessage) await reactToMessage(sock, msg, '✅').catch(() => {});
@@ -367,6 +398,10 @@ Tone: Crisp, insightful, helpful, perfectly formatted with markdown bullet point
       const attachInfo = attachments.length > 0
         ? `\n• *Attachments:* ${attachments.map((p) => `\`${path.basename(p)}\``).join(', ')}`
         : '';
+      const helpTip = sendErrCode === 'GMAIL_SCOPE_INSUFFICIENT'
+        ? `_💡 Google permission needed: Open the Weave desktop app and click "Connect Google Account" to grant Gmail sending, then reply *confirm*!_`
+        : `_💡 Tip: Connect your Google account in Weave, or run \`/mailsetup ${targetEmail} <app-password>\` to dispatch directly to your Gmail inbox!_`;
+
       await sendReply(
         sock,
         jid,
@@ -378,7 +413,7 @@ Tone: Crisp, insightful, helpful, perfectly formatted with markdown bullet point
           ``,
           emailBody,
           ``,
-          `_💡 Tip: Run \`/mailsetup ${targetEmail} <app-password>\` to dispatch directly to your Gmail inbox!_`,
+          helpTip,
         ].filter(Boolean).join('\n'),
         msg
       );
@@ -414,7 +449,7 @@ Tone: Crisp, insightful, helpful, perfectly formatted with markdown bullet point
       ``,
       body,
       ``,
-      `_Reply *confirm* to send via SMTP, or edit details._`,
+      `_Reply *confirm* to send, or edit details._`,
     ].join('\n'),
     msg
   );

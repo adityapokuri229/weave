@@ -15,6 +15,9 @@ import pino from 'pino';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
+import { exec } from 'child_process';
+import { googleAuth } from './auth.js';
+import { googleServices } from './google-services.js';
 
 export const botEvents = new EventEmitter();
 import {
@@ -1316,18 +1319,40 @@ async function sendWhatsAppFile(sock, targetJid, filePath, caption, quotedMsg) {
 function getSmtpConfig() {
   const state = loadProjectsState();
   const saved = state.smtp || {};
+  const connectedEmail = getConnectedUserEmail() || '';
   return {
     host: saved.host || CONFIG.smtpHost || 'smtp.gmail.com',
     port: Number(saved.port || CONFIG.smtpPort || 465),
-    user: saved.user || CONFIG.smtpUser || '',
+    user: saved.user || CONFIG.smtpUser || connectedEmail,
     pass: saved.pass || CONFIG.smtpPass || '',
   };
 }
 
 /**
- * Sends an email with optional attachments via Nodemailer.
+ * Sends an email with optional attachments via Google OAuth (Gmail API) or SMTP fallback.
  */
 async function sendEmailWithAttachments({ to, subject, body, attachmentPaths = [] }) {
+  // 1. If Google account is connected, prefer direct Gmail API (seamless, no app password required)
+  if (googleAuth.isAuthenticated()) {
+    try {
+      return await googleServices.sendEmail({
+        to,
+        subject,
+        body,
+        attachmentPaths,
+        from: googleAuth.getUserEmail() || getConnectedUserEmail() || undefined,
+      });
+    } catch (apiErr) {
+      const smtp = getSmtpConfig();
+      if (smtp.pass) {
+        console.warn(`[bot] Gmail API send failed (${apiErr.message}), falling back to SMTP password.`);
+      } else {
+        throw apiErr;
+      }
+    }
+  }
+
+  // 2. SMTP fallback
   const smtp = getSmtpConfig();
   if (!smtp.user || !smtp.pass) {
     const err = new Error('SMTP_NOT_CONFIGURED');
@@ -1366,7 +1391,7 @@ async function sendEmailWithAttachments({ to, subject, body, attachmentPaths = [
     attachments,
   });
 
-  return { messageId: info.messageId, attachmentsCount: attachments.length, from: smtp.user };
+  return { messageId: info.messageId, attachmentsCount: attachments.length, from: smtp.user, provider: 'smtp' };
 }
 
 /**
@@ -2079,29 +2104,48 @@ async function processQueueItem(sock, item) {
         });
 
         let inviteSynced = false;
-        try {
-          const stateForSmtp = loadProjectsState();
-          const smtpConfig = stateForSmtp.smtp || {
-            host: CONFIG.smtpHost,
-            port: CONFIG.smtpPort,
-            user: CONFIG.smtpUser,
-            pass: CONFIG.smtpPass,
-          };
-
-          if (smtpConfig.user && smtpConfig.pass && CONFIG.ownerEmail) {
-            await sendCalendarInviteDirectly({
-              to: CONFIG.ownerEmail,
-              title,
-              start: startDate,
-              end: endDate,
+        // 1. Direct Google Calendar API sync (seamless, zero confirmation required)
+        if (googleAuth.isAuthenticated()) {
+          try {
+            await googleServices.createEvent({
+              summary: title,
               description,
-              location,
-              smtpConfig,
+              startIso: startDate.toISOString(),
+              endIso: endDate.toISOString(),
+              attendees: CONFIG.ownerEmail ? [CONFIG.ownerEmail] : [],
             });
             inviteSynced = true;
+          } catch (gcalErr) {
+            console.warn('⚠️ Google Calendar API event creation failed:', gcalErr.message);
           }
-        } catch (syncErr) {
-          console.warn('⚠️ Direct Google Calendar invite sync failed:', syncErr.message);
+        }
+
+        // 2. SMTP calendar invitation fallback
+        if (!inviteSynced) {
+          try {
+            const stateForSmtp = loadProjectsState();
+            const smtpConfig = stateForSmtp.smtp || {
+              host: CONFIG.smtpHost,
+              port: CONFIG.smtpPort,
+              user: CONFIG.smtpUser || getConnectedUserEmail(),
+              pass: CONFIG.smtpPass,
+            };
+
+            if (smtpConfig.user && smtpConfig.pass && CONFIG.ownerEmail) {
+              await sendCalendarInviteDirectly({
+                to: CONFIG.ownerEmail,
+                title,
+                start: startDate,
+                end: endDate,
+                description,
+                location,
+                smtpConfig,
+              });
+              inviteSynced = true;
+            }
+          } catch (syncErr) {
+            console.warn('⚠️ Direct Google Calendar invite sync failed:', syncErr.message);
+          }
         }
 
         // Never dump .ics file attachment into WhatsApp group chats!
@@ -2740,11 +2784,35 @@ async function handleSlashCommand(sock, jid, msg, commandBody) {
         msg
       );
     } catch (mailErr) {
-      if (mailErr.code === 'SMTP_NOT_CONFIGURED') {
+      if (mailErr.code === 'GMAIL_SCOPE_INSUFFICIENT') {
+        const userEmail = googleAuth.getUserEmail() || getConnectedUserEmail() || 'your Google account';
         await sendReply(
           sock,
           jid,
-          `⚠️ SMTP not configured. Run */mailsetup your.email@gmail.com <app-password>* then reply *confirm*.`,
+          [
+            `⚠️ *Gmail Permission Needed for ${userEmail}*`,
+            ``,
+            `Weave is connected to *${userEmail}*, but Google requires a one-time permission to send emails directly via your Gmail account without app passwords.`,
+            ``,
+            `👉 *To enable:* Run */googleauth* or open the Weave desktop app and click *Connect Google Account* to grant Gmail permission, then reply *confirm*.`,
+            ``,
+            `_Alternatively, you can configure an app password anytime with \`/mailsetup ${userEmail} <app-password>\`._`,
+          ].join('\n'),
+          msg
+        );
+      } else if (mailErr.code === 'SMTP_NOT_CONFIGURED') {
+        const userEmail = getConnectedUserEmail() || 'your.email@gmail.com';
+        await sendReply(
+          sock,
+          jid,
+          [
+            `⚠️ *Email Sending Not Configured*`,
+            ``,
+            `To send emails automatically without app passwords, connect your Google account via */googleauth* or in the Weave desktop app.`,
+            ``,
+            `_Or set up an app password directly with:_`,
+            `\`/mailsetup ${userEmail} <app-password>\``,
+          ].join('\n'),
           msg
         );
       } else {
@@ -2788,19 +2856,36 @@ async function handleSlashCommand(sock, jid, msg, commandBody) {
       await sendReply(sock, jid, `🔒 Only the bot owner can configure email settings.`, msg);
       return true;
     }
-    if (!arg1 || !arg2) {
-      const currentSmtp = getSmtpConfig();
+    const currentSmtp = getSmtpConfig();
+    const connectedUser = getConnectedUserEmail();
+
+    // If the user only passed 1 argument and we have a connected Google account, assume arg1 is the app password!
+    let emailUser = arg1 ? arg1.trim() : '';
+    let appPass = arg2 ? arg2.replace(/\s+/g, '').trim() : '';
+
+    if (arg1 && !arg2 && connectedUser && !arg1.includes('@')) {
+      emailUser = connectedUser;
+      appPass = arg1.replace(/\s+/g, '').trim();
+    }
+
+    if (!emailUser || !appPass) {
+      const exampleEmail = currentSmtp.user || connectedUser || 'your.email@gmail.com';
       await sendReply(
         sock,
         jid,
-        `📧 SMTP: ${currentSmtp.user ? `\`${currentSmtp.user}\`` : '_Not configured_'}\nUsage: */mailsetup your.email@gmail.com <app-password>*`,
+        [
+          `📧 *Email Provider Configuration*`,
+          `• Google OAuth: ${googleAuth.isAuthenticated() ? `Connected (\`${connectedUser}\`)` : '_Not connected_'}`,
+          `• SMTP: ${currentSmtp.user ? `\`${currentSmtp.user}\`` : '_Not configured_'}`,
+          ``,
+          `*Usage:* \`/mailsetup ${exampleEmail} <app-password>\``,
+          connectedUser ? `_Or since your Google account is connected: \`/mailsetup <app-password>\`_` : '',
+        ].filter(Boolean).join('\n'),
         msg
       );
       return true;
     }
 
-    const emailUser = arg1.trim();
-    const appPass = arg2.replace(/\s+/g, '').trim();
     const savedSmtp = {
       host: CONFIG.smtpHost || 'smtp.gmail.com',
       port: CONFIG.smtpPort || 465,
@@ -2817,6 +2902,52 @@ async function handleSlashCommand(sock, jid, msg, commandBody) {
       `✅ SMTP configured for \`${emailUser}\`.`,
       msg
     );
+    return true;
+  }
+
+  if (cmd === '/googleauth' || cmd === '/connectgoogle') {
+    if (!owner) {
+      await sendReply(sock, jid, `🔒 Only the bot owner can connect Google accounts.`, msg);
+      return true;
+    }
+    await reactToMessage(sock, msg, '⏳');
+    try {
+      googleAuth.startLoginFlow(
+        async (authUrl) => {
+          // Open in desktop browser via xdg-open / open / start
+          try {
+            const opener = process.platform === 'darwin' ? 'open' : (process.platform === 'win32' ? 'start' : 'xdg-open');
+            exec(`${opener} "${authUrl}"`, () => {});
+          } catch {}
+
+          await reactToMessage(sock, msg, '🔑');
+          await sendReply(
+            sock,
+            jid,
+            [
+              `🔑 *Connect Google Account*`,
+              ``,
+              `Click the link below to authorize Gmail & Calendar access:`,
+              authUrl,
+              ``,
+              `_Opening browser on host PC... Once approved, your Google account and Gmail will be connected automatically!_`,
+            ].join('\n'),
+            msg
+          );
+        }
+      ).then(async (tokens) => {
+        await sendReply(
+          sock,
+          jid,
+          `✅ *Google Account Connected!*\nSigned in as *${tokens.email}*. Gmail API and Calendar are now active.`,
+          msg
+        );
+      }).catch((err) => {
+        console.warn('[bot] Google auth flow error:', err.message);
+      });
+    } catch (err) {
+      await sendReply(sock, jid, `❌ Failed to start Google authorization flow: ${err.message}`, msg);
+    }
     return true;
   }
 

@@ -1,4 +1,8 @@
+import fs from 'fs';
+import path from 'path';
+import nodemailer from 'nodemailer';
 import { googleAuth } from './auth.js';
+import { getConnectedUserEmail } from './config.js';
 
 const GOOGLE_API_BASE = 'https://www.googleapis.com';
 
@@ -67,45 +71,77 @@ export class GoogleServices {
 
   /**
    * Send email using Gmail API (No SMTP / No App Passwords!)
+   * Automatically handles attachments, formatting, and RFC 2822 compilation.
    */
-  async sendEmail({ to, subject, bodyText, from = 'me' }) {
-    const headers = await this.getAuthHeaders();
-    const url = `${GOOGLE_API_BASE}/gmail/v1/users/me/messages/send`;
+  async sendEmail({ to, subject, body, bodyText, attachmentPaths = [], from = null }) {
+    const token = await googleAuth.getValidAccessToken();
+    const senderEmail = from || googleAuth.getUserEmail() || getConnectedUserEmail() || undefined;
 
     const emailSignature = 'Sent by Weave';
-    let formattedBody = (bodyText || '').trim();
+    let formattedBody = (body || bodyText || '').trim();
     if (!formattedBody.endsWith(emailSignature)) {
       formattedBody = formattedBody ? `${formattedBody}\n\n${emailSignature}` : emailSignature;
     }
 
-    // Construct standard RFC 2822 email format
-    const emailLines = [
-      `From: ${from}`,
-      `To: ${to}`,
-      `Subject: ${subject}`,
-      'Content-Type: text/plain; charset=utf-8',
-      '',
-      formattedBody,
-    ];
+    const attachments = (attachmentPaths || [])
+      .filter((p) => p && fs.existsSync(p) && fs.statSync(p).isFile())
+      .map((p) => ({
+        filename: path.basename(p),
+        path: p,
+      }));
 
-    const rawMessage = emailLines.join('\r\n');
-    const encodedMessage = Buffer.from(rawMessage)
+    const transporter = nodemailer.createTransport({
+      streamTransport: true,
+      buffer: true,
+    });
+
+    const mail = await transporter.sendMail({
+      from: senderEmail,
+      to,
+      subject,
+      text: formattedBody,
+      attachments,
+    });
+
+    const encodedMessage = Buffer.from(mail.message)
       .toString('base64')
       .replace(/\+/g, '-')
       .replace(/\//g, '_')
       .replace(/=+$/, '');
 
+    const url = `${GOOGLE_API_BASE}/gmail/v1/users/me/messages/send`;
     const res = await fetch(url, {
       method: 'POST',
-      headers,
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
       body: JSON.stringify({ raw: encodedMessage }),
     });
 
     if (!res.ok) {
-      throw new Error(`Failed to send email via Gmail API: ${await res.text()}`);
+      const errText = await res.text();
+      const isScopeError =
+        res.status === 403 ||
+        errText.includes('insufficient authentication scopes') ||
+        errText.includes('ACCESS_TOKEN_SCOPE_INSUFFICIENT');
+      if (isScopeError) {
+        const err = new Error('GMAIL_SCOPE_INSUFFICIENT');
+        err.code = 'GMAIL_SCOPE_INSUFFICIENT';
+        err.details = errText;
+        throw err;
+      }
+      throw new Error(`Gmail API error (${res.status}): ${errText}`);
     }
 
-    return await res.json();
+    const data = await res.json();
+    return {
+      messageId: data.id,
+      threadId: data.threadId,
+      attachmentsCount: attachments.length,
+      from: senderEmail || 'me',
+      provider: 'gmail_oauth',
+    };
   }
 }
 
