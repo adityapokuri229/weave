@@ -864,7 +864,7 @@ export async function runAntigravityTask({
     `WEBSITE & UI DESIGN WITH GOOGLE STITCH MCP & NETLIFY:`,
     `When asked to create, design, or deploy any website, portfolio, hackathon site, or landing page:`,
     `- Connect to Google Stitch MCP (https://stitch.googleapis.com/mcp) or invoke the portfolio orchestrator ("src/portfolio/portfolioOrchestrator.js").`,
-    `- Explore multiple visual design philosophies (e.g. Option 1: Obsidian Bento Grid, Option 2: Swiss Editorial, Option 3: Neo-Brutalist).`,
+    `- Formulate 3 completely dynamic visual design philosophies organically invented for this specific domain (ZERO presets or canned templates).`,
     `- Deploy to Netlify via Netlify Drop ("netlify deploy --dir . --prod --allow-anonymous --no-build") or provide the preview.`,
     `- For each design variant, capture a visual screenshot and output [SEND_FILE: HERE | <path_to_screenshot>] so the user sees all Google Stitch designs in WhatsApp!`,
     `- Include the live link, preview password, and prompt the user to choose their preferred option or dictate design changes in WhatsApp.`,

@@ -107,12 +107,14 @@ export async function executePortfolioCreation({
   const topicAnalysis = research.topicAnalysis || {};
   const inspirations = research.inspirations || [];
 
+  const brand = topicAnalysis.brandName || topicAnalysis.domain || 'Domain';
+  const brandSlug = brand.toLowerCase().replace(/[^a-z0-9]+/g, '-');
   const opt1Meta = inspirations[0] || {
     option: 1,
-    id: 'dribbble-showcase',
-    name: `${topicAnalysis.brandName || 'Product'} Dribbble Showcase`,
-    sourceInspiration: 'Inspired by Dribbble Top Product Design & Godly.website',
-    aestheticDescription: 'High-craft dark product layout with glowing accents, live interactive telemetry, and bento viewport.',
+    id: `${brandSlug}-signature`,
+    name: `${brand} Signature Experience`,
+    sourceInspiration: 'Domain Flagship & Interactive Showcase',
+    aestheticDescription: 'High-craft domain layout with glowing accents, live interactive telemetry, and bespoke viewports.',
     fontHeading: 'Space Grotesk',
     fontBody: 'Plus Jakarta Sans',
     colors: { bg: '#0B0F17', bgCard: '#131B2A', accent: '#10B981', border: 'rgba(255,255,255,0.1)' },
@@ -122,10 +124,10 @@ export async function executePortfolioCreation({
 
   const opt2Meta = inspirations[1] || {
     option: 2,
-    id: 'minimal-gallery-editorial',
-    name: 'Minimal Gallery Precision Monograph',
-    sourceInspiration: 'Inspired by Minimal Gallery: Clean Functional Monograph',
-    aestheticDescription: 'Pure clean whitespace, high-contrast serif headlines, elegant hairline borders, and monograph catalog layout.',
+    id: `${brandSlug}-monograph`,
+    name: `${brand} Heritage Monograph`,
+    sourceInspiration: 'Editorial Craft & Monograph Journal',
+    aestheticDescription: 'Pure clean whitespace, high-contrast serif headlines, elegant hairline borders, and catalog layout.',
     fontHeading: 'Playfair Display',
     fontBody: 'DM Sans',
     colors: { bg: '#FAFAF9', bgCard: '#FFFFFF', accent: '#1C1917', border: '#E7E5E4' },
@@ -135,10 +137,10 @@ export async function executePortfolioCreation({
 
   const opt3Meta = inspirations[2] || {
     option: 3,
-    id: 'godly-kinetic-craft',
-    name: 'Godly Kinetic Craft',
-    sourceInspiration: 'Inspired by Godly.website & Modern Studio Craft',
-    aestheticDescription: 'Tactile solid borders, high-energy drop shadows, vivid highlighter badges, and bold spatial hierarchy.',
+    id: `${brandSlug}-kinetic`,
+    name: `${brand} Kinetic Studio`,
+    sourceInspiration: 'Modern Tactile & Dynamic Craft',
+    aestheticDescription: 'Tactile solid borders, high-energy badges, and interactive proof metrics.',
     fontHeading: 'Space Grotesk',
     fontBody: 'Inter',
     colors: { bg: '#0F172A', bgCard: '#1E293B', accent: '#06B6D4', border: '#334155' },
@@ -248,38 +250,38 @@ export async function executePortfolioCreation({
 
   variants.push({
     option: 1,
-    id: opt1Meta.id || 'dribbble-showcase',
-    name: stitchScreen?.title || opt1Meta.name || 'Dribbble High-Craft Product Showcase',
+    id: opt1Meta.id || 'option-1-signature',
+    name: stitchScreen?.title || opt1Meta.name || `${topicAnalysis.brandName || 'Domain'} Signature Flagship`,
     description: opt1Meta.aestheticDescription || 'Custom crafted with Google Stitch MCP & Gemini.',
-    sourceInspiration: opt1Meta.sourceInspiration || 'Dribbble & Curated Galleries',
+    sourceInspiration: opt1Meta.sourceInspiration || 'Curated Domain Web Flagships',
     html: opt1Html,
     screenshotPath: opt1ScreenshotPath,
     source: stitchScreen ? 'STITCH_MCP' : 'GEMINI_BESPOKE',
   });
 
-  // --- OPTION 2: Minimal Gallery Clean Whitespace / Swiss Editorial (100% Bespoke Gemini HTML) ---
-  console.log('[PortfolioOrchestrator] Generating Option 2 (Minimal Gallery Editorial) bespoke HTML...');
+  // --- OPTION 2: Bespoke Aesthetic Direction 2 (100% Dynamic Gemini HTML) ---
+  console.log(`[PortfolioOrchestrator] Generating Option 2 (${opt2Meta.name}) bespoke HTML...`);
   const opt2Html = await generateBespokeHtml({ prompt, topicAnalysis, inspiration: opt2Meta });
   variants.push({
     option: 2,
-    id: opt2Meta.id || 'minimal-gallery-editorial',
-    name: opt2Meta.name || 'Minimal Gallery Precision Monograph',
+    id: opt2Meta.id || 'option-2-monograph',
+    name: opt2Meta.name || `${topicAnalysis.brandName || 'Domain'} Heritage Monograph`,
     description: opt2Meta.aestheticDescription || 'Serif headlines, generous whitespace, and editorial layout.',
-    sourceInspiration: opt2Meta.sourceInspiration || 'Minimal.gallery',
+    sourceInspiration: opt2Meta.sourceInspiration || 'Editorial Craft Monograph',
     html: opt2Html,
     screenshotPath: null,
     source: 'GEMINI_BESPOKE',
   });
 
-  // --- OPTION 3: Godly.website Neo-Modern Kinetic Craft (100% Bespoke Gemini HTML) ---
-  console.log('[PortfolioOrchestrator] Generating Option 3 (Godly Kinetic Craft) bespoke HTML...');
+  // --- OPTION 3: Bespoke Aesthetic Direction 3 (100% Dynamic Gemini HTML) ---
+  console.log(`[PortfolioOrchestrator] Generating Option 3 (${opt3Meta.name}) bespoke HTML...`);
   const opt3Html = await generateBespokeHtml({ prompt, topicAnalysis, inspiration: opt3Meta });
   variants.push({
     option: 3,
-    id: opt3Meta.id || 'godly-kinetic-craft',
-    name: opt3Meta.name || 'Godly Kinetic Craft',
+    id: opt3Meta.id || 'option-3-kinetic',
+    name: opt3Meta.name || `${topicAnalysis.brandName || 'Domain'} Kinetic Studio`,
     description: opt3Meta.aestheticDescription || 'Tactile solid borders, high-energy badges, and interactive proof metrics.',
-    sourceInspiration: opt3Meta.sourceInspiration || 'Godly.website & Linear',
+    sourceInspiration: opt3Meta.sourceInspiration || 'Tactile & Kinetic Web Studios',
     html: opt3Html,
     screenshotPath: null,
     source: 'GEMINI_BESPOKE',

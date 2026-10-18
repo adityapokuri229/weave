@@ -285,9 +285,9 @@ export function buildDomainAesthetics(cleanPrompt, data = {}) {
       },
       {
         option: 2,
-        id: 'swiss-financial',
-        name: 'Swiss Financial Journal',
-        archetype: 'Wall Street Editorial Authority',
+        id: 'audit-monograph',
+        name: 'Institutional Audit Monograph',
+        archetype: 'Financial Ledger Precision & Monograph Journal',
         description: 'Pristine warm ivory background, rich charcoal typography, sharp hairline borders, and serif balance.',
         fontHeading: "'Playfair Display', serif",
         fontBody: "'DM Sans', sans-serif",
@@ -639,7 +639,7 @@ RESEARCH & SYNTHESIS REQUIREMENTS:
    - What are 4 authentic, domain-specific key metrics / proof points?
    - What are 3-4 specific products, features, or offerings with realistic descriptions, specs, and badges?
 2. Synthesize authentic, high-converting copy specifically for this domain (NEVER output generic tech architect/engineer copy unless specifically asked).
-3. Formulate 3 BESPOKE, DISTINCT AESTHETIC DESIGN DIRECTIONS (Option 1: Primary Domain Signature; Option 2: Swiss Editorial Minimalist; Option 3: Modern Tactile / High Energy).
+3. Formulate 3 COMPLETELY DYNAMIC, BESPOKE AESTHETIC DESIGN DIRECTIONS organically invented for this specific domain (ZERO PRESETS: absolutely NO canned "Swiss", "Bento", or "Neon" templates — invent evocative domain-native styles tailored to the user's specific craft, e.g. "Heritage Paddock & Saddle Leather", "Wood-Fired Hearth & Flour", "Cellular Matrix & Autonomous Ledger", etc.).
 4. Craft an exhaustive, 3-paragraph "stitchPrompt" specifically engineered for Google Stitch MCP:
    - Paragraph 1: Brand positioning, visual mood, palette, and typography.
    - Paragraph 2: Section-by-section breakdown (Navbar, Hero with trust badges, Product/Feature comparison grid with realistic items, Craft/Mission pillar cards, Pricing or Booking CTA, Operating hours/location/contact, and Footer).
