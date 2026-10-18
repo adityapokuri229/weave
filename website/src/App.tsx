@@ -11,34 +11,34 @@ interface TaskReaction {
 
 const TASKS: TaskReaction[] = [
   {
-    id: 'cab',
-    label: "hail a cab in seconds",
-    emoji: '🚕',
-    detail: 'Compares Uber & Lyft fares and books the fastest ride'
+    id: 'apps',
+    label: 'spin up full-stack apps',
+    emoji: '🚀',
+    detail: 'Scaffolds complete frontend and backend applications from a single prompt'
   },
   {
-    id: 'hotel',
-    label: 'reserve a hotel for the weekend',
-    emoji: '🏨',
-    detail: 'Finds top-rated stays matching your budget and locks in dates'
+    id: 'code',
+    label: 'write or fix code',
+    emoji: '💻',
+    detail: 'Detects bugs, refactors syntax, and edits files across your entire repository'
   },
   {
-    id: 'website',
-    label: 'launch a website for your business',
-    emoji: '🌐',
-    detail: 'Turns a quick voice description into a live, published website'
+    id: 'deploy',
+    label: 'test and deploy projects',
+    emoji: '⚡',
+    detail: 'Runs automated test suites and deploys live preview and production builds'
   },
   {
-    id: 'dinner',
-    label: 'reorder dinner to your doorstep',
-    emoji: '🍕',
-    detail: 'Places your usual takeout order without opening delivery apps'
+    id: 'manage',
+    label: 'manage repositories',
+    emoji: '📂',
+    detail: 'Handles git branches, tracks project milestones, and commits changes remotely'
   },
   {
-    id: 'documents',
-    label: 'summarize long documents on your desktop',
-    emoji: '📑',
-    detail: 'Reads PDFs, contracts, and notes and texts you the takeaways'
+    id: 'messages',
+    label: 'draft messages that secure meetings',
+    emoji: '🤝',
+    detail: 'Polishes outreach, pitches, and emails to get appointments confirmed'
   }
 ];
 
