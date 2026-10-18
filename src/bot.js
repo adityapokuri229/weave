@@ -1061,10 +1061,23 @@ function isSenderAuthorized(msg, targetProjectAlias = null) {
 }
 
 /**
+ * Appends the standardized agent badge footer to messages.
+ */
+function formatAgentMessage(text) {
+  if (typeof text !== 'string') return text;
+  const trimmed = text.trim();
+  if (!trimmed) return trimmed;
+  // If text already ends with `agent message`, don't duplicate
+  if (trimmed.endsWith('`agent message`')) return trimmed;
+  return `${trimmed}\n\n\`agent message\``;
+}
+
+/**
  * Helper to send a WhatsApp reply and track its message ID so we never self-loop.
  */
 async function sendReply(sock, jid, text, quotedMsg) {
-  const options = { text };
+  const formattedText = formatAgentMessage(text);
+  const options = { text: formattedText };
   const sendOpts = quotedMsg && typeof quotedMsg === 'object' && quotedMsg.key ? { quoted: quotedMsg } : undefined;
   const sent = await sock.sendMessage(jid, options, sendOpts);
   if (sent?.key?.id) {
@@ -1240,12 +1253,15 @@ async function sendWhatsAppFile(sock, targetJid, filePath, caption, quotedMsg) {
   const fileName = path.basename(filePath);
   const mimetype = getMimeType(filePath);
 
+  const rawCaption = caption || (mimetype.startsWith('image/') ? `📸 ${fileName}` : `📎 ${fileName}`);
+  const formattedCaption = formatAgentMessage(rawCaption);
+
   const sent = mimetype.startsWith('image/')
     ? await sock.sendMessage(
         targetJid,
         {
           image: buffer,
-          caption: caption || `📸 ${fileName}`,
+          caption: formattedCaption,
         },
         quotedMsg ? { quoted: quotedMsg } : undefined
       )
@@ -1255,7 +1271,7 @@ async function sendWhatsAppFile(sock, targetJid, filePath, caption, quotedMsg) {
           document: buffer,
           mimetype,
           fileName,
-          caption: caption || `📎 ${fileName}`,
+          caption: formattedCaption,
         },
         quotedMsg ? { quoted: quotedMsg } : undefined
       );
@@ -1804,7 +1820,8 @@ async function processQueueItem(sock, item) {
         const targetJid = resolveContactTarget(msg, targetRaw);
         if (targetJid) {
           try {
-            const sentDm = await sock.sendMessage(targetJid, { text: dmText });
+            const formattedDm = formatAgentMessage(dmText);
+            const sentDm = await sock.sendMessage(targetJid, { text: formattedDm });
             if (sentDm?.key?.id) recordSentMessageId(sentDm.key.id);
             const contacts = loadContactsMap();
             const displayTarget = contacts[targetJid] || targetRaw;
@@ -2954,7 +2971,8 @@ async function handleSlashCommand(sock, jid, msg, commandBody) {
     }
 
     try {
-      const sentDm = await sock.sendMessage(targetJid, { text: messageText });
+      const formattedMessage = formatAgentMessage(messageText);
+      const sentDm = await sock.sendMessage(targetJid, { text: formattedMessage });
       if (sentDm?.key?.id) recordSentMessageId(sentDm.key.id);
       const contacts = loadContactsMap();
       const displayTarget = contacts[targetJid] || targetStr;

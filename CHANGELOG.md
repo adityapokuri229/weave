@@ -47,6 +47,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Robust process cancellation (`stopActiveTask`) with two-stage SIGTERM -> SIGKILL escalation on Unix (`pkill -P`) and `taskkill /T /F` on Windows.
   - Immediate retirement and termination of warm Antigravity CLI workers to halt running subcommands or compilers instantly upon `/stop`.
 
+#### 6. False Reply Prevention on Quoted Messages (`src/bot.js`, `src/autopilot/polls.js`)
+- **Strict Origin-Verified Swipe-Reply Gate**:
+  - Eliminated the faulty fallback in `isReplyingToBot` that treated any quoted message from the owner/linked device as an agent reply.
+  - Quoted messages are now strictly verified against tracked message IDs sent by this agent instance (`sentMessageIds` and pending polls), preventing accidental transcriptions or task triggers when texting or replying to yourself in group chats.
+
+#### 7. Visual Distinction for Agent Responses (`src/bot.js`)
+- **Standardized `agent message` Code Block Footer**:
+  - Every message sent by the agent (chat replies, progress alerts, permission summaries, attachment captions, and task notifications) leaves one empty line and appends `` `agent message` `` in code block formatting, making it instantly distinguishable from personal messages.
+
 ---
 
 ## [v2.1.0] - 2026-10-18
