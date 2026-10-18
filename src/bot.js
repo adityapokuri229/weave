@@ -4383,8 +4383,9 @@ async function handleIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfte
         // When reconnecting or opening after laptop shutdown/sleep, WhatsApp server sends backlogged/sync messages.
         // We sync contacts, group metadata, and chat context so the app has full history,
         // but NEVER execute or reply to any message sent before the bot was opened/started.
+        // A 15-second grace buffer accounts for slight network transit or clock alignment differences.
         const effectiveBotStartSec = BOT_START_TIME_SEC - serverTimeOffsetSec;
-        if (effectiveBotStartSec > 0 && msgTime < effectiveBotStartSec) {
+        if (effectiveBotStartSec > 0 && msgTime < (effectiveBotStartSec - 15)) {
           const text = extractMessageText(msg);
           if (text && msg.key?.remoteJid) {
             const senderDisplay = msg.pushName || (msg.key?.fromMe ? 'Owner' : getSenderNumber(msg));
@@ -4395,7 +4396,7 @@ async function handleIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfte
               quotedText: extractQuotedText(msg),
             });
           }
-          console.log(`⏱️ [Sync/Backlog Message Recorded, Execution Skipped] msgId=${msg.key?.id} msgTime=${msgTime} effectiveBotStart=${effectiveBotStartSec}`);
+          console.log(`⏱️ [Sync/Backlog Message Recorded, Execution Skipped] msgId=${msg.key?.id} msgTime=${msgTime} cutoff=${effectiveBotStartSec - 15}`);
           return;
         }
       }
