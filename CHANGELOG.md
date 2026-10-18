@@ -43,6 +43,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - If someone who is not on the active project's permission list pings or mentions the agent, the bot replies: *"You don't have permission to use this project."*
   - The message is dropped immediately: no intent classification, routing, audio transcription, or model calls are executed.
 
+#### 6. Clean Slate Master Directory & Permissions Reset (`src/config.js`, `projects.json`)
+- **Complete Project & Permission Reset**:
+  - Purged all previous test project folders (`anagha`, `ramu1`, `srinivas`) from the master directory (`Weave Master`).
+  - Reset `projectAccess`, `groupBindings`, `projects`, and active project associations to an empty clean slate while preserving master directory configuration for a fresh start.
+
 ---
 
 ## [v2.2.0] - 2026-10-18
