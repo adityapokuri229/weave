@@ -3856,7 +3856,7 @@ export async function startWhatsAppBot() {
       version,
       auth: {
         creds: state.creds,
-        keys: makeCacheableSignalKeyStore(state.keys, baileysLogger, signalCacheStore),
+        keys: makeCacheableSignalKeyStore(state.keys, baileysLogger),
       },
       msgRetryCounterCache: retryCacheStore,
       logger: baileysLogger,
