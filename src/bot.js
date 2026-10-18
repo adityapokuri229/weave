@@ -1022,34 +1022,30 @@ function isSenderAuthorized(msg, targetProjectAlias = null) {
   const pushName = (msg.pushName || '').trim().toLowerCase();
   const jid = msg.key.remoteJid || '';
   const isGroup = Boolean(jid && jid.endsWith('@g.us'));
-  // In group chats: By default, ONLY the owner has permissions!
-  // Collaborators/friends only have permissions if explicitly granted for this project/group.
+  // In group chats: Access is strictly based on the group's currently active project.
+  // Each project has its own list of allowed contacts (phone numbers in E.164 format).
+  // By default, only the owner has permission.
   if (isGroup) {
     const state = loadProjectsState();
     const activeAlias = targetProjectAlias || state.groupBindings?.[jid] || null;
-    if (activeAlias) {
-      const allowedList = getProjectAccess(activeAlias, jid);
-      if (allowedList && allowedList.length > 0) {
-        const rawPId = msg.key.participant || '';
-        const pBase = rawPId.split('@')[0].split(':')[0];
-        const contacts = loadContactsMap();
-        const contactName = (contacts[rawPId] || contacts[senderNum] || contacts[pBase] || '').toLowerCase();
-
-        const hasAccess = allowedList.some((entry) => {
-          const cleanEntry = entry.trim().toLowerCase().replace(/^@/, '');
-          const cleanDigits = cleanEntry.replace(/[^0-9]/g, '');
-          return (
-            (senderNum && cleanDigits && (senderNum === cleanDigits || senderNum.endsWith(cleanDigits) || cleanDigits.endsWith(senderNum))) ||
-            (pBase && cleanEntry === pBase.toLowerCase()) ||
-            (pushName && (cleanEntry === pushName || pushName.includes(cleanEntry) || cleanEntry.includes(pushName))) ||
-            (contactName && (cleanEntry === contactName || contactName.includes(cleanEntry) || cleanEntry.includes(contactName)))
-          );
-        });
-        if (hasAccess) return true;
-      }
+    if (!activeAlias) {
+      return false;
     }
-    // Non-owners in groups are NOT authorized by default
-    return false;
+    const allowedList = getProjectAccess(activeAlias);
+    if (!allowedList || allowedList.length === 0) {
+      return false;
+    }
+    if (!senderNum) return false;
+
+    return allowedList.some((allowed) => {
+      const allowedDigits = String(allowed).replace(/\D/g, '');
+      return (
+        Boolean(allowedDigits) &&
+        (senderNum === allowedDigits ||
+          senderNum.endsWith(allowedDigits) ||
+          allowedDigits.endsWith(senderNum))
+      );
+    });
   }
 
   // In 1-on-1 chats:
@@ -3343,12 +3339,11 @@ async function handleSlashCommand(sock, jid, msg, commandBody) {
         return true;
       }
     } else if (cmd !== '/projects') {
-      const canManage = owner || isSenderAuthorized(msg);
-      if (!canManage) {
+      if (!owner) {
         await sendReply(
           sock,
           jid,
-          `🔒 Only authorized users can manage project bindings.`,
+          `Only the owner can do that.`,
           msg
         );
         return true;
@@ -4001,6 +3996,11 @@ async function handleVoteResolution(sock, voteRes) {
   console.log(`🗳️ Handling vote resolution: option="${chosenOption}" context="${pending.context}" group="${groupJid}"`);
 
   if (pending.context === 'switch_project') {
+    const isVoterOwner = isOwner({ key: { participant: voterJid, remoteJid: groupJid, fromMe: false } });
+    if (!isVoterOwner) {
+      await sendReply(sock, groupJid, "Only the owner can do that.");
+      return;
+    }
     try {
       const res = switchGroupProject(chosenOption, groupJid);
       await sendReply(sock, groupJid, TEMPLATES.switch_project({ projectName: res.alias }));
@@ -4312,7 +4312,8 @@ async function _processIncomingMessage(sock, msg, type, nowSec, acceptMessagesAf
       );
 
       if (!isSenderAuthorized(msg)) {
-        console.log(`🔒 Ignored unauthorized sender: ${getSenderNumber(msg)}`);
+        console.log(`🔒 Unauthorized sender in ${jid}: ${getSenderNumber(msg)}`);
+        await sendReply(sock, jid, "You don't have permission to use this project.", msg);
         return;
       }
 
@@ -4730,322 +4731,47 @@ async function _processIncomingMessage(sock, msg, type, nowSec, acceptMessagesAf
         return dp[m][n];
       }
 
-      // Helper: View access permissions
+      // Helper: View access permissions (Chat is view-only)
       async function handleViewAccessCommand(sock, jid, msg, isGroup) {
         const stateNow = loadProjectsState();
-        const activeAlias = (isGroup ? stateNow.groupBindings?.[jid] : stateNow.activeProject) || stateNow.activeProject;
-        const groupAllowed = (activeAlias && stateNow.projectAccess?.[jid]?.[activeAlias.toLowerCase()]) || [];
-        const contacts = loadContactsMap();
+        const activeAlias = isGroup ? stateNow.groupBindings?.[jid] : stateNow.activeProject;
 
-        if (isGroup) {
-          let groupMeta = null;
-          try {
-            groupMeta = await sock.groupMetadata(jid);
-          } catch (err) {
-            console.warn(`⚠️ Failed to fetch group metadata for ${jid}:`, err?.message || err);
-          }
-
-          const botUserId = (sock?.user?.id || '').split(':')[0].split('@')[0].replace(/[^0-9]/g, '');
-          const botLid = (sock?.user?.lid || '').split(':')[0].split('@')[0];
-
-          const participants = groupMeta?.participants || [];
-          const memberLines = [];
-          const accountedAllowed = new Set();
-
-          for (const p of participants) {
-            const rawPId = p.id || '';
-            const pNum = rawPId.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
-            const pBase = rawPId.split('@')[0].split(':')[0];
-
-            // Identify Bot itself
-            const isBotSelf = (botUserId && pNum === botUserId) || (botLid && pBase === botLid);
-
-            // Identify Owner
-            const isParticipantOwner =
-              (botUserId && pNum === botUserId) ||
-              (CONFIG.adminNumbers.length > 0 && pNum && CONFIG.adminNumbers.some(a => pNum.endsWith(a) || a.endsWith(pNum)));
-
-            // Identifier with phone number prioritized
-            const contactName = contacts[rawPId] || contacts[pNum] || contacts[pBase] || '';
-            const phoneDisplay = pNum ? `+${pNum}` : pBase;
-            const label = contactName ? `${phoneDisplay} (${contactName})` : phoneDisplay;
-
-            if (isBotSelf) {
-              memberLines.push(`🤖 *${label}* (Weave Agent): Active`);
-            } else if (isParticipantOwner) {
-              memberLines.push(`👑 *${label}* (Owner): Full Access (All commands, DM project deletion, access grants)`);
-            } else {
-              // Check if participant has granted project access
-              const isGranted = groupAllowed.some((entry) => {
-                const cleanEntry = entry.trim().toLowerCase();
-                const matched = (
-                  (pNum && (cleanEntry === pNum || cleanEntry === `+${pNum}` || pNum.endsWith(cleanEntry) || cleanEntry.endsWith(pNum))) ||
-                  (pBase && cleanEntry === pBase.toLowerCase()) ||
-                  (contactName && (cleanEntry === contactName.toLowerCase() || contactName.toLowerCase().includes(cleanEntry)))
-                );
-                if (matched) accountedAllowed.add(cleanEntry);
-                return matched;
-              });
-
-              if (isGranted) {
-                memberLines.push(`🟢 *${label}*: Granted Access (Can interact with \`${activeAlias || 'project'}\`)`);
-              } else {
-                memberLines.push(`⚪ *${label}*: No Access (Owner only by default)`);
-              }
-            }
-          }
-
-          // If there are collaborators granted who aren't in participants list (e.g. by display alias)
-          for (const extra of groupAllowed) {
-            if (!accountedAllowed.has(extra.toLowerCase())) {
-              memberLines.push(`🟢 *${extra}*: Granted Access (Can interact with \`${activeAlias || 'project'}\`)`);
-            }
-          }
-
-          const groupTitle = groupMeta?.subject || 'this Group';
-          const memberListText = memberLines.length > 0 ? memberLines.join('\n') : `_Could not fetch member list._`;
-
-          const permsReply = [
-            `🔒 *Permissions & Member Access for "${groupTitle}"*`,
-            activeAlias ? `📁 *Active Project:* \`${activeAlias}\`` : `📁 *Active Project:* _(None bound)_`,
-            `👥 *Total Members:* ${participants.length}`,
-            '',
-            `📋 *Member Permissions:*`,
-            memberListText,
-            '',
-            `💡 *Owner Tip:* To grant a member access, say *"allow <number or name> from now"*. To revoke, say *"revoke <number or name> access"*.`,
-          ].join('\n');
-
-          await sendReply(sock, jid, permsReply, msg);
-        } else {
-          // Send-to-Self DM or direct chat
-          const permsReply = [
-            `🔒 *Access Permissions for Personal DM*`,
-            activeAlias ? `📁 *Active Project:* \`${activeAlias}\`` : `📁 *Active Project:* _(None bound)_`,
-            '',
-            `👑 *Owner:* Full Access (All commands, project creation/deletion, settings)`,
-            `ℹ️ In personal DM, you have exclusive full access to all projects and admin commands.`,
-          ].join('\n');
-
-          await sendReply(sock, jid, permsReply, msg);
+        if (!activeAlias) {
+          await sendReply(
+            sock,
+            jid,
+            `🔒 *No active project bound to this chat.*\n\n👑 *Owner:* Full Access\nℹ️ Permissions can only be managed from the desktop app.`,
+            msg
+          );
+          return;
         }
+
+        const allowedList = getProjectAccess(activeAlias);
+        const contactLines =
+          allowedList && allowedList.length > 0
+            ? allowedList.map((num) => `• ${num}`).join('\n')
+            : `• _None (Owner only)_`;
+
+        const permsReply = [
+          `🔒 *Allowed contacts for project "${activeAlias}":*`,
+          contactLines,
+          '',
+          `👑 *Owner:* Full Access`,
+          `ℹ️ Permissions can only be managed from the desktop app.`,
+        ].join('\n');
+
+        await sendReply(sock, jid, permsReply, msg);
       }
 
-      // Helper: Grant or revoke access
-      async function handleManageAccessCommand(sock, jid, msg, action, rawUser, specifiedProject, isGroup, isOwnerSender) {
-        if (!isOwnerSender) {
-          await reactToMessage(sock, msg, '🔒');
-          await sendReply(sock, jid, `🔒 *Only the owner can configure project permissions.*`, msg);
-          return;
-        }
-
-        const stateNow = loadProjectsState();
-        const activeAlias = specifiedProject || (isGroup ? stateNow.groupBindings?.[jid] : stateNow.activeProject) || stateNow.activeProject;
-        if (!activeAlias) {
-          await sendReply(sock, jid, `⚠️ No active project to configure access for.`, msg);
-          return;
-        }
-
-        // Clean user candidate string: handle possessives like "tinchus" -> "tinchu", "tinchu's" -> "tinchu", strip suffixes
-        let userCandidate = String(rawUser || '').replace(/^@/, '').trim();
-        userCandidate = userCandidate
-          .replace(/['’]s$/i, '')
-          .replace(/\s+(access|perms|permission|permissions|from|now|babys|baby)$/i, '')
-          .replace(/\s+(access|perms|permission|permissions|from|now)$/i, '')
-          .replace(/s$/i, (m, offset, str) => {
-            const withS = findFriend(str);
-            if (withS) return 's';
-            return '';
-          })
-          .replace(/\s+(access|perms|permission|permissions|from|now|babys|baby)$/i, '')
-          .trim();
-
-        if (!userCandidate) {
-          await sendReply(sock, jid, `❓ Please specify the group member's phone number or name to ${action} access for.`, msg);
-          return;
-        }
-
-        let verifiedTarget = null;
-        let memberListForHint = [];
-
-        if (isGroup) {
-          let groupMeta = null;
-          try {
-            groupMeta = await sock.groupMetadata(jid);
-          } catch (err) {
-            console.warn(`⚠️ Failed to fetch group metadata for ${jid} during manage_access:`, err?.message || err);
-          }
-
-          const contacts = loadContactsMap();
-          const participants = groupMeta?.participants || [];
-          const candidateDigits = userCandidate.replace(/[^0-9]/g, '');
-          const candidateLower = userCandidate.toLowerCase();
-
-          // Collect group candidate info
-          const memberCandidates = [];
-          for (const p of participants) {
-            const rawPId = p.id || '';
-            const pNum = rawPId.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
-            const pBase = rawPId.split('@')[0].split(':')[0];
-            const contactName = contacts[rawPId] || contacts[pNum] || contacts[pBase] || '';
-            const displayName = contactName ? `+${pNum} (${contactName})` : (pNum ? `+${pNum}` : pBase);
-            memberCandidates.push({
-              rawPId,
-              pNum,
-              pBase,
-              contactName,
-              displayName,
-            });
-            memberListForHint.push(`• *${displayName}*`);
-          }
-
-          // 1. Exact or suffix match on phone number
-          if (candidateDigits.length >= 4) {
-            const phoneMatch = memberCandidates.find(
-              m => m.pNum && (m.pNum === candidateDigits || m.pNum.endsWith(candidateDigits) || candidateDigits.endsWith(m.pNum))
-            );
-            if (phoneMatch) {
-              verifiedTarget = {
-                identifier: phoneMatch.pNum ? `+${phoneMatch.pNum}` : phoneMatch.pBase,
-                displayName: phoneMatch.displayName,
-              };
-            }
-          }
-
-          // 2. Exact match on contact name or pushName
-          if (!verifiedTarget) {
-            const exactNameMatch = memberCandidates.find(
-              m => m.contactName && m.contactName.toLowerCase() === candidateLower
-            );
-            if (exactNameMatch) {
-              verifiedTarget = {
-                identifier: exactNameMatch.pNum ? `+${exactNameMatch.pNum}` : exactNameMatch.pBase,
-                displayName: exactNameMatch.displayName,
-              };
-            }
-          }
-
-          // 3. Substring / partial match on contact name (e.g. "Tinchu" matching "Tinchu Kumar")
-          if (!verifiedTarget && candidateLower.length >= 3) {
-            const partialNameMatch = memberCandidates.find(
-              m => m.contactName && (
-                m.contactName.toLowerCase().includes(candidateLower) ||
-                candidateLower.includes(m.contactName.toLowerCase())
-              )
-            );
-            if (partialNameMatch) {
-              verifiedTarget = {
-                identifier: partialNameMatch.pNum ? `+${partialNameMatch.pNum}` : partialNameMatch.pBase,
-                displayName: partialNameMatch.displayName,
-              };
-            }
-          }
-
-          // 4. Fuzzy typo matching (Levenshtein distance <= 2) on contact names
-          if (!verifiedTarget && candidateLower.length >= 3) {
-            let bestMatch = null;
-            let bestDistance = Infinity;
-            for (const m of memberCandidates) {
-              if (!m.contactName) continue;
-              const dist = getLevenshteinDistance(candidateLower, m.contactName);
-              const maxAllowedDist = candidateLower.length <= 4 ? 1 : 2;
-              if (dist <= maxAllowedDist && dist < bestDistance) {
-                bestDistance = dist;
-                bestMatch = m;
-              }
-            }
-            if (bestMatch) {
-              verifiedTarget = {
-                identifier: bestMatch.pNum ? `+${bestMatch.pNum}` : bestMatch.pBase,
-                displayName: bestMatch.displayName,
-              };
-            }
-          }
-
-          // 5. Check registered friends directory
-          if (!verifiedTarget) {
-            const friend = findFriend(userCandidate);
-            if (friend) {
-              // Check if any group member matches this friend's name or github
-              const friendMember = memberCandidates.find(
-                m => m.contactName && (
-                  m.contactName.toLowerCase() === friend.name.toLowerCase() ||
-                  m.contactName.toLowerCase() === friend.github.toLowerCase()
-                )
-              );
-              if (friendMember) {
-                verifiedTarget = {
-                  identifier: friendMember.pNum ? `+${friendMember.pNum}` : friendMember.pBase,
-                  displayName: friendMember.displayName,
-                };
-              } else {
-                verifiedTarget = {
-                  identifier: friend.name,
-                  displayName: `${friend.name} (@${friend.github})`,
-                };
-              }
-            }
-          }
-
-          // 6. Check existing granted list for revoke (so owner can revoke an existing granted entry even if non-member)
-          if (!verifiedTarget && action === 'revoke') {
-            const existingGranted = groupAllowed.find(entry => {
-              const eLow = entry.toLowerCase();
-              return eLow === candidateLower || eLow.includes(candidateLower) || candidateLower.includes(eLow);
-            });
-            if (existingGranted) {
-              verifiedTarget = {
-                identifier: existingGranted,
-                displayName: existingGranted,
-              };
-            }
-          }
-
-          // If STILL not verified, REJECT! Do NOT create phantom access for random names!
-          if (!verifiedTarget) {
-            const hintText = memberListForHint.length > 0
-              ? `\n\n👥 *Group Members:*\n${memberListForHint.join('\n')}`
-              : '';
-            await reactToMessage(sock, msg, '❓');
-            await sendReply(
-              sock,
-              jid,
-              `❓ *Could not find "${userCandidate}" in this group.* No permissions were changed.\n\nPlease verify their phone number or exact contact name from the member list below.${hintText}`,
-              msg
-            );
-            return;
-          }
-        } else {
-          // Direct chat / DM: Check registered friends or numeric phone number
-          const friend = findFriend(userCandidate);
-          verifiedTarget = {
-            identifier: friend ? friend.name : userCandidate,
-            displayName: friend ? `${friend.name} (@${friend.github})` : userCandidate,
-          };
-        }
-
-        const userIdentifier = verifiedTarget.identifier;
-        const displayLabel = verifiedTarget.displayName || userIdentifier;
-
-        if (action === 'grant') {
-          grantProjectAccess(activeAlias, jid, userIdentifier);
-          await reactToMessage(sock, msg, '🔑');
-          await sendReply(
-            sock,
-            jid,
-            `🔑 *Access Granted:* Allowed *${displayLabel}* to interact with project \`${activeAlias}\` in this chat.`,
-            msg
-          );
-        } else {
-          revokeProjectAccess(activeAlias, jid, userIdentifier);
-          await reactToMessage(sock, msg, '🔒');
-          await sendReply(
-            sock,
-            jid,
-            `🔒 *Access Revoked:* Revoked *${displayLabel}*'s access to project \`${activeAlias}\` in this chat.`,
-            msg
-          );
-        }
+      // Helper: Manage access command (Permissions can NEVER be added, edited, or removed from the chat)
+      async function handleManageAccessCommand(sock, jid, msg) {
+        await reactToMessage(sock, msg, 'ℹ️');
+        await sendReply(
+          sock,
+          jid,
+          `ℹ️ *Permissions can only be managed from the desktop app.*\n\nUnder each project in the desktop app, you can add or remove phone numbers.`,
+          msg
+        );
       }
 
       // 3a. Who Has Perms / Permissions Query

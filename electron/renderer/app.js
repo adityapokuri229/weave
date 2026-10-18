@@ -226,109 +226,27 @@ document.addEventListener('DOMContentLoaded', async () => {
               const cleanJid = escapeHtml(jid);
               const shortJid = escapeHtml(jid.replace('@g.us', ''));
               const realGroupName = groupNames[jid] ? escapeHtml(groupNames[jid]) : `Group ${shortJid}`;
-              const currentAllowed = (projectAccess[jid]?.[alias.toLowerCase()] || []);
-
-              // Permissions list / toggles for this group project (Owner has full access by default)
-              let accessTogglesHtml = `
-                <div class="mt-2 pt-1.5 border-t border-zinc-800 flex flex-col gap-1">
-                  <div class="text-[9px] font-mono text-zinc-400 uppercase flex items-center justify-between">
-                    <span>Permissions</span>
-                    <span class="text-[8px] text-zinc-500">${currentAllowed.length + 1} Authorized</span>
-                  </div>
-                  <div class="flex flex-wrap gap-1 mt-0.5">
-                    <!-- Owner Badge (Default Full Access) -->
-                    <span class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-amber-950/50 text-amber-300 border border-amber-600/50 flex items-center gap-1 select-none" title="Owner has full access by default">
-                      <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
-                      <span>👑 Owner (Full Access)</span>
-                    </span>
-                    ${(() => {
-                      const renderedButtons = [];
-                      const handledNames = new Set();
-
-                      // 1. Registered friends
-                      friends.forEach(f => {
-                        const safeFriendName = escapeHtml(f.name);
-                        const isGranted = currentAllowed.some(u => 
-                          u.toLowerCase() === f.name.toLowerCase() || 
-                          (f.github && u.toLowerCase() === f.github.toLowerCase())
-                        );
-                        if (isGranted) {
-                          handledNames.add(f.name.toLowerCase());
-                          if (f.github) handledNames.add(f.github.toLowerCase());
-                        }
-                        renderedButtons.push(`
-                          <button
-                            class="btn-toggle-access text-[9px] font-mono px-1.5 py-0.5 rounded border transition cursor-pointer flex items-center gap-1 ${
-                              isGranted
-                                ? 'bg-emerald-950/80 text-emerald-400 border-emerald-600/70 hover:bg-red-950/60 hover:text-red-300 hover:border-red-600/50'
-                                : 'bg-zinc-800/80 text-zinc-400 border-zinc-700 hover:text-white hover:border-zinc-500'
-                            }"
-                            data-alias="${escapeHtml(alias)}"
-                            data-jid="${cleanJid}"
-                            data-name="${safeFriendName}"
-                            data-granted="${isGranted ? 'true' : 'false'}"
-                            title="${isGranted ? 'Click to revoke access' : 'Click to grant access'}"
-                          >
-                            <span class="w-1.5 h-1.5 rounded-full ${isGranted ? 'bg-emerald-400' : 'bg-zinc-600'}"></span>
-                            <span>${safeFriendName}</span>
-                            <span class="text-[8px] opacity-70">${isGranted ? '✓' : '+'}</span>
-                          </button>
-                        `);
-                      });
-
-                      // 2. Extra collaborators in currentAllowed that aren't registered friends
-                      currentAllowed.forEach(name => {
-                        if (!handledNames.has(name.toLowerCase())) {
-                          const safeName = escapeHtml(name);
-                          renderedButtons.push(`
-                            <button
-                              class="btn-toggle-access text-[9px] font-mono px-1.5 py-0.5 rounded border transition cursor-pointer flex items-center gap-1 bg-emerald-950/80 text-emerald-400 border-emerald-600/70 hover:bg-red-950/60 hover:text-red-300 hover:border-red-600/50"
-                              data-alias="${escapeHtml(alias)}"
-                              data-jid="${cleanJid}"
-                              data-name="${safeName}"
-                              data-granted="true"
-                              title="Click to revoke access"
-                            >
-                              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                              <span>${safeName}</span>
-                              <span class="text-[8px] opacity-70">✕</span>
-                            </button>
-                          `);
-                        }
-                      });
-
-                      if (renderedButtons.length > 0) {
-                        return renderedButtons.join('');
-                      }
-                      return `<span class="text-[8px] font-mono text-zinc-500 italic py-0.5">Owner only (No collaborators granted)</span>`;
-                    })()}
-                  </div>
-                </div>
-              `;
 
               return `
-                <div class="flex flex-col text-[10px] font-mono bg-zinc-900/90 border border-zinc-800 rounded p-2 mt-1">
-                  <div class="flex items-center justify-between gap-1">
-                    <span class="flex items-center gap-1.5 text-emerald-400 truncate" title="${cleanJid}">
-                      <i class="fa-brands fa-whatsapp text-[12px] shrink-0 text-emerald-400"></i>
-                      <div class="flex flex-col truncate">
-                        <span class="text-zinc-200 font-semibold truncate text-[11px]">${realGroupName}</span>
-                        <span class="text-[9px] text-zinc-500 tracking-tight select-all"><sub>id: ${shortJid}</sub></span>
-                      </div>
-                    </span>
-                    <div class="flex items-center gap-1 shrink-0">
-                      <span class="text-[8px] px-1 py-0.5 bg-emerald-950/60 text-emerald-400 border border-emerald-800/50 rounded uppercase font-medium">Bound</span>
-                      <button
-                        class="btn-unbind-group text-[9px] text-zinc-400 hover:text-red-400 hover:bg-red-500/10 px-1.5 py-0.5 rounded border border-zinc-700/60 hover:border-red-500/30 transition cursor-pointer"
-                        data-jid="${cleanJid}"
-                        data-alias="${escapeHtml(alias)}"
-                        title="Unbind this group from project"
-                      >
-                        Unbind
-                      </button>
+                <div class="flex items-center justify-between gap-1 text-[10px] font-mono bg-zinc-900/90 border border-zinc-800 rounded p-1.5 mt-1">
+                  <span class="flex items-center gap-1.5 text-emerald-400 truncate" title="${cleanJid}">
+                    <i class="fa-brands fa-whatsapp text-[12px] shrink-0 text-emerald-400"></i>
+                    <div class="flex flex-col truncate">
+                      <span class="text-zinc-200 font-semibold truncate text-[11px]">${realGroupName}</span>
+                      <span class="text-[9px] text-zinc-500 tracking-tight select-all"><sub>id: ${shortJid}</sub></span>
                     </div>
+                  </span>
+                  <div class="flex items-center gap-1 shrink-0">
+                    <span class="text-[8px] px-1 py-0.5 bg-emerald-950/60 text-emerald-400 border border-emerald-800/50 rounded uppercase font-medium">Bound</span>
+                    <button
+                      class="btn-unbind-group text-[9px] text-zinc-400 hover:text-red-400 hover:bg-red-500/10 px-1.5 py-0.5 rounded border border-zinc-700/60 hover:border-red-500/30 transition cursor-pointer"
+                      data-jid="${cleanJid}"
+                      data-alias="${escapeHtml(alias)}"
+                      title="Unbind this group from project"
+                    >
+                      Unbind
+                    </button>
                   </div>
-                  ${accessTogglesHtml}
                 </div>
               `;
             })
@@ -344,6 +262,9 @@ document.addEventListener('DOMContentLoaded', async () => {
 
         const safeAlias = escapeHtml(alias);
         const safePath = escapeHtml(folderPath);
+        const allowedNumbers = Array.isArray(projectAccess[alias.toLowerCase()])
+          ? projectAccess[alias.toLowerCase()]
+          : [];
 
         return `
           <div class="p-2.5 rounded-lg bg-app-canvas border border-app-border hover:border-zinc-600 transition flex flex-col gap-1.5 group">
@@ -388,6 +309,68 @@ document.addEventListener('DOMContentLoaded', async () => {
                 ${hasGroups ? `<span class="text-emerald-400 font-mono text-[9px]">${boundGroups.length} Active</span>` : ''}
               </div>
               ${groupsHtml}
+            </div>
+
+            <!-- Permission Manager (Per Project) -->
+            <div class="pt-2 mt-1 border-t border-app-borderSubtle flex flex-col gap-1.5">
+              <div class="text-[9px] font-mono uppercase text-app-tertiary flex items-center justify-between">
+                <div class="flex items-center gap-1.5">
+                  <i class="fa-solid fa-shield-halved text-[10px] text-zinc-400"></i>
+                  <span>Permissions</span>
+                </div>
+                <span class="text-zinc-500 font-mono text-[9px]">${allowedNumbers.length + 1} Authorized</span>
+              </div>
+
+              <!-- Allowed Numbers / Badges -->
+              <div class="flex flex-wrap items-center gap-1.5 mt-0.5">
+                <!-- Owner Badge (Default Full Access) -->
+                <span class="text-[9px] font-mono px-2 py-0.5 rounded bg-amber-950/40 text-amber-300 border border-amber-600/40 flex items-center gap-1 select-none" title="Owner has full access by default">
+                  <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                  <span>👑 Owner (Full Access)</span>
+                </span>
+
+                ${allowedNumbers
+                  .map((num) => {
+                    const safeNum = escapeHtml(num);
+                    return `
+                      <span class="text-[9px] font-mono px-2 py-0.5 rounded bg-zinc-800 text-zinc-200 border border-zinc-700 flex items-center gap-1.5">
+                        <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                        <span>${safeNum}</span>
+                        <button
+                          type="button"
+                          class="btn-remove-perm text-zinc-400 hover:text-red-400 transition cursor-pointer ml-0.5 text-[10px] leading-none"
+                          data-alias="${safeAlias}"
+                          data-phone="${safeNum}"
+                          title="Remove ${safeNum}"
+                        >✕</button>
+                      </span>
+                    `;
+                  })
+                  .join('')}
+
+                ${allowedNumbers.length === 0 ? `<span class="text-[9px] font-mono text-zinc-500 italic py-0.5">(Only owner has access)</span>` : ''}
+              </div>
+
+              <!-- Add Number Form -->
+              <form class="form-add-perm flex items-center gap-1.5 mt-1" data-alias="${safeAlias}">
+                <div class="flex items-center bg-zinc-900 border border-zinc-800 focus-within:border-zinc-600 rounded px-2 py-1 flex-1 text-[11px] font-mono">
+                  <span class="text-zinc-500 text-[10px] mr-1 select-none">+91</span>
+                  <input
+                    type="text"
+                    class="input-perm-phone bg-transparent text-zinc-100 placeholder-zinc-600 focus:outline-none w-full text-[11px] font-mono"
+                    placeholder="Phone number (e.g. 9876543210)"
+                    autocomplete="off"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  class="text-[10px] font-mono px-2.5 py-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 hover:text-white rounded border border-zinc-700 transition cursor-pointer flex items-center gap-1 shrink-0"
+                  title="Add phone number"
+                >
+                  <i class="fa-solid fa-plus text-[9px]"></i>
+                  <span>Add</span>
+                </button>
+              </form>
             </div>
           </div>
         `;
@@ -1000,30 +983,53 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
 
-      // 4. Toggle Project Access for Friend
-      const toggleAccessBtn = e.target.closest('.btn-toggle-access');
-      if (toggleAccessBtn) {
-        const alias = toggleAccessBtn.dataset.alias;
-        const jid = toggleAccessBtn.dataset.jid;
-        const friendName = toggleAccessBtn.dataset.name;
-        const isGranted = toggleAccessBtn.dataset.granted === 'true';
-
-        toggleAccessBtn.disabled = true;
+      // 4. Remove Project Permission
+      const removePermBtn = e.target.closest('.btn-remove-perm');
+      if (removePermBtn) {
+        const alias = removePermBtn.dataset.alias;
+        const phone = removePermBtn.dataset.phone;
+        removePermBtn.disabled = true;
         try {
-          if (isGranted && api?.revokeProjectAccess) {
-            await api.revokeProjectAccess(alias, jid, friendName);
-            appendLog('info', `🔒 Revoked ${friendName}'s access to "${alias}" in group`);
-          } else if (!isGranted && api?.grantProjectAccess) {
-            await api.grantProjectAccess(alias, jid, friendName);
-            appendLog('info', `🔑 Granted ${friendName} access to "${alias}" in group`);
+          if (api?.revokeProjectAccess) {
+            await api.revokeProjectAccess(alias, phone);
+            appendLog('info', `🔒 Removed permission for ${phone} on project "${alias}"`);
+            await syncStatus();
           }
-          await syncStatus();
         } catch (err) {
-          appendLog('error', `Failed to update access: ${err.message}`);
-        } finally {
-          toggleAccessBtn.disabled = false;
+          appendLog('error', `Failed to remove permission: ${err.message}`);
         }
         return;
+      }
+    });
+
+    // Add Phone Number to Project Permissions
+    projectsListContainer.addEventListener('submit', async (e) => {
+      const form = e.target.closest('.form-add-perm');
+      if (!form) return;
+      e.preventDefault();
+      const alias = form.dataset.alias;
+      const input = form.querySelector('.input-perm-phone');
+      const val = input?.value?.trim();
+      if (!val) return;
+
+      const submitBtn = form.querySelector('button[type="submit"]');
+      if (submitBtn) submitBtn.disabled = true;
+
+      try {
+        if (api?.grantProjectAccess) {
+          const res = await api.grantProjectAccess(alias, val);
+          if (res?.success) {
+            appendLog('info', `🔑 Added permission for ${val} on project "${alias}"`);
+            if (input) input.value = '';
+            await syncStatus();
+          } else {
+            appendLog('warn', `⚠️ Could not add phone number (already allowed or invalid).`);
+          }
+        }
+      } catch (err) {
+        appendLog('error', `Failed to grant permission: ${err.message}`);
+      } finally {
+        if (submitBtn) submitBtn.disabled = false;
       }
     });
   }

@@ -376,19 +376,23 @@ ipcMain.handle('weave:remove-friend', async (_event, nameOrId) => {
   }
 });
 
-ipcMain.handle('weave:grant-project-access', async (_event, { projectAlias, groupJid, userIdentifier }) => {
+ipcMain.handle('weave:grant-project-access', async (_event, payload) => {
   try {
-    const ok = configMod.grantProjectAccess(projectAlias, groupJid, userIdentifier);
-    return { success: ok, accessList: configMod.getProjectAccess(projectAlias, groupJid) };
+    const projectAlias = payload?.projectAlias;
+    const phone = payload?.phoneNumber || payload?.userIdentifier;
+    const ok = configMod.grantProjectAccess(projectAlias, phone);
+    return { success: ok, accessList: configMod.getProjectAccess(projectAlias) };
   } catch (err) {
     return { success: false, error: err.message };
   }
 });
 
-ipcMain.handle('weave:revoke-project-access', async (_event, { projectAlias, groupJid, userIdentifier }) => {
+ipcMain.handle('weave:revoke-project-access', async (_event, payload) => {
   try {
-    const ok = configMod.revokeProjectAccess(projectAlias, groupJid, userIdentifier);
-    return { success: ok, accessList: configMod.getProjectAccess(projectAlias, groupJid) };
+    const projectAlias = payload?.projectAlias;
+    const phone = payload?.phoneNumber || payload?.userIdentifier;
+    const ok = configMod.revokeProjectAccess(projectAlias, phone);
+    return { success: ok, accessList: configMod.getProjectAccess(projectAlias) };
   } catch (err) {
     return { success: false, error: err.message };
   }
