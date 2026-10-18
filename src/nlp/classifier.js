@@ -56,6 +56,42 @@ export function fastFuzzyClassify(rawText, { availableProjects = [], boundProjec
     }
   }
 
+  // 0.2. Email, Conversation Summary & Catch-Up Requests
+  const isEmailSummary =
+    /\b(?:email|mail|send)\b.*\b(?:summary|context|catch\s*up|recap|conversation|convo)\b/i.test(clean) ||
+    /\b(?:summary|context|catch\s*up|recap|conversation|convo)\b.*\b(?:email|mail|send\s+(?:it\s+)?to\s+me)\b/i.test(clean) ||
+    /\b(?:missed\s+(?:the\s+)?context|what\s+happened\s+here)\b.*\b(?:email|mail|send)\b/i.test(clean) ||
+    /\b(?:email|mail)\s+(?:me\s+)?(?:the\s+)?(?:summary|recap|catchup|catch\s*up|context)\b/i.test(clean);
+
+  const isEmailProjectOrThis =
+    /^(?:please\s+|can\s+you\s+)?(?:email|mail|send)\s+(?:this|it|the\s+project|the\s+site|the\s+website|the\s+code|the\s+files?|the\s+output|the\s+results?)\s+(?:to\s+)?(?:me|my\s+email|myself)?$/i.test(clean) ||
+    /^(?:please\s+|can\s+you\s+)?(?:email|mail|send)\s+(?:me|my\s+email|myself)\s+(?:this|it|the\s+project|the\s+site|the\s+website|the\s+code|the\s+files?|the\s+output|the\s+results?)$/i.test(clean) ||
+    /^(?:please\s+|can\s+you\s+)?(?:email|mail)\s+(?:this|it)\s+to\s+me$/i.test(clean) ||
+    /^(?:please\s+|can\s+you\s+)?(?:email|mail)\s+this$/i.test(clean) ||
+    /^(?:please\s+|can\s+you\s+)?email\s+(?:me\s+)?(?:the\s+)?(?:latest\s+)?(?:update|updates|details|summary|project)\b/i.test(clean);
+
+  const isGeneralEmail =
+    /^(?:please\s+|can\s+you\s+)?(?:email|send\s+an?\s+email|mail|draft\s+an?\s+email)\b/i.test(clean);
+
+  if (isEmailSummary || isEmailProjectOrThis || isGeneralEmail) {
+    const emailMatch = clean.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
+    const mentionsSelf =
+      /\b(?:me|myself|my\s+email|to\s+me|for\s+me)\b/i.test(clean) ||
+      (!emailMatch && (isEmailSummary || isEmailProjectOrThis));
+
+    return {
+      intent: INTENTS.EMAIL,
+      confidence: 0.99,
+      email: {
+        action: isEmailSummary ? 'summary' : (isEmailProjectOrThis ? 'project' : 'general'),
+        recipient: emailMatch ? emailMatch[1] : (mentionsSelf ? 'me' : null),
+        rawText: text,
+        isSummary: Boolean(isEmailSummary),
+        isProject: Boolean(isEmailProjectOrThis),
+      },
+    };
+  }
+
   // 0.5. Website & Portfolio Creation & Iteration (Stitch MCP + Netlify)
   const isPortfolioCreation =
     /\b(?:create|build|make|generate|design|setup|deploy|need|want|host(?:ing)?)\b.*\b(?:website|landing\s+page|web\s+page|portfolio|site)\b/i.test(clean) ||

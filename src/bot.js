@@ -15,6 +15,9 @@ import pino from 'pino';
 import path from 'path';
 import fs from 'fs';
 import os from 'os';
+import { exec } from 'child_process';
+import { googleAuth } from './auth.js';
+import { googleServices } from './google-services.js';
 
 export const botEvents = new EventEmitter();
 import {
@@ -44,6 +47,7 @@ import {
   getRawMessage,
   getPendingPoll,
   markGroupDeinitialized,
+  getConnectedUserEmail,
 } from './config.js';
 import { TEMPLATES } from './autopilot/templates.js';
 import {
@@ -88,6 +92,8 @@ import {
   resolvePendingClarification,
 } from './autopilot/clarification.js';
 import { fullAutoDebouncer } from './autopilot/debouncer.js';
+import { classifyUserIntent } from './nlp/classifier.js';
+import { dispatchIntent } from './nlp/dispatcher.js';
 
 const AUTH_DIR = path.join(DATA_DIR, 'auth_info_baileys');
 const CONTACTS_FILE = path.join(DATA_DIR, 'contacts.json');
@@ -1325,28 +1331,59 @@ async function sendWhatsAppFile(sock, targetJid, filePath, caption, quotedMsg) {
   const fileName = path.basename(filePath);
   const mimetype = getMimeType(filePath);
 
+  // Normalize recipient JID: WhatsApp does not deliver media to @lid for self-notes.
+  // Resolve owner's @lid to their real @s.whatsapp.net phone JID.
+  let resolvedJid = targetJid;
+  const myLid = (sock?.user?.lid || '').split(':')[0].split('@')[0];
+  const myPhone = (sock?.user?.id || '').split(':')[0].split('@')[0];
+  if (resolvedJid.endsWith('@lid')) {
+    const targetLid = resolvedJid.split('@')[0];
+    if (myPhone && (targetLid === myLid || quotedMsg?.key?.fromMe)) {
+      resolvedJid = `${myPhone}@s.whatsapp.net`;
+    }
+  }
+
+  console.log(`[sendWhatsAppFile] Sending "${fileName}" (${mimetype}) to ${resolvedJid} (original: ${targetJid})`);
+  const shouldQuote = quotedMsg && resolvedJid === targetJid;
   const rawCaption = caption || (mimetype.startsWith('image/') ? `📸 ${fileName}` : `📎 ${fileName}`);
   const formattedCaption = formatAgentMessage(rawCaption);
 
-  const sent = mimetype.startsWith('image/')
-    ? await sock.sendMessage(
-        targetJid,
+  let sent;
+  try {
+    if (mimetype.startsWith('image/')) {
+      sent = await sock.sendMessage(
+        resolvedJid,
         {
           image: buffer,
           caption: formattedCaption,
         },
-        quotedMsg ? { quoted: quotedMsg } : undefined
-      )
-    : await sock.sendMessage(
-        targetJid,
+        shouldQuote ? { quoted: quotedMsg } : undefined
+      );
+    } else {
+      sent = await sock.sendMessage(
+        resolvedJid,
         {
           document: buffer,
           mimetype,
           fileName,
           caption: formattedCaption,
         },
-        quotedMsg ? { quoted: quotedMsg } : undefined
+        shouldQuote ? { quoted: quotedMsg } : undefined
       );
+    }
+  } catch (mediaErr) {
+    console.warn(`[sendWhatsAppFile] Media send error (${mediaErr.message}), falling back to document...`);
+    sent = await sock.sendMessage(
+      resolvedJid,
+      {
+        document: buffer,
+        mimetype: 'image/png',
+        fileName,
+        caption: caption || `📸 ${fileName}`,
+      },
+      shouldQuote ? { quoted: quotedMsg } : undefined
+    );
+  }
 
   if (sent?.key?.id) recordSentMessageId(sent.key.id);
   return sent;
@@ -1358,18 +1395,40 @@ async function sendWhatsAppFile(sock, targetJid, filePath, caption, quotedMsg) {
 function getSmtpConfig() {
   const state = loadProjectsState();
   const saved = state.smtp || {};
+  const connectedEmail = getConnectedUserEmail() || '';
   return {
     host: saved.host || CONFIG.smtpHost || 'smtp.gmail.com',
     port: Number(saved.port || CONFIG.smtpPort || 465),
-    user: saved.user || CONFIG.smtpUser || '',
+    user: saved.user || CONFIG.smtpUser || connectedEmail,
     pass: saved.pass || CONFIG.smtpPass || '',
   };
 }
 
 /**
- * Sends an email with optional attachments via Nodemailer.
+ * Sends an email with optional attachments via Google OAuth (Gmail API) or SMTP fallback.
  */
 async function sendEmailWithAttachments({ to, subject, body, attachmentPaths = [] }) {
+  // 1. If Google account is connected, prefer direct Gmail API (seamless, no app password required)
+  if (googleAuth.isAuthenticated()) {
+    try {
+      return await googleServices.sendEmail({
+        to,
+        subject,
+        body,
+        attachmentPaths,
+        from: googleAuth.getUserEmail() || getConnectedUserEmail() || undefined,
+      });
+    } catch (apiErr) {
+      const smtp = getSmtpConfig();
+      if (smtp.pass) {
+        console.warn(`[bot] Gmail API send failed (${apiErr.message}), falling back to SMTP password.`);
+      } else {
+        throw apiErr;
+      }
+    }
+  }
+
+  // 2. SMTP fallback
   const smtp = getSmtpConfig();
   if (!smtp.user || !smtp.pass) {
     const err = new Error('SMTP_NOT_CONFIGURED');
@@ -1394,15 +1453,21 @@ async function sendEmailWithAttachments({ to, subject, body, attachmentPaths = [
       path: p,
     }));
 
+  const emailSignature = 'Sent by Weave';
+  let formattedBody = (body || '').trim();
+  if (!formattedBody.endsWith(emailSignature)) {
+    formattedBody = formattedBody ? `${formattedBody}\n\n${emailSignature}` : emailSignature;
+  }
+
   const info = await transporter.sendMail({
     from: smtp.user,
     to,
     subject,
-    text: body,
+    text: formattedBody,
     attachments,
   });
 
-  return { messageId: info.messageId, attachmentsCount: attachments.length, from: smtp.user };
+  return { messageId: info.messageId, attachmentsCount: attachments.length, from: smtp.user, provider: 'smtp' };
 }
 
 /**
@@ -1963,12 +2028,16 @@ async function processQueueItem(sock, item) {
           const thirdPipe = secondPipe === -1 ? -1 : payload.indexOf('|', secondPipe + 1);
           if (firstPipe === -1 || secondPipe === -1 || thirdPipe === -1) continue;
           let toEmail = payload.slice(0, firstPipe).trim();
-          if (['me', 'myself', 'owner', 'self'].includes(toEmail.toLowerCase())) {
-            toEmail = CONFIG.ownerEmail || '';
+          if (['me', 'myself', 'owner', 'self', 'to me', 'to myself'].includes(toEmail.toLowerCase())) {
+            toEmail = getConnectedUserEmail() || CONFIG.ownerEmail || '';
           }
           const subject = payload.slice(firstPipe + 1, secondPipe).trim();
           const rawAttachments = payload.slice(secondPipe + 1, thirdPipe).trim();
-          const emailBody = payload.slice(thirdPipe + 1).trim();
+          let emailBody = payload.slice(thirdPipe + 1).trim();
+          const emailSignature = 'Sent by Weave';
+          if (!emailBody.endsWith(emailSignature)) {
+            emailBody = emailBody ? `${emailBody}\n\n${emailSignature}` : emailSignature;
+          }
           if (!toEmail || !subject) continue;
 
           const resolvedAttachments = [];
@@ -2111,29 +2180,48 @@ async function processQueueItem(sock, item) {
         });
 
         let inviteSynced = false;
-        try {
-          const stateForSmtp = loadProjectsState();
-          const smtpConfig = stateForSmtp.smtp || {
-            host: CONFIG.smtpHost,
-            port: CONFIG.smtpPort,
-            user: CONFIG.smtpUser,
-            pass: CONFIG.smtpPass,
-          };
-
-          if (smtpConfig.user && smtpConfig.pass && CONFIG.ownerEmail) {
-            await sendCalendarInviteDirectly({
-              to: CONFIG.ownerEmail,
-              title,
-              start: startDate,
-              end: endDate,
+        // 1. Direct Google Calendar API sync (seamless, zero confirmation required)
+        if (googleAuth.isAuthenticated()) {
+          try {
+            await googleServices.createEvent({
+              summary: title,
               description,
-              location,
-              smtpConfig,
+              startIso: startDate.toISOString(),
+              endIso: endDate.toISOString(),
+              attendees: CONFIG.ownerEmail ? [CONFIG.ownerEmail] : [],
             });
             inviteSynced = true;
+          } catch (gcalErr) {
+            console.warn('⚠️ Google Calendar API event creation failed:', gcalErr.message);
           }
-        } catch (syncErr) {
-          console.warn('⚠️ Direct Google Calendar invite sync failed:', syncErr.message);
+        }
+
+        // 2. SMTP calendar invitation fallback
+        if (!inviteSynced) {
+          try {
+            const stateForSmtp = loadProjectsState();
+            const smtpConfig = stateForSmtp.smtp || {
+              host: CONFIG.smtpHost,
+              port: CONFIG.smtpPort,
+              user: CONFIG.smtpUser || getConnectedUserEmail(),
+              pass: CONFIG.smtpPass,
+            };
+
+            if (smtpConfig.user && smtpConfig.pass && CONFIG.ownerEmail) {
+              await sendCalendarInviteDirectly({
+                to: CONFIG.ownerEmail,
+                title,
+                start: startDate,
+                end: endDate,
+                description,
+                location,
+                smtpConfig,
+              });
+              inviteSynced = true;
+            }
+          } catch (syncErr) {
+            console.warn('⚠️ Direct Google Calendar invite sync failed:', syncErr.message);
+          }
         }
 
         // Never dump .ics file attachment into WhatsApp group chats!
@@ -2482,36 +2570,41 @@ async function handleSlashCommand(sock, jid, msg, commandBody) {
 
   if (cmd === '/help' || cmd === 'help') {
     const trig = CONFIG.triggerPrefix;
-    const helpLines = [
-      `🤖 *Weave Agent (${trig})* (${boundProject ? `\`${boundProject}\`` : 'unbound'})`,
-      `• *${trig} <task>* — Run task`,
-      `• *${trig} /screenshot [url]* — Capture page screenshot (add mobile for phone view)`,
-      `• *${trig} /projects* — List projects & show active project for this chat`,
-      `• *${trig} /project <alias>* | *${trig} /bind <alias>* — Switch active project in this chat`,
-      `• *${trig} /unbind* | *${trig} /turnoff* — Turn OFF active project in this chat`,
-      `• *${trig} /btw <question>* — Ask Gemini directly without sending to Antigravity session`,
-      `• *${trig} /new* — Reset/clear Antigravity session for current project`,
-      `• *${trig} /push [msg]* — Commit & push`,
-      `• *${trig} /status* — Check status`,
-      `• *${trig} /update* — Pull latest live OTA update without reinstalling`,
-      `• *${trig} /stop* — Stop task (or swipe-reply *stop*)`,
-    ];
+    const projLabel = boundProject ? `\`${boundProject}\`` : '_None (unbound)_';
+    const helpMessage = [
+      `👋 *Hi, I'm Weave!* Your natural language WhatsApp coding agent.`,
+      `📍 *Current Project:* ${projLabel}`,
+      '',
+      `No commands needed! Just speak to me like a teammate using *${trig}* followed by plain English:`,
+      '',
+      `💻 *Code & Features:*`,
+      `• *"${trig} add a dark mode toggle to the navbar"*`,
+      `• *"${trig} fix the crash when clicking checkout"*`,
+      `• *"${trig} make that button rounded and emerald green"*`,
+      '',
+      `📁 *Projects & Workspaces:*`,
+      `• *"${trig} what projects do we have?"*`,
+      `• *"${trig} switch this chat to portfolio-website"*`,
+      `• *"${trig} start a new project called payment-gateway"*`,
+      '',
+      `📸 *Visual UI Previews:*`,
+      `• *"${trig} show me what the landing page looks like on mobile"*`,
+      `• *"${trig} screenshot localhost:3000"*`,
+      '',
+      `🚀 *Git & GitHub:*`,
+      `• *"${trig} push our changes to github with message 'fixed navbar'"*`,
+      `• *"${trig} invite @alex to collaborate on this repo"*`,
+      '',
+      `📎 *Files & Sharing:*`,
+      `• *"${trig} send me package.json"*`,
+      '',
+      `🛑 *Control & Questions:*`,
+      `• *"${trig} what are you working on right now?"*`,
+      `• *"${trig} stop what you're doing"*`,
+      `• *"${trig} how does JWT refresh token rotation work?"*`,
+    ].join('\n');
 
-    if (owner) {
-      helpLines.push(
-        `• *${trig} /callsign <@handle>* — Change unique agent call-sign`,
-        `• *${trig} /collab <github_user> [repo] [read|write|admin]* — Invite GitHub collaborator`,
-        `• *${trig} /removecollab <github_user> [repo]* — Remove collaborator / invite`,
-        `• *${trig} /collabs [repo]* — List repo collaborators & pending invites`,
-        `• *${trig} /addproject <alias> <path>* — Register new local project folder`,
-        `• *${trig} /autopush on|off* | *${trig} /shutdown* | *${trig} /wakeup*`,
-        `• *${trig} /msg <Contact> <text>* | *${trig} /send [Contact :] <file>*`,
-        `• *${trig} /livelocation <Contact> [hours]* | *${trig} /setlocation <place>* | *${trig} /stoplocation*`,
-        `• *${trig} /mailsetup <email> <app_pass>* | *confirm* | *cancel*`
-      );
-    }
-
-    await sendReply(sock, jid, helpLines.join('\n'), msg);
+    await sendReply(sock, jid, helpMessage, msg);
     return true;
   }
 
@@ -2767,11 +2860,35 @@ async function handleSlashCommand(sock, jid, msg, commandBody) {
         msg
       );
     } catch (mailErr) {
-      if (mailErr.code === 'SMTP_NOT_CONFIGURED') {
+      if (mailErr.code === 'GMAIL_SCOPE_INSUFFICIENT') {
+        const userEmail = googleAuth.getUserEmail() || getConnectedUserEmail() || 'your Google account';
         await sendReply(
           sock,
           jid,
-          `⚠️ SMTP not configured. Run */mailsetup your.email@gmail.com <app-password>* then reply *confirm*.`,
+          [
+            `⚠️ *Gmail Permission Needed for ${userEmail}*`,
+            ``,
+            `Weave is connected to *${userEmail}*, but Google requires a one-time permission to send emails directly via your Gmail account without app passwords.`,
+            ``,
+            `👉 *To enable:* Run */googleauth* or open the Weave desktop app and click *Connect Google Account* to grant Gmail permission, then reply *confirm*.`,
+            ``,
+            `_Alternatively, you can configure an app password anytime with \`/mailsetup ${userEmail} <app-password>\`._`,
+          ].join('\n'),
+          msg
+        );
+      } else if (mailErr.code === 'SMTP_NOT_CONFIGURED') {
+        const userEmail = getConnectedUserEmail() || 'your.email@gmail.com';
+        await sendReply(
+          sock,
+          jid,
+          [
+            `⚠️ *Email Sending Not Configured*`,
+            ``,
+            `To send emails automatically without app passwords, connect your Google account via */googleauth* or in the Weave desktop app.`,
+            ``,
+            `_Or set up an app password directly with:_`,
+            `\`/mailsetup ${userEmail} <app-password>\``,
+          ].join('\n'),
           msg
         );
       } else {
@@ -2815,19 +2932,36 @@ async function handleSlashCommand(sock, jid, msg, commandBody) {
       await sendReply(sock, jid, `🔒 Only the bot owner can configure email settings.`, msg);
       return true;
     }
-    if (!arg1 || !arg2) {
-      const currentSmtp = getSmtpConfig();
+    const currentSmtp = getSmtpConfig();
+    const connectedUser = getConnectedUserEmail();
+
+    // If the user only passed 1 argument and we have a connected Google account, assume arg1 is the app password!
+    let emailUser = arg1 ? arg1.trim() : '';
+    let appPass = arg2 ? arg2.replace(/\s+/g, '').trim() : '';
+
+    if (arg1 && !arg2 && connectedUser && !arg1.includes('@')) {
+      emailUser = connectedUser;
+      appPass = arg1.replace(/\s+/g, '').trim();
+    }
+
+    if (!emailUser || !appPass) {
+      const exampleEmail = currentSmtp.user || connectedUser || 'your.email@gmail.com';
       await sendReply(
         sock,
         jid,
-        `📧 SMTP: ${currentSmtp.user ? `\`${currentSmtp.user}\`` : '_Not configured_'}\nUsage: */mailsetup your.email@gmail.com <app-password>*`,
+        [
+          `📧 *Email Provider Configuration*`,
+          `• Google OAuth: ${googleAuth.isAuthenticated() ? `Connected (\`${connectedUser}\`)` : '_Not connected_'}`,
+          `• SMTP: ${currentSmtp.user ? `\`${currentSmtp.user}\`` : '_Not configured_'}`,
+          ``,
+          `*Usage:* \`/mailsetup ${exampleEmail} <app-password>\``,
+          connectedUser ? `_Or since your Google account is connected: \`/mailsetup <app-password>\`_` : '',
+        ].filter(Boolean).join('\n'),
         msg
       );
       return true;
     }
 
-    const emailUser = arg1.trim();
-    const appPass = arg2.replace(/\s+/g, '').trim();
     const savedSmtp = {
       host: CONFIG.smtpHost || 'smtp.gmail.com',
       port: CONFIG.smtpPort || 465,
@@ -2844,6 +2978,52 @@ async function handleSlashCommand(sock, jid, msg, commandBody) {
       `✅ SMTP configured for \`${emailUser}\`.`,
       msg
     );
+    return true;
+  }
+
+  if (cmd === '/googleauth' || cmd === '/connectgoogle') {
+    if (!owner) {
+      await sendReply(sock, jid, `🔒 Only the bot owner can connect Google accounts.`, msg);
+      return true;
+    }
+    await reactToMessage(sock, msg, '⏳');
+    try {
+      googleAuth.startLoginFlow(
+        async (authUrl) => {
+          // Open in desktop browser via xdg-open / open / start
+          try {
+            const opener = process.platform === 'darwin' ? 'open' : (process.platform === 'win32' ? 'start' : 'xdg-open');
+            exec(`${opener} "${authUrl}"`, () => {});
+          } catch {}
+
+          await reactToMessage(sock, msg, '🔑');
+          await sendReply(
+            sock,
+            jid,
+            [
+              `🔑 *Connect Google Account*`,
+              ``,
+              `Click the link below to authorize Gmail & Calendar access:`,
+              authUrl,
+              ``,
+              `_Opening browser on host PC... Once approved, your Google account and Gmail will be connected automatically!_`,
+            ].join('\n'),
+            msg
+          );
+        }
+      ).then(async (tokens) => {
+        await sendReply(
+          sock,
+          jid,
+          `✅ *Google Account Connected!*\nSigned in as *${tokens.email}*. Gmail API and Calendar are now active.`,
+          msg
+        );
+      }).catch((err) => {
+        console.warn('[bot] Google auth flow error:', err.message);
+      });
+    } catch (err) {
+      await sendReply(sock, jid, `❌ Failed to start Google authorization flow: ${err.message}`, msg);
+    }
     return true;
   }
 
@@ -4067,6 +4247,19 @@ async function handleVoteResolution(sock, voteRes) {
     return;
   }
 
+  if (pending.context === 'website_vibe_choice') {
+    const cleanVibe = chosenOption.replace(/^[0-9️⃣\s]+/, '').trim();
+    await sendReply(sock, groupJid, `Got it: "${cleanVibe}" aesthetic locked in! Tuning the design tokens 🎨`);
+    const state = loadProjectsState();
+    state.portfolioSessions = state.portfolioSessions || {};
+    if (!state.portfolioSessions[groupJid]) {
+      state.portfolioSessions[groupJid] = {};
+    }
+    state.portfolioSessions[groupJid].preferredVibe = cleanVibe;
+    saveProjectsState(state);
+    return;
+  }
+
   // Choice resolution: check if the choice or context is activating/switching a project
   const state = loadProjectsState();
   let activeAlias = getGroupActiveProject(groupJid) || state.activeProject;
@@ -4958,6 +5151,20 @@ async function _processIncomingMessage(sock, msg, type, nowSec, acceptMessagesAf
 
 
 
+      // 3c. Granular Project Access Commands: "allow XYZ from now", "give XYZ access", "revoke XYZ access"
+      const manageAccessMatch =
+        rawBody.match(/\b(?:allow|grant|give)\s+([a-zA-Z0-9_+@.'’-]+(?:\s+[a-zA-Z0-9_+@.'’-]+)?)\s+(?:access|permission|perms|from\s+now|to\s+use)/i) ||
+        rawBody.match(/\b(?:allow|grant|give)\s+(?:agent\s+)?(?:perms|permissions|access)\s+(?:to|for)\s+([a-zA-Z0-9_+@.'’-]+(?:\s+[a-zA-Z0-9_+@.'’-]+)?)/i) ||
+        rawBody.match(/\b(?:revoke|remove|disallow)\s+([a-zA-Z0-9_+@.'’-]+(?:\s+[a-zA-Z0-9_+@.'’-]+)?)\s+(?:access|permission|perms)/i) ||
+        rawBody.match(/\b(?:revoke|remove|disallow)\s+(?:agent\s+)?(?:perms|permissions|access)\s+(?:from|for|to)\s+([a-zA-Z0-9_+@.'’-]+(?:\s+[a-zA-Z0-9_+@.'’-]+)?)/i);
+
+      if (manageAccessMatch && !rawBody.startsWith('/') && owner) {
+        const isRevoke = rawBody.toLowerCase().includes('revoke') || rawBody.toLowerCase().includes('remove') || rawBody.toLowerCase().includes('disallow');
+        const userTarget = manageAccessMatch[1].trim();
+        await handleManageAccessCommand(sock, jid, msg, isRevoke ? 'revoke' : 'grant', userTarget, null, isGroup, owner);
+        return;
+      }
+
       // 3d. Add / Remove Friends Directly From WhatsApp Chat:
       // e.g. "add friend Alice github: alice-dev", "save friend Bob bob_gh", "remove friend Alice"
       const addFriendMatch = rawBody.match(/^(?:please\s+)?(?:add|save)\s+friend\s+([A-Za-z0-9_.-]+)(?:\s+(?:github[:=]?\s*|@)?([A-Za-z0-9_.-]+))?$/i);
@@ -5362,6 +5569,7 @@ async function _processIncomingMessage(sock, msg, type, nowSec, acceptMessagesAf
       }
 
       // Check if it's a slash command or control command
+      // Legacy slash commands or single control command keywords
       const lowerRawTrim = rawBody.toLowerCase().trim();
       const isControlCmd = [
         'help', 'shutdown', 'shtudown', 'wakeup', 'resume', 'start',
@@ -5372,19 +5580,65 @@ async function _processIncomingMessage(sock, msg, type, nowSec, acceptMessagesAf
         if (handled) return;
       }
 
-      // If owner sends a normal task in a group that is currently shut down, remind them to /wakeup first
+      // Natural Language Processing Pipeline (Zero Slash Commands Needed!)
+      let continueSession = replyingToBot;
+      const recentChat = (chatMessageHistory.get(jid) || []).slice(-5);
+      const senderDisplay = msg.pushName || (msg.key?.fromMe ? 'Owner' : getSenderNumber(msg));
+
+      const intentResult = await classifyUserIntent({
+        text: rawBody,
+        groupJid: jid,
+        recentHistory: recentChat,
+        senderName: senderDisplay,
+      });
+
+      console.log(`🤖 [NLP Dispatch] JID=${jid} Intent=${intentResult.intent} Confidence=${intentResult.confidence}`);
+
+      const dispatchResult = await dispatchIntent({
+        intentResult,
+        sock,
+        jid,
+        msg,
+        rawBody,
+        owner,
+        isGroup,
+        boundProject: isGroup ? currentState.groupBindings?.[jid] : currentState.activeProject,
+        state: currentState,
+        taskQueue,
+        currentRunningItem,
+        sendReply,
+        reactToMessage,
+        sendWhatsAppFile,
+        recentChatContext: getRecentChatContext(jid),
+        chatHistory: chatMessageHistory.get(jid) || [],
+      });
+
+      if (dispatchResult?.handled) {
+        return;
+      }
+
+      if (dispatchResult?.isCodingTask) {
+        rawBody = dispatchResult.taskPrompt || rawBody;
+        if (dispatchResult.continueSession) {
+          continueSession = true;
+        }
+        if (dispatchResult.targetProject) {
+          rawBody = `[${dispatchResult.targetProject}] ${rawBody}`;
+        }
+      }
+
+      // If owner sends a normal task in a group that is currently shut down, remind them to wake up first
       if (isGroup && currentState.disabledGroups?.[jid]) {
         await sendReply(
           sock,
           jid,
-          `🛑 *Agent is currently shut down in this group.*\nSend */wakeup* (or */start*) to turn it back on!`,
+          `🛑 *Weave is currently asleep in this group.*\nJust say *"wake up"* to turn it back on!`,
           msg
         );
         return;
       }
 
-      // Check for continuation flag (-c or --continue) OR automatic continuation when swipe-replying to the bot!
-      let continueSession = replyingToBot;
+      // Check for continuation flag (-c or --continue)
       if (rawBody.startsWith('-c ') || rawBody.startsWith('--continue ')) {
         continueSession = true;
         rawBody = rawBody.replace(/^(-c|--continue)\s+/, '').trim();

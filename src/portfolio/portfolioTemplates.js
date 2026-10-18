@@ -18,6 +18,128 @@ export const DESIGN_PHILOSOPHIES = {
 export function buildPortfolioData(custom = {}) {
   const promptLower = String(custom.prompt || custom.tagline || '').toLowerCase();
 
+  // 0. Google Sheets / Spreadsheets / Financial Reconciliation / FinTech
+  if (promptLower.match(/(sheet|sheets|google\s*sheet|spreadsheet|excel|reconcil|bookkeep|invoic|ledger|finance|fintech|accounting|cfo|payroll)/i)) {
+    return {
+      name: custom.name || 'LedgerSync',
+      role: 'Autonomous Financial Reconciliation for Google Sheets',
+      headline: 'Reconcile thousands of transactions in Google Sheets in seconds.',
+      tagline: 'Connect bank feeds directly to your spreadsheets, eliminate manual data entry, and close your books 10x faster with AI-matched entries and formula-free reconciliation.',
+      statusBadge: '📊 Google Workspace Verified // SOC2 Compliant',
+      categoryBadge: 'FINANCIAL PRODUCTIVITY & SHEETS ADD-ON',
+      ctaPrimary: 'Install Sheets Add-on',
+      ctaSecondary: 'View Live Demo Sheet',
+      manifestoTitle: 'Spreadsheet Precision, Zero Busywork',
+      philosophy: 'Financial teams should not spend weekends doing manual VLOOKUPs across banking statements. We transform Google Sheets into an autonomous, audit-ready reconciliation engine.',
+      headerTag: 'GOOGLE WORKSPACE // SOC2 TYPE II',
+      stats: [
+        { label: 'Auto-Match Rate', value: '99.4%' },
+        { label: 'Hours Saved Monthly', value: '24 hrs' },
+        { label: 'Volume Reconciled', value: '$2.8B+' },
+        { label: 'Active Finance Teams', value: '3,400+' },
+      ],
+      projects: [
+        {
+          title: 'Automated 3-Way Bank Reconciliation',
+          category: 'Core Automation',
+          description: 'Instantly cross-matches bank feeds, stripe payouts, and internal invoices with fuzzy date and reference tolerance.',
+          tags: ['Zero Formulas', 'Audit Log', 'Stripe & Plaid'],
+          github: '#',
+          demo: '#',
+        },
+        {
+          title: 'Multi-Currency Real-Time Exchange',
+          category: 'Currency Engine',
+          description: 'Pulls live ECB & central bank spot rates into Sheets to automatically adjust FX gains and losses.',
+          tags: ['160+ Currencies', 'Historical Rates', 'GAAP Compliant'],
+          github: '#',
+          demo: '#',
+        },
+        {
+          title: 'One-Click Month-End Close Package',
+          category: 'Audit & Reporting',
+          description: 'Generates locked trial balance tabs, variance summaries, and CFO-ready executive presentation sheets.',
+          tags: ['Variance Analysis', 'Version Snapshot', 'ERP Export'],
+          github: '#',
+          demo: '#',
+        },
+      ],
+      skills: [
+        'Google Workspace Add-on',
+        'Plaid Bank Feeds',
+        'Stripe & PayPal Sync',
+        'QuickBooks & Xero Export',
+        'SOC2 Type II Certified',
+        '256-bit AES Encryption',
+      ],
+      email: 'team@ledgersync.app',
+      github: 'https://github.com/ledgersync',
+      twitter: 'https://twitter.com/ledgersync',
+      prompt: custom.prompt,
+    };
+  }
+
+  // 0.5. Pottery / Ceramics / Craft Atelier / Japanese Art / Handmade
+  if (promptLower.match(/(potter|ceramic|clay|kiln|glaze|stoneware|vase|atelier|handmade|craft|wabi|artisan|japan|kyoto)/i)) {
+    return {
+      name: custom.name || 'Komorebi Clay Atelier',
+      role: 'Hand-Thrown Functional Stoneware & Ceramic Artistry',
+      headline: 'Formed by Earth, Fire, and Generational Craft.',
+      tagline: 'Small-batch reduction-fired ceramics crafted in Kyoto. Every cup, vase, and vessel celebrates natural imperfections, tactile minerals, and mindful everyday rituals.',
+      statusBadge: '🏺 Kiln Fired Daily // Batch #48 Available',
+      categoryBadge: 'CERAMIC ATELIER & POTTERY STUDIO',
+      ctaPrimary: 'Explore Vessels',
+      ctaSecondary: 'Book Wheel Workshop',
+      manifestoTitle: 'The Beauty of Imperfection',
+      philosophy: 'We harvest local clays and hand-mix wood-ash glazes. Every piece undergoes a 36-hour wood kiln firing, resulting in unique scorched blush and atmospheric glaze textures.',
+      headerTag: 'KYOTO ATELIER // EST. 1984',
+      stats: [
+        { label: 'Wood-Kiln Temperature', value: '1,280°C' },
+        { label: 'Handmade Batches', value: '48 Lots' },
+        { label: 'Permanent Collections', value: '14 Galleries' },
+        { label: 'Workshop Alumni', value: '1,200+' },
+      ],
+      projects: [
+        {
+          title: 'Tenmoku Tea Bowl (Chawan)',
+          category: 'Ceremonial Vessels',
+          description: 'Iron-rich stoneware featuring natural oil-spot iridescent glaze, balanced for formal matcha tea ceremonies.',
+          tags: ['Wood-Fired', 'Iron Glaze', 'Unique One-Off'],
+          github: '#',
+          demo: '#',
+        },
+        {
+          title: 'Asuka Minimalist Pour-Over Dripper',
+          category: 'Functional Tableware',
+          description: 'Slow-draining fluted ceramic coffee dripper engineered for thermal retention and clean extraction.',
+          tags: ['Food-Safe Glaze', 'Daily Craft', 'Dishwasher Safe'],
+          github: '#',
+          demo: '#',
+        },
+        {
+          title: 'Moon Jar Sculptural Vessel',
+          category: 'Monograph Collection',
+          description: 'Voluminous thrown white porcelain jar, unglazed matte exterior with gentle wood-smoke blushing.',
+          tags: ['Gallery Monograph', 'Sculptural', 'Signed & Boxed'],
+          github: '#',
+          demo: '#',
+        },
+      ],
+      skills: [
+        'Wheel Throwing',
+        'Wood Kiln Reduction',
+        'Natural Ash Glazes',
+        'Kintsugi Repair',
+        'Custom Restaurant Commissions',
+        'Private Studio Workshops',
+      ],
+      email: 'studio@komorebiclay.jp',
+      github: 'https://instagram.com/komorebiclay',
+      twitter: 'https://twitter.com/komorebiclay',
+      prompt: custom.prompt,
+    };
+  }
+
   // 1. Dog Shelter / Animal Rescue / Pets
   if (promptLower.match(/(dog|shelter|rescue|animal|cat|pet|pup|puppy|adopt|canine|sanctuary)/i)) {
     return {
@@ -920,6 +1042,213 @@ export function renderDynamicAestheticPortfolio(data, aesthetic = {}) {
   <div class="fixed inset-0 pointer-events-none overflow-hidden z-0" style="background: ${colors.heroGlow}"></div>
   ` : ''}
 
+  ${ui.layoutMode === 'editorial' ? `
+  <!-- ==================== SWISS EDITORIAL LAYOUT ==================== -->
+  <div class="relative z-10 max-w-5xl mx-auto px-6 py-12 md:py-20">
+    <!-- Masthead -->
+    <header class="border-b-2 pb-6 mb-12 flex flex-col md:flex-row md:items-end justify-between gap-4" style="border-color: var(--border-color)">
+      <div>
+        <div class="text-xs uppercase font-bold tracking-[0.2em] mb-2" style="color: var(--accent)">
+          ${d.headerTag || 'ESTABLISHED 2026 // MONOGRAPH'}
+        </div>
+        <div class="font-heading text-3xl md:text-4xl font-black tracking-tight">
+          ${d.name}
+        </div>
+      </div>
+      <div class="flex items-center space-x-6 text-xs uppercase tracking-wider font-semibold" style="color: var(--text-muted)">
+        <span class="badge-status px-3 py-1 font-medium">${d.statusBadge}</span>
+        <a href="#offerings" class="hover:underline">Catalog</a>
+        <a href="#manifesto" class="hover:underline">Philosophy</a>
+        <a href="mailto:${d.email}" class="hover:underline">Contact</a>
+      </div>
+    </header>
+
+    <!-- Editorial Hero -->
+    <section class="mb-16 md:mb-24">
+      <div class="badge-category inline-block px-3 py-1 text-xs font-semibold tracking-wider uppercase mb-6">
+        ${d.categoryBadge}
+      </div>
+      <h1 class="text-4xl md:text-7xl font-normal leading-[1.05] tracking-tight mb-8">
+        ${d.headline}
+      </h1>
+      <div class="grid grid-cols-1 md:grid-cols-12 gap-8 pt-8 border-t" style="border-color: var(--border-color)">
+        <div class="md:col-span-8 text-lg md:text-2xl leading-relaxed" style="color: var(--text-muted)">
+          ${d.tagline}
+        </div>
+        <div class="md:col-span-4 flex flex-col justify-end space-y-3">
+          <a href="#offerings" class="btn-primary w-full text-center px-6 py-3.5 text-sm font-bold">
+            ${d.ctaPrimary}
+          </a>
+          <a href="mailto:${d.email}" class="btn-secondary w-full text-center px-6 py-3 text-xs font-semibold">
+            ${d.ctaSecondary}
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Editorial Stats Bar -->
+    <section class="grid grid-cols-2 md:grid-cols-4 gap-6 py-8 border-y mb-16" style="border-color: var(--border-color)">
+      ${d.stats.map((s) => `
+        <div>
+          <div class="font-heading text-3xl md:text-5xl font-normal tracking-tight mb-1" style="color: var(--accent)">
+            ${s.value}
+          </div>
+          <div class="text-xs uppercase font-semibold tracking-wider" style="color: var(--text-muted)">
+            ${s.label}
+          </div>
+        </div>
+      `).join('')}
+    </section>
+
+    <!-- Manifesto Column -->
+    <section id="manifesto" class="grid grid-cols-1 md:grid-cols-12 gap-8 mb-20">
+      <div class="md:col-span-4">
+        <div class="text-xs font-bold uppercase tracking-widest mb-2" style="color: var(--accent)">
+          Guiding Principles
+        </div>
+        <h2 class="text-2xl font-bold">
+          ${d.manifestoTitle}
+        </h2>
+      </div>
+      <div class="md:col-span-8 text-lg md:text-xl leading-relaxed italic border-l-2 pl-6" style="border-color: var(--accent); color: var(--text-muted)">
+        "${d.philosophy}"
+      </div>
+    </section>
+
+    <!-- Monograph Catalog List -->
+    <section id="offerings" class="mb-20">
+      <div class="border-b-2 pb-4 mb-8 flex items-end justify-between" style="border-color: var(--border-color)">
+        <h2 class="text-xs uppercase font-bold tracking-[0.2em]" style="color: var(--accent)">
+          Selected Catalog & Highlights
+        </h2>
+        <span class="text-xs" style="color: var(--text-muted)">Index 01—0${d.projects.length}</span>
+      </div>
+
+      <div class="space-y-6">
+        ${d.projects.map((p, idx) => `
+          <div class="theme-card p-8 flex flex-col md:flex-row md:items-start justify-between gap-6">
+            <div class="md:w-1/4">
+              <span class="text-xs font-mono font-bold" style="color: var(--accent)">CHAPTER 0${idx + 1}</span>
+              <div class="text-xs font-semibold uppercase tracking-wider mt-1" style="color: var(--text-muted)">
+                ${p.category}
+              </div>
+            </div>
+            <div class="md:w-1/2">
+              <h3 class="text-xl md:text-2xl font-bold mb-2">
+                ${p.title}
+              </h3>
+              <p class="text-sm leading-relaxed" style="color: var(--text-muted)">
+                ${p.description}
+              </p>
+            </div>
+            <div class="md:w-1/4 flex flex-wrap gap-1.5 md:justify-end">
+              ${(p.tags || []).map((t) => `
+                <span class="text-[11px] font-medium px-2 py-0.5 rounded border" style="border-color: var(--border-color); color: var(--text-muted)">
+                  ${t}
+                </span>
+              `).join('')}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="pt-8 border-t flex flex-col md:flex-row items-center justify-between gap-4 text-xs" style="border-color: var(--border-color); color: var(--text-muted)">
+      <div>© ${new Date().getFullYear()} ${d.name}. All rights reserved.</div>
+      <a href="mailto:${d.email}" class="hover:underline font-semibold" style="color: var(--accent)">${d.email}</a>
+    </footer>
+  </div>
+  ` : ui.layoutMode === 'tactile' ? `
+  <!-- ==================== NEO-BRUTALIST TACTILE LAYOUT ==================== -->
+  <div class="relative z-10 max-w-5xl mx-auto px-6 py-10 md:py-16">
+    <!-- Navbar -->
+    <header class="theme-card p-4 mb-10 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <span class="font-heading text-xl font-black">${d.name}</span>
+        <span class="badge-status px-2.5 py-0.5 text-xs font-bold uppercase">${d.statusBadge}</span>
+      </div>
+      <div class="flex items-center space-x-4 text-xs font-bold uppercase">
+        <a href="#offerings" class="hover:underline">Catalog</a>
+        <a href="mailto:${d.email}" class="btn-primary px-3 py-1.5 text-xs font-bold">${d.ctaSecondary}</a>
+      </div>
+    </header>
+
+    <!-- Tactile Hero -->
+    <section class="theme-card p-8 md:p-12 mb-10">
+      <div class="badge-category inline-block px-3 py-1 text-xs font-black uppercase mb-4">
+        ${d.categoryBadge}
+      </div>
+      <h1 class="text-3xl md:text-5xl font-black leading-tight mb-6">
+        ${d.headline}
+      </h1>
+      <p class="text-base md:text-lg font-medium leading-relaxed mb-8" style="color: var(--text-muted)">
+        ${d.tagline}
+      </p>
+      <div class="flex flex-wrap gap-4">
+        <a href="#offerings" class="btn-primary px-6 py-3.5 text-sm font-black uppercase tracking-wider">
+          ${d.ctaPrimary} →
+        </a>
+        <a href="mailto:${d.email}" class="btn-secondary px-6 py-3.5 text-sm font-bold uppercase">
+          ${d.ctaSecondary}
+        </a>
+      </div>
+    </section>
+
+    <!-- Tactile Stats Grid -->
+    <section class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
+      ${d.stats.map((s) => `
+        <div class="theme-card p-5 text-center">
+          <div class="font-heading text-3xl font-black mb-1" style="color: var(--accent)">
+            ${s.value}
+          </div>
+          <div class="text-xs font-bold uppercase tracking-wider" style="color: var(--text-muted)">
+            ${s.label}
+          </div>
+        </div>
+      `).join('')}
+    </section>
+
+    <!-- Tactile Offerings Grid -->
+    <section id="offerings" class="mb-10">
+      <div class="flex items-center justify-between mb-6">
+        <h2 class="text-xl md:text-2xl font-black uppercase">Verified Capabilities</h2>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        ${d.projects.map((p) => `
+          <div class="theme-card p-6 flex flex-col justify-between">
+            <div>
+              <span class="text-xs font-black uppercase tracking-wider" style="color: var(--accent)">${p.category}</span>
+              <h3 class="text-lg font-black mt-2 mb-3">${p.title}</h3>
+              <p class="text-sm font-medium leading-relaxed mb-6" style="color: var(--text-muted)">${p.description}</p>
+            </div>
+            <div class="flex flex-wrap gap-1.5 pt-4 border-t-2" style="border-color: var(--border-color)">
+              ${(p.tags || []).map((t) => `
+                <span class="text-[11px] font-bold px-2 py-0.5 rounded border" style="background: var(--bg-primary); border-color: var(--border-color)">
+                  #${t}
+                </span>
+              `).join('')}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </section>
+
+    <!-- Manifesto Card -->
+    <section class="theme-card p-8 mb-10">
+      <div class="text-xs font-black uppercase tracking-widest mb-2" style="color: var(--accent)">${d.headerTag}</div>
+      <h3 class="text-xl font-black mb-3">${d.manifestoTitle}</h3>
+      <p class="text-base font-medium leading-relaxed" style="color: var(--text-muted)">${d.philosophy}</p>
+    </section>
+
+    <!-- Footer -->
+    <footer class="theme-card p-6 flex flex-col md:flex-row items-center justify-between gap-4 text-xs font-bold">
+      <div>© ${new Date().getFullYear()} ${d.name}</div>
+      <a href="mailto:${d.email}" class="underline">${d.email}</a>
+    </footer>
+  </div>
+  ` : `
+  <!-- ==================== MODULAR BENTO GRID LAYOUT ==================== -->
   <div class="relative z-10 max-w-6xl mx-auto px-6 py-10 md:py-16">
     <!-- Navigation -->
     <header class="flex items-center justify-between pb-8 border-b mb-12" style="border-color: var(--border-color)">
@@ -1044,6 +1373,7 @@ export function renderDynamicAestheticPortfolio(data, aesthetic = {}) {
       </div>
     </footer>
   </div>
+  `}
 
   <script>
     lucide.createIcons();

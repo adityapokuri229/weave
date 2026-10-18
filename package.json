@@ -16,7 +16,10 @@
     "dist": "node scripts/build-ota.js && electron-builder",
     "dist:dir": "node scripts/build-ota.js && electron-builder --dir",
     "test:agent": "node src/test-agent.js",
+    "test:nlp": "node src/nlp/test-nlp.js",
+    "test:swiggy": "node src/concierge/swiggy/test-swiggy.js",
     "auth": "node src/auth.js",
+    "auth:swiggy": "node scripts/auth-swiggy.js",
     "bundle": "git archive --format=zip --output=weave.zip HEAD"
   },
   "keywords": [

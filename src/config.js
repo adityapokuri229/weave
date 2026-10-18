@@ -279,7 +279,52 @@ export const CONFIG = {
   // Direct Gemini API
   geminiApiKey: process.env.GEMINI_API_KEY || '',
   geminiModel: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
+
+  // Fast Router / Custom Open-Weights Model
+  routerBaseUrl: process.env.ROUTER_BASE_URL || 'https://openrouter.ai/api/v1',
+  routerApiKey: process.env.ROUTER_API_KEY || '',
+  routerModel: process.env.ROUTER_MODEL || 'openrouter/free',
 };
+
+/**
+ * Retrieves the user's primary Gmail address from the connected Google Account (.credentials.json).
+ * Automatically syncs CONFIG.ownerEmail so it is always current.
+ */
+export function getConnectedUserEmail() {
+  const candidateDirs = [
+    getWritableDataDir(),
+    ROOT_DIR,
+    path.join(os.homedir(), '.weave'),
+  ];
+  for (const dir of candidateDirs) {
+    if (!dir) continue;
+    const credPath = path.join(dir, '.credentials.json');
+    if (fs.existsSync(credPath)) {
+      try {
+        const data = JSON.parse(fs.readFileSync(credPath, 'utf8'));
+        if (data?.email && typeof data.email === 'string' && data.email.includes('@')) {
+          const email = data.email.trim();
+          CONFIG.ownerEmail = email;
+          return email;
+        }
+      } catch {}
+    }
+  }
+  if (CONFIG.ownerEmail && typeof CONFIG.ownerEmail === 'string' && CONFIG.ownerEmail.includes('@')) {
+    return CONFIG.ownerEmail.trim();
+  }
+  const envEmail = (process.env.OWNER_EMAIL || '').trim();
+  if (envEmail && envEmail.includes('@')) {
+    CONFIG.ownerEmail = envEmail;
+    return envEmail;
+  }
+  return null;
+}
+
+// Ensure CONFIG.ownerEmail is populated immediately from connected Google account
+try {
+  getConnectedUserEmail();
+} catch {}
 
 /**
  * Automatically scans the user's Master Directory (if set) for project folders.
@@ -694,7 +739,7 @@ export function resolveProjectAndTask(rawTaskText, jid = null) {
     const boundAlias = state.groupBindings[jid];
     if (!boundAlias || !state.projects[boundAlias]) {
       const err = new Error(
-        `🔒 This WhatsApp group is not linked to a project yet.\nAsk the owner to link it using: *${CONFIG.triggerPrefix} /bind <project-name>*`
+        `🔒 This WhatsApp group is not connected to a project yet.\nAsk the owner to connect one by saying: *${CONFIG.triggerPrefix} switch to <project-name>* (or *${CONFIG.triggerPrefix} what projects do we have?*)`
       );
       err.code = 'UNBOUND_GROUP';
       throw err;

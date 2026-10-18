@@ -3,7 +3,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { CONFIG, DATA_DIR, loadProjectsState, saveProjectsState, isPathWithinMasterDir } from './config.js';
+import { CONFIG, DATA_DIR, loadProjectsState, saveProjectsState, isPathWithinMasterDir, getConnectedUserEmail } from './config.js';
 import { geminiClient } from './gemini-client.js';
 
 const __agentDir = path.dirname(fileURLToPath(import.meta.url));
@@ -785,13 +785,26 @@ export async function runAntigravityTask({
         ].join('\n')
       : null;
 
-  const ownerEmail = CONFIG.ownerEmail || '';
+  const connectedGmail = getConnectedUserEmail() || CONFIG.ownerEmail || '';
+  const ownerEmail = connectedGmail;
+
+  const userGmailDirectives = connectedGmail
+    ? [
+        `USER GMAIL IDENTITY (RETRIEVED FROM CONNECTED GOOGLE ACCOUNT):`,
+        `- The user's registered/connected Google account email is: "${connectedGmail}".`,
+        `- Whenever the user mentions "me", "myself", "to me", "my email", "email me", or refers to him/herself, ALWAYS use "${connectedGmail}" as their email address!`,
+        `- NEVER ask the user "what is your email address?". You already know their email is "${connectedGmail}".`,
+        `- When asked to email a project, file, or conversation summary to "me", use "${connectedGmail}".`,
+      ].join('\n')
+    : null;
+
   const messagingInstructions = ownerAllowedToMessage
     ? [
         `OWNER CAPABILITIES: This request is from the Bot Owner.`,
         mentionedJids.length > 0
           ? `- Mentioned Contact JID(s) in this message: ${mentionedJids.join(', ')}`
           : null,
+        userGmailDirectives,
         `- To send a WhatsApp text message/DM to a contact, include a line at the end of your response:`,
         `  [SEND_WHATSAPP: <target_jid_or_name_or_number> | <message_to_send>]`,
         `- To send a local file from this PC (e.g. from the home directory, ~/Documents, ~/Downloads, ~/Desktop, or the project folder) to the current chat or to a specific contact, locate the exact file path and include a line at the end of your response:`,
@@ -828,6 +841,7 @@ export async function runAntigravityTask({
         `  * The bot will acknowledge with a silent checkmark emoji reaction in WhatsApp so group chats remain clean, private, and uncluttered.`,
         `- To draft or revise an EMAIL (with or without attachments, either using the attached WhatsApp file "${filePath || ''}" or any local file), draft a clear, professional Subject and Body and include a block at the end of your response in this exact format so the owner can preview and confirm it before sending:`,
         `  [DRAFT_EMAIL: recipient@example.com | Subject Line Here | /path/to/attachment1, /path/to/attachment2 (or NONE) | Full drafted email body here...]`,
+        `  * Note: The email body must end with the signature line "Sent by Weave" at the very bottom.`,
         ownerEmail
           ? `  (When the owner says "mail this to me", use "${ownerEmail}" as the recipient)`
           : null,
@@ -842,7 +856,7 @@ export async function runAntigravityTask({
       ]
         .filter(Boolean)
         .join('\n')
-    : `SECURITY RULE: This user is NOT the bot owner. You are strictly isolated to "${projectDir}". You MUST NEVER read, list, modify, or send any files outside "${projectDir}", and if they ask you to message a contact, send emails, share live location, manage GitHub collaborators, or send local PC files, politely refuse.`;
+    : `SECURITY RULE: This user is running in a shared or group workspace. You are strictly isolated to "${projectDir}". You MUST NEVER read, list, modify, or send any files outside "${projectDir}". If the user asks to email a project summary, code, or conversation summary to "me", use their connected Gmail "${connectedGmail || 'the registered user'}".`;
 
   const systemWrapperPrompt = [
     `You are being invoked remotely via WhatsApp to perform a task. Default project workspace: "${projectDir}".`,
@@ -864,7 +878,7 @@ export async function runAntigravityTask({
     `WEBSITE & UI DESIGN WITH GOOGLE STITCH MCP & NETLIFY:`,
     `When asked to create, design, or deploy any website, portfolio, hackathon site, or landing page:`,
     `- Connect to Google Stitch MCP (https://stitch.googleapis.com/mcp) or invoke the portfolio orchestrator ("src/portfolio/portfolioOrchestrator.js").`,
-    `- Explore multiple visual design philosophies (e.g. Option 1: Obsidian Bento Grid, Option 2: Swiss Editorial, Option 3: Neo-Brutalist).`,
+    `- Formulate 3 completely dynamic visual design philosophies organically invented for this specific domain (ZERO presets or canned templates).`,
     `- Deploy to Netlify via Netlify Drop ("netlify deploy --dir . --prod --allow-anonymous --no-build") or provide the preview.`,
     `- For each design variant, capture a visual screenshot and output [SEND_FILE: HERE | <path_to_screenshot>] so the user sees all Google Stitch designs in WhatsApp!`,
     `- Include the live link, preview password, and prompt the user to choose their preferred option or dictate design changes in WhatsApp.`,

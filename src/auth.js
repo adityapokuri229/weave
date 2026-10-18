@@ -24,7 +24,12 @@ const OAUTH_SCOPES = [
   'https://www.googleapis.com/auth/userinfo.email',
   'https://www.googleapis.com/auth/userinfo.profile',
   'https://www.googleapis.com/auth/cloud-platform',
+  'https://www.googleapis.com/auth/gmail.send',
+  'https://mail.google.com/',
+  'https://www.googleapis.com/auth/calendar',
+  'https://www.googleapis.com/auth/calendar.events',
 ];
+
 
 class GoogleAuthManager {
   constructor() {

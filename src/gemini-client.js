@@ -2,8 +2,8 @@ import { googleAuth } from './auth.js';
 
 const GEMINI_API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
 const CLOUDCODE_HOSTS = [
-  'https://daily-cloudcode-pa.googleapis.com',
   'https://cloudcode-pa.googleapis.com',
+  'https://daily-cloudcode-pa.googleapis.com',
 ];
 
 /**
@@ -23,6 +23,19 @@ export class GeminiClient {
     if (this.cachedProject && this.cachedHost) {
       return { host: this.cachedHost, project: this.cachedProject };
     }
+
+    const cacheFile = '/tmp/weave-gemini-cloudcode.json';
+    try {
+      const fs = await import('fs');
+      if (fs.existsSync(cacheFile)) {
+        const cached = JSON.parse(fs.readFileSync(cacheFile, 'utf8'));
+        if (cached?.host && cached?.project) {
+          this.cachedHost = cached.host;
+          this.cachedProject = cached.project;
+          return { host: cached.host, project: cached.project };
+        }
+      }
+    } catch {}
 
     const metadataPayloads = [
       { ideType: 'ANTIGRAVITY', platform: 'PLATFORM_UNSPECIFIED', pluginType: 'GEMINI' },
@@ -82,6 +95,10 @@ export class GeminiClient {
             if (proj) {
               this.cachedHost = host;
               this.cachedProject = proj;
+              try {
+                const fs = await import('fs');
+                fs.writeFileSync('/tmp/weave-gemini-cloudcode.json', JSON.stringify({ host, project: proj }));
+              } catch {}
               return { host, project: proj };
             }
           }
@@ -136,7 +153,15 @@ export class GeminiClient {
       return { text, raw: data };
     }
 
-    // 2. Google OAuth 2.0 PKCE Token (Cloud Code Assist / Antigravity endpoint)
+    // 2. Direct Antigravity CLI (agy) - instant, native authenticated session
+    try {
+      const agyRes = await this.generateViaAgy(prompt, systemInstruction);
+      if (agyRes?.text) return agyRes;
+    } catch {
+      // Fall through to OAuth endpoints
+    }
+
+    // 3. Google OAuth 2.0 PKCE Token (Cloud Code Assist / Antigravity endpoint)
     if (googleAuth.isAuthenticated()) {
       const accessToken = await googleAuth.getValidAccessToken();
       const { host, project } = await this.resolveCloudCodeProject(accessToken);
@@ -256,6 +281,14 @@ export class GeminiClient {
       });
 
       child.on('close', (code) => {
+        if (!responseText && output && output.trim().startsWith('{')) {
+          try {
+            const evt = JSON.parse(output.trim());
+            if (evt.event === 'result') {
+              responseText = evt.result?.response || evt.response || '';
+            }
+          } catch {}
+        }
         if (responseText) {
           resolve({ text: responseText.trim(), raw: { source: 'agy' } });
         } else {
