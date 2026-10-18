@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v2.3.0] - 2026-10-18
+
+### 🔐 Project-Scoped Permission Architecture, Desktop UI Manager & Unauthorized Access Gating
+
+#### 1. Per-Project Permission Isolation (`src/config.js`)
+- **Permissions Are Strictly Per-Project**:
+  - Access is determined strictly by the active project of the chat. Each project maintains its own isolated list of allowed contacts (phone numbers in E.164 international format).
+  - Being granted access to one project never confers permission to any other project.
+  - By default, only the owner has access to any project.
+  - Automatic migration cleans and normalizes legacy group-nested structures to per-project phone lists.
+- **Phone Number Normalization**:
+  - `normalizePhoneNumber` automatically normalizes phone numbers without country code using India (`+91`) as the default, formatting every saved number to standard international format (`+91XXXXXXXXXX`).
+
+#### 2. Desktop App Permission Manager (`electron/renderer/app.js`, `electron/main.js`, `electron/preload.cjs`, `electron/preload.js`)
+- **Dedicated Permission Manager Under Every Project Card**:
+  - Added a dedicated permission manager directly under each project card in the Desktop UI.
+  - Input field with default `+91` prefix allowing owners to type phone numbers without country codes and click `+ Add` or hit Enter.
+  - Displays all authorized phone numbers for that project with dynamic removal buttons (`✕`).
+  - Owner badge (`👑 Owner (Full Access)`) is prominently displayed as the default authorized user.
+
+#### 3. View-Only Chat Permissions (`src/bot.js`, `src/autopilot/guidelines.js`)
+- **List Allowed Contacts by Phone Number**:
+  - Asking *"who has perms?"*, *"show permissions"*, or similar queries replies with the list of allowed contacts for the active project, shown by phone number.
+- **Immutable Chat Permissions**:
+  - Permissions can never be added, edited, or removed from WhatsApp chat. Any request to grant or revoke permissions in chat is met with: *"Permissions can only be managed from the desktop app."*
+
+#### 4. Owner-Only Project Management (`src/bot.js`)
+- **Strict Guard on Project Switching & Creation**:
+  - Only the owner can switch a group's active project (`switch_project`, `/bind`, `/project`) or create new projects (`create_project`).
+  - Any non-owner attempt is immediately rejected with: *"Only the owner can do that."*
+
+#### 5. Instant Unauthorized User Gating (`src/bot.js`)
+- **Strict Gating for Non-Allowed Senders**:
+  - If someone who is not on the active project's permission list pings or mentions the agent, the bot replies: *"You don't have permission to use this project."*
+  - The message is dropped immediately: no intent classification, routing, audio transcription, or model calls are executed.
+
+---
+
 ## [v2.2.0] - 2026-10-18
 
 ### 🧠 Pure Natural Language Architecture, DM Gating & Session Self-Healing

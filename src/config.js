@@ -361,8 +361,39 @@ export function loadProjectsState() {
     saved.conversations = saved.conversations || {};
     saved.autopilot = saved.autopilot ?? true;
     saved.friends = Array.isArray(saved.friends) ? saved.friends : [];
-    saved.projectAccess = saved.projectAccess || {};
     saved.groupNames = saved.groupNames || {};
+
+    // Ensure projectAccess is strictly per-project: alias (lowercase) -> array of normalized phone numbers (+<country><digits>)
+    if (saved.projectAccess && typeof saved.projectAccess === 'object') {
+      const migratedAccess = {};
+      let needsSave = false;
+      for (const [key, val] of Object.entries(saved.projectAccess)) {
+        if (Array.isArray(val)) {
+          migratedAccess[key.toLowerCase()] = val.map(normalizePhoneNumber).filter(Boolean);
+        } else if (val && typeof val === 'object') {
+          // Legacy format: groupJid -> { projectAlias: [numbers] }
+          needsSave = true;
+          for (const [alias, list] of Object.entries(val)) {
+            const lowerAlias = alias.toLowerCase();
+            migratedAccess[lowerAlias] = migratedAccess[lowerAlias] || [];
+            if (Array.isArray(list)) {
+              for (const item of list) {
+                const norm = normalizePhoneNumber(item);
+                if (norm && !migratedAccess[lowerAlias].includes(norm)) {
+                  migratedAccess[lowerAlias].push(norm);
+                }
+              }
+            }
+          }
+        }
+      }
+      saved.projectAccess = migratedAccess;
+      if (needsSave) {
+        atomicWriteJson(PROJECTS_FILE, saved);
+      }
+    } else {
+      saved.projectAccess = {};
+    }
     
     // Validate activeProject still exists; fall back to first available project
     const availableAliases = Object.keys(saved.projects);
@@ -452,88 +483,89 @@ export function removeFriend(nameOrId) {
 }
 
 /**
- * Access Control for Projects per Group:
- * Maintains which users (by phone number, name, or pushName) are granted access to interact
- * with a project in a WhatsApp group.
+ * Normalizes a phone number to full international format (E.164, e.g. +91XXXXXXXXXX).
+ * Default country is India (+91) if entered without country code (e.g. 10 digits).
  */
-export function getProjectAccess(projectAlias, groupJid) {
-  if (!projectAlias || !groupJid) return [];
-  const state = loadProjectsState();
-  const alias = projectAlias.toLowerCase();
-  const group = groupJid.toLowerCase();
-  return state.projectAccess?.[group]?.[alias] || [];
+export function normalizePhoneNumber(input) {
+  if (!input) return null;
+  const raw = String(input).trim().replace(/[\s\-\(\)]/g, '');
+  if (!raw) return null;
+  if (raw.startsWith('+')) {
+    const digits = raw.slice(1).replace(/\D/g, '');
+    return digits.length >= 7 ? `+${digits}` : null;
+  }
+  const digits = raw.replace(/\D/g, '');
+  if (!digits) return null;
+  if (digits.length === 10) {
+    return `+91${digits}`;
+  }
+  if (digits.length === 12 && digits.startsWith('91')) {
+    return `+${digits}`;
+  }
+  if (digits.length > 10) {
+    return `+${digits}`;
+  }
+  return `+91${digits}`;
 }
 
-export function grantProjectAccess(projectAlias, groupJid, userIdentifier) {
-  if (!projectAlias || !groupJid || !userIdentifier) return false;
+/**
+ * Access Control for Projects (Per Project):
+ * Each project has its own list of allowed contacts (phone numbers in E.164 format).
+ * By default, only the owner has permission.
+ */
+export function getProjectAccess(projectAlias) {
+  if (!projectAlias) return [];
   const state = loadProjectsState();
-  const alias = projectAlias.toLowerCase();
-  const group = groupJid.toLowerCase();
-  state.projectAccess = state.projectAccess || {};
-  state.projectAccess[group] = state.projectAccess[group] || {};
-  state.projectAccess[group][alias] = state.projectAccess[group][alias] || [];
+  const alias = String(projectAlias).trim().toLowerCase();
+  const list = state.projectAccess?.[alias];
+  if (Array.isArray(list)) {
+    return list;
+  }
+  return [];
+}
 
-  const cleanUser = String(userIdentifier).trim();
-  const existing = state.projectAccess[group][alias].find(
-    u => u.toLowerCase() === cleanUser.toLowerCase()
-  );
-  if (!existing) {
-    state.projectAccess[group][alias].push(cleanUser);
+export function grantProjectAccess(projectAlias, phoneOrGroup, maybePhone) {
+  const phone = maybePhone || phoneOrGroup;
+  if (!projectAlias || !phone) return false;
+  const normalized = normalizePhoneNumber(phone);
+  if (!normalized) return false;
+
+  const state = loadProjectsState();
+  const alias = String(projectAlias).trim().toLowerCase();
+  state.projectAccess = state.projectAccess || {};
+  state.projectAccess[alias] = Array.isArray(state.projectAccess[alias]) ? state.projectAccess[alias] : [];
+
+  if (!state.projectAccess[alias].includes(normalized)) {
+    state.projectAccess[alias].push(normalized);
     saveProjectsState(state);
     return true;
   }
   return false;
 }
 
-export function revokeProjectAccess(projectAlias, groupJid, userIdentifier) {
-  if (!groupJid || !userIdentifier) return false;
+export function revokeProjectAccess(projectAlias, phoneOrGroup, maybePhone) {
+  const phone = maybePhone || phoneOrGroup;
+  if (!projectAlias || !phone) return false;
   const state = loadProjectsState();
-  const group = groupJid.toLowerCase();
-  if (!state.projectAccess?.[group]) return false;
-
-  const rawClean = String(userIdentifier).replace(/^@/, '').trim().toLowerCase();
-  if (!rawClean) return false;
-
-  // Also check if this identifier corresponds to a registered friend
-  const friends = Array.isArray(state.friends) ? state.friends : [];
-  const matchedFriend = friends.find(
-    f => f.name.toLowerCase() === rawClean || f.github.toLowerCase() === rawClean
-  );
-  const friendName = matchedFriend ? matchedFriend.name.toLowerCase() : null;
-  const friendGithub = matchedFriend ? matchedFriend.github.toLowerCase() : null;
-
-  function matchesUser(u) {
-    const uLow = String(u).trim().toLowerCase();
-    if (uLow === rawClean) return true;
-    if (friendName && uLow === friendName) return true;
-    if (friendGithub && uLow === friendGithub) return true;
-    // Handle cases where "permission" or "access" got accidentally saved into the name
-    if (uLow.startsWith(rawClean) || rawClean.startsWith(uLow)) return true;
+  const alias = String(projectAlias).trim().toLowerCase();
+  if (!state.projectAccess?.[alias] || !Array.isArray(state.projectAccess[alias])) {
     return false;
   }
 
-  let anyRemoved = false;
-  const alias = projectAlias ? projectAlias.toLowerCase() : null;
+  const normalized = normalizePhoneNumber(phone);
+  const rawDigits = String(phone).replace(/\D/g, '');
 
-  // If alias provided and exists in group
-  if (alias && state.projectAccess[group][alias]) {
-    const initialLen = state.projectAccess[group][alias].length;
-    state.projectAccess[group][alias] = state.projectAccess[group][alias].filter(u => !matchesUser(u));
-    if (state.projectAccess[group][alias].length !== initialLen) {
-      anyRemoved = true;
+  const initialLen = state.projectAccess[alias].length;
+  state.projectAccess[alias] = state.projectAccess[alias].filter((num) => {
+    if (normalized && num === normalized) return false;
+    const numDigits = num.replace(/\D/g, '');
+    if (rawDigits && (numDigits === rawDigits || numDigits.endsWith(rawDigits) || rawDigits.endsWith(numDigits))) {
+      return false;
     }
-  } else {
-    // If alias not specified or not in group, sweep all projects in this group
-    for (const p of Object.keys(state.projectAccess[group])) {
-      const initialLen = state.projectAccess[group][p].length;
-      state.projectAccess[group][p] = state.projectAccess[group][p].filter(u => !matchesUser(u));
-      if (state.projectAccess[group][p].length !== initialLen) {
-        anyRemoved = true;
-      }
-    }
-  }
+    return true;
+  });
 
-  if (anyRemoved) {
+  if (state.projectAccess[alias].length !== initialLen) {
     saveProjectsState(state);
     return true;
   }

@@ -39,11 +39,17 @@ contextBridge.exposeInMainWorld('weaveAPI', {
   addFriend: (name, github) => ipcRenderer.invoke('weave:add-friend', { name, github }),
   removeFriend: (nameOrId) => ipcRenderer.invoke('weave:remove-friend', nameOrId),
 
-  // Granular Project Access per Group
-  grantProjectAccess: (projectAlias, groupJid, userIdentifier) =>
-    ipcRenderer.invoke('weave:grant-project-access', { projectAlias, groupJid, userIdentifier }),
-  revokeProjectAccess: (projectAlias, groupJid, userIdentifier) =>
-    ipcRenderer.invoke('weave:revoke-project-access', { projectAlias, groupJid, userIdentifier }),
+  // Project Permissions
+  grantProjectAccess: (projectAlias, phoneOrGroup, maybePhone) =>
+    ipcRenderer.invoke('weave:grant-project-access', {
+      projectAlias,
+      phoneNumber: maybePhone || phoneOrGroup,
+    }),
+  revokeProjectAccess: (projectAlias, phoneOrGroup, maybePhone) =>
+    ipcRenderer.invoke('weave:revoke-project-access', {
+      projectAlias,
+      phoneNumber: maybePhone || phoneOrGroup,
+    }),
 
   // Logs stream
   onLog: (callback) => {

@@ -28,7 +28,7 @@ Your role is to read every incoming message, understand its intent from natural 
      - "current_project": check what project is active in this group right now.
      - "unbind_project": unbind / turn off the active project in this group.
      - "view_access": view or list who has access/permissions to the active project or in this chat ("who has perms", "list perms", "check permissions", "access list", "who can use the agent", "show access").
-     - "manage_access": grant, allow, revoke, or remove a member's access/permissions ("allow Alice from now", "give agent permissions to tinchu", "give Bob access", "revoke Charlie access", "remove tinchu perms", "revoke tinchus perms"). (Requires accessAction: "grant" | "revoke", and targetUser: string).
+     - "manage_access": any request to add, edit, grant, revoke, or remove permissions/access ("allow Alice from now", "give agent permissions to tinchu", "give Bob access", "revoke Charlie access", "remove tinchu perms", "add phone to perms"). Note: permissions can never be changed from chat; routing this lets the agent inform the user they can only be managed from the desktop app.
    - Examples:
      - "show my projects" -> system_command (command: "list_projects")
      - "create a new project called web-store" -> system_command (command: "create_project", projectName: "web-store")
