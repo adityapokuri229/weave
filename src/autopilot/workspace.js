@@ -158,7 +158,7 @@ export function getGroupProjectStatus(groupJid) {
 export function listProjectsForGroup(groupJid) {
   const masterDir = getValidatedMasterDir();
   const state = loadProjectsState();
-  const boundAlias = state.groupBindings?.[groupJid] || null;
+  const boundAlias = state.groupBindings?.[groupJid] || (!groupJid?.endsWith('@g.us') ? state.activeProject : null) || null;
 
   // Scan masterDir subdirectories
   let dirEntries = [];

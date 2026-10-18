@@ -33,12 +33,17 @@ contextBridge.exposeInMainWorld('weaveAPI', {
   toggleAutopilot: (enabled) => ipcRenderer.invoke('weave:toggle-autopilot', enabled),
   pickMasterDir: () => ipcRenderer.invoke('weave:pick-master-dir'),
   setMasterDir: (dirPath) => ipcRenderer.invoke('weave:set-master-dir', dirPath),
-  resetState: (preserveMasterDir = true) => ipcRenderer.invoke('weave:reset-state', { preserveMasterDir }),
 
   // Friends & Collaborators Directory
   getFriends: () => ipcRenderer.invoke('weave:get-friends'),
   addFriend: (name, github) => ipcRenderer.invoke('weave:add-friend', { name, github }),
   removeFriend: (nameOrId) => ipcRenderer.invoke('weave:remove-friend', nameOrId),
+
+  // Granular Project Access per Group
+  grantProjectAccess: (projectAlias, groupJid, userIdentifier) =>
+    ipcRenderer.invoke('weave:grant-project-access', { projectAlias, groupJid, userIdentifier }),
+  revokeProjectAccess: (projectAlias, groupJid, userIdentifier) =>
+    ipcRenderer.invoke('weave:revoke-project-access', { projectAlias, groupJid, userIdentifier }),
 
   // Logs stream
   onLog: (callback) => {
@@ -54,5 +59,10 @@ contextBridge.exposeInMainWorld('weaveAPI', {
   checkOtaUpdate: (force = false) => ipcRenderer.invoke('weave:ota-update', force),
   onOtaUpdated: (callback) => {
     ipcRenderer.on('weave:ota-updated', (_event, data) => callback(data));
+  },
+
+  // Live State & Projects Update stream
+  onProjectsUpdate: (callback) => {
+    ipcRenderer.on('weave:projects-update', (_event, data) => callback(data));
   },
 });

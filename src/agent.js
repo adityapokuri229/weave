@@ -861,6 +861,13 @@ export async function runAntigravityTask({
         ].join('\n')
       : null,
     messagingInstructions,
+    `WEBSITE & UI DESIGN WITH GOOGLE STITCH MCP & NETLIFY:`,
+    `When asked to create, design, or deploy any website, portfolio, hackathon site, or landing page:`,
+    `- Connect to Google Stitch MCP (https://stitch.googleapis.com/mcp) or invoke the portfolio orchestrator ("src/portfolio/portfolioOrchestrator.js").`,
+    `- Explore multiple visual design philosophies (e.g. Option 1: Obsidian Bento Grid, Option 2: Swiss Editorial, Option 3: Neo-Brutalist).`,
+    `- Deploy to Netlify via Netlify Drop ("netlify deploy --dir . --prod --allow-anonymous --no-build") or provide the preview.`,
+    `- For each design variant, capture a visual screenshot and output [SEND_FILE: HERE | <path_to_screenshot>] so the user sees all Google Stitch designs in WhatsApp!`,
+    `- Include the live link, preview password, and prompt the user to choose their preferred option or dictate design changes in WhatsApp.`,
     `Complete the requested task and provide a brief, direct response (1-2 short sentences max unless the user explicitly asks for details). Do NOT output robotic status reports, bulleted change summaries, or filler phrases.`,
     ``,
     `User Task: ${taskPrompt}`,

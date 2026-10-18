@@ -29,6 +29,16 @@ export class GeminiClient {
       { ideType: 'IDE_UNSPECIFIED', platform: 'PLATFORM_UNSPECIFIED', pluginType: 'GEMINI' },
     ];
 
+    function extractProjectId(companion) {
+      if (!companion) return null;
+      if (typeof companion === 'string') return companion.trim() || null;
+      if (typeof companion === 'object') {
+        const id = companion.id || companion.projectId || companion.name;
+        return typeof id === 'string' && id.trim() ? id.trim() : null;
+      }
+      return null;
+    }
+
     for (const host of CLOUDCODE_HOSTS) {
       for (const metadata of metadataPayloads) {
         try {
@@ -43,10 +53,11 @@ export class GeminiClient {
           });
           if (!loadRes.ok) continue;
           const loadData = await loadRes.json();
-          if (loadData.cloudaicompanionProject) {
+          const companionId = extractProjectId(loadData.cloudaicompanionProject);
+          if (companionId) {
             this.cachedHost = host;
-            this.cachedProject = loadData.cloudaicompanionProject;
-            return { host, project: this.cachedProject };
+            this.cachedProject = companionId;
+            return { host, project: companionId };
           }
 
           const tierId =
@@ -64,10 +75,10 @@ export class GeminiClient {
           });
           if (onboardRes.ok) {
             const onboardData = await onboardRes.json();
-            const proj =
-              onboardData.response?.cloudaicompanionProject?.id ||
+            const proj = extractProjectId(
               onboardData.response?.cloudaicompanionProject ||
-              onboardData.cloudaicompanionProject;
+              onboardData.cloudaicompanionProject
+            );
             if (proj) {
               this.cachedHost = host;
               this.cachedProject = proj;
@@ -140,55 +151,128 @@ export class GeminiClient {
 
       const cloudCodePayload = {
         model: this.model,
-        ...(project ? { project } : {}),
+        ...(project && typeof project === 'string' ? { project } : {}),
         request: requestBody,
       };
 
-      const ccRes = await fetch(`${host}/v1internal:generateContent`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-          'User-Agent': 'antigravity/2.0.0',
-        },
-        body: JSON.stringify(cloudCodePayload),
-      });
-
-      if (ccRes.ok) {
-        const ccData = await ccRes.json();
-        const inner = ccData.response || ccData;
-        const text =
-          inner.candidates?.[0]?.content?.parts?.map((p) => p.text).join('') || '';
-        return { text, raw: ccData };
-      }
-
-      // Fallback: try generativelanguage.googleapis.com with OAuth Bearer token
-      const glRes = await fetch(
-        `${GEMINI_API_BASE}/models/${this.model}:generateContent`,
-        {
+      try {
+        const ccRes = await fetch(`${host}/v1internal:generateContent`, {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${accessToken}`,
             'Content-Type': 'application/json',
+            'User-Agent': 'antigravity/2.0.0',
           },
-          body: JSON.stringify(requestBody),
+          body: JSON.stringify(cloudCodePayload),
+        });
+
+        if (ccRes.ok) {
+          const ccData = await ccRes.json();
+          const inner = ccData.response || ccData;
+          const text =
+            inner.candidates?.[0]?.content?.parts?.map((p) => p.text).join('') || '';
+          return { text, raw: ccData };
         }
-      );
 
-      if (glRes.ok) {
-        const glData = await glRes.json();
-        const text =
-          glData.candidates?.[0]?.content?.parts?.map((p) => p.text).join('') || '';
-        return { text, raw: glData };
+        // Fallback: try generativelanguage.googleapis.com with OAuth Bearer token
+        const glRes = await fetch(
+          `${GEMINI_API_BASE}/models/${this.model}:generateContent`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${accessToken}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestBody),
+          }
+        );
+
+        if (glRes.ok) {
+          const glData = await glRes.json();
+          const text =
+            glData.candidates?.[0]?.content?.parts?.map((p) => p.text).join('') || '';
+          return { text, raw: glData };
+        }
+      } catch {
+        // Fall through to headless agy CLI
       }
+    }
 
-      const ccErr = await ccRes.text().catch(() => '');
-      throw new Error(`Gemini OAuth API error (${ccRes.status}): ${ccErr.slice(0, 300)}`);
+    // 3. Fallback: local Antigravity CLI (agy)
+    try {
+      const agyRes = await this.generateViaAgy(prompt, systemInstruction);
+      if (agyRes?.text) return agyRes;
+    } catch {
+      // ignore
     }
 
     throw new Error(
-      'Gemini authentication missing. Please sign in with Google (Step 2) or provide GEMINI_API_KEY in .env.'
+      'Gemini authentication missing. Please sign in with Google (Step 2), provide GEMINI_API_KEY in .env, or install the agy CLI.'
     );
+  }
+
+  /**
+   * Generates content using local Antigravity CLI as headless fallback.
+   */
+  async generateViaAgy(prompt, systemInstruction = null) {
+    const { spawn } = await import('child_process');
+    return new Promise((resolve, reject) => {
+      const agyBin = process.env.AGY_BIN || 'agy';
+      const child = spawn(
+        agyBin,
+        [
+          '--input-format',
+          'stream-json',
+          '--output-format',
+          'stream-json',
+          '--dangerously-skip-permissions',
+          '--effort',
+          'low',
+          '-p=',
+        ],
+        {
+          cwd: process.cwd(),
+          env: { ...process.env, PAGER: 'cat' },
+          stdio: ['pipe', 'pipe', 'pipe'],
+        }
+      );
+
+      let output = '';
+      let responseText = '';
+
+      child.stdout.on('data', (chunk) => {
+        output += chunk.toString();
+        const lines = output.split('\n');
+        output = lines.pop();
+        for (const line of lines) {
+          if (!line.trim().startsWith('{')) continue;
+          try {
+            const evt = JSON.parse(line.trim());
+            if (evt.event === 'result') {
+              responseText = evt.result?.response || evt.response || '';
+            }
+          } catch {}
+        }
+      });
+
+      child.on('close', (code) => {
+        if (responseText) {
+          resolve({ text: responseText.trim(), raw: { source: 'agy' } });
+        } else {
+          reject(new Error(`agy CLI exited with code ${code}`));
+        }
+      });
+
+      child.on('error', (err) => reject(err));
+
+      const fullPrompt = systemInstruction ? `${systemInstruction}\n\n${prompt}` : prompt;
+      const payload = JSON.stringify({
+        event: 'user',
+        message: { role: 'user', content: fullPrompt },
+      });
+      child.stdin.write(`${payload}\n`);
+      child.stdin.end();
+    });
   }
 }
 

@@ -96,11 +96,28 @@ export async function routeAutopilotIntent({ prompt, groupJid, recentHistory = [
     // SECTION 4 & 5 ENFORCEMENT:
     // 1. If laptop_task requested but no project is active in this group:
     if (parsed.intent === 'laptop_task' && !workspaceContext.boundProject) {
-      if (workspaceContext.availableProjects.length > 0) {
+      const avail = workspaceContext.availableProjects || [];
+      // If there's only 1 project available, automatically bind/use it!
+      if (avail.length === 1) {
+        return {
+          ...parsed,
+          autoActivateProject: avail[0],
+        };
+      }
+      // If the user's prompt explicitly mentions one of the available projects, use it!
+      const lowerPrompt = prompt.toLowerCase();
+      const mentioned = avail.find(p => lowerPrompt.includes(p.toLowerCase()));
+      if (mentioned) {
+        return {
+          ...parsed,
+          autoActivateProject: mentioned,
+        };
+      }
+      if (avail.length > 1) {
         return {
           intent: 'choice_needed',
           choiceQuestion: 'no active project in this group rn. which one should we work on?',
-          choiceOptions: workspaceContext.availableProjects.slice(0, 8),
+          choiceOptions: avail.slice(0, 8),
           choiceContext: 'activate_project_for_task',
           originalTask: prompt,
         };
@@ -109,11 +126,19 @@ export async function routeAutopilotIntent({ prompt, groupJid, recentHistory = [
 
     // 2. If switch_project requested without specifying project name:
     if (parsed.intent === 'system_command' && parsed.systemCommand === 'switch_project' && !parsed.projectName) {
-      if (workspaceContext.availableProjects.length > 0) {
+      const candidateProjects = (workspaceContext.availableProjects || []).filter(p => p !== workspaceContext.boundProject);
+      if (candidateProjects.length === 1) {
+        return {
+          intent: 'system_command',
+          systemCommand: 'switch_project',
+          projectName: candidateProjects[0],
+        };
+      }
+      if (candidateProjects.length > 1) {
         return {
           intent: 'choice_needed',
           choiceQuestion: 'which project do you want to switch to?',
-          choiceOptions: workspaceContext.availableProjects.filter(p => p !== workspaceContext.boundProject).slice(0, 8),
+          choiceOptions: candidateProjects.slice(0, 8),
           choiceContext: 'switch_project',
           originalTask: prompt,
         };

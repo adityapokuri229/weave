@@ -228,8 +228,9 @@ ipcMain.handle('weave:get-status', async () => {
     masterDir: state.masterDir || '',
     groupBindings: state.groupBindings,
     initializedGroups: configMod.getAllInitializedGroups(),
-    autopilot: Boolean(state.autopilot),
     friends: state.friends || [],
+    projectAccess: state.projectAccess || {},
+    groupNames: state.groupNames || {},
   };
 });
 
@@ -369,11 +370,8 @@ ipcMain.handle('weave:bind-group', async (_event, { groupJid, alias }) => {
   return { success: true, groupBindings: state.groupBindings };
 });
 
-ipcMain.handle('weave:toggle-autopilot', async (_event, enabled) => {
-  const state = configMod.loadProjectsState();
-  state.autopilot = typeof enabled === 'boolean' ? enabled : !state.autopilot;
-  configMod.saveProjectsState(state);
-  return { success: true, autopilot: state.autopilot };
+ipcMain.handle('weave:toggle-autopilot', async () => {
+  return { success: true, nativeAutonomous: true };
 });
 
 ipcMain.handle('weave:reset-state', async (_event, { preserveMasterDir = true } = {}) => {
@@ -403,6 +401,24 @@ ipcMain.handle('weave:remove-friend', async (_event, nameOrId) => {
   try {
     const removed = configMod.removeFriend(nameOrId);
     return { success: removed, friends: configMod.getFriends() };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('weave:grant-project-access', async (_event, { projectAlias, groupJid, userIdentifier }) => {
+  try {
+    const ok = configMod.grantProjectAccess(projectAlias, groupJid, userIdentifier);
+    return { success: ok, accessList: configMod.getProjectAccess(projectAlias, groupJid) };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('weave:revoke-project-access', async (_event, { projectAlias, groupJid, userIdentifier }) => {
+  try {
+    const ok = configMod.revokeProjectAccess(projectAlias, groupJid, userIdentifier);
+    return { success: ok, accessList: configMod.getProjectAccess(projectAlias, groupJid) };
   } catch (err) {
     return { success: false, error: err.message };
   }
@@ -480,6 +496,12 @@ app.whenReady().then(async () => {
     }
     sendToRenderer('weave:status-update', data);
   });
+
+  if (configMod?.configEvents) {
+    configMod.configEvents.on('projects-updated', (state) => {
+      sendToRenderer('weave:projects-update', state);
+    });
+  }
 
   // 3. Create window from active runtime directory
   createWindow(activeRuntimeDir);

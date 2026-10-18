@@ -1,8 +1,11 @@
 import dotenv from 'dotenv';
+import { EventEmitter } from 'events';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
+
+export const configEvents = new EventEmitter();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -341,6 +344,8 @@ export function loadProjectsState() {
       conversations: {},
       autopilot: true,
       friends: [],
+      projectAccess: {},
+      groupNames: {},
     };
     atomicWriteJson(PROJECTS_FILE, initial);
     return initial;
@@ -356,6 +361,8 @@ export function loadProjectsState() {
     saved.conversations = saved.conversations || {};
     saved.autopilot = saved.autopilot ?? true;
     saved.friends = Array.isArray(saved.friends) ? saved.friends : [];
+    saved.projectAccess = saved.projectAccess || {};
+    saved.groupNames = saved.groupNames || {};
     
     // Validate activeProject still exists; fall back to first available project
     const availableAliases = Object.keys(saved.projects);
@@ -374,6 +381,8 @@ export function loadProjectsState() {
       conversations: {},
       autopilot: true,
       friends: [],
+      projectAccess: {},
+      groupNames: {},
     };
   }
 }
@@ -443,6 +452,78 @@ export function removeFriend(nameOrId) {
 }
 
 /**
+ * Access Control for Projects per Group:
+ * Maintains which users (by phone number, name, or pushName) are granted access to interact
+ * with a project in a WhatsApp group.
+ */
+export function getProjectAccess(projectAlias, groupJid) {
+  if (!projectAlias || !groupJid) return [];
+  const state = loadProjectsState();
+  const alias = projectAlias.toLowerCase();
+  const group = groupJid.toLowerCase();
+  return state.projectAccess?.[group]?.[alias] || [];
+}
+
+export function grantProjectAccess(projectAlias, groupJid, userIdentifier) {
+  if (!projectAlias || !groupJid || !userIdentifier) return false;
+  const state = loadProjectsState();
+  const alias = projectAlias.toLowerCase();
+  const group = groupJid.toLowerCase();
+  state.projectAccess = state.projectAccess || {};
+  state.projectAccess[group] = state.projectAccess[group] || {};
+  state.projectAccess[group][alias] = state.projectAccess[group][alias] || [];
+
+  const cleanUser = String(userIdentifier).trim();
+  const existing = state.projectAccess[group][alias].find(
+    u => u.toLowerCase() === cleanUser.toLowerCase()
+  );
+  if (!existing) {
+    state.projectAccess[group][alias].push(cleanUser);
+    saveProjectsState(state);
+    return true;
+  }
+  return false;
+}
+
+export function revokeProjectAccess(projectAlias, groupJid, userIdentifier) {
+  if (!projectAlias || !groupJid || !userIdentifier) return false;
+  const state = loadProjectsState();
+  const alias = projectAlias.toLowerCase();
+  const group = groupJid.toLowerCase();
+  if (!state.projectAccess?.[group]?.[alias]) return false;
+
+  const cleanUser = String(userIdentifier).trim().toLowerCase();
+  const initialLen = state.projectAccess[group][alias].length;
+  state.projectAccess[group][alias] = state.projectAccess[group][alias].filter(
+    u => u.toLowerCase() !== cleanUser
+  );
+  if (state.projectAccess[group][alias].length !== initialLen) {
+    saveProjectsState(state);
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Saves/caches group display names in projects state so UI and bot can render real names.
+ */
+export function setGroupName(groupJid, groupName) {
+  if (!groupJid || !groupName) return;
+  const state = loadProjectsState();
+  state.groupNames = state.groupNames || {};
+  if (state.groupNames[groupJid] !== groupName) {
+    state.groupNames[groupJid] = groupName;
+    saveProjectsState(state);
+  }
+}
+
+export function getGroupName(groupJid) {
+  if (!groupJid) return '';
+  const state = loadProjectsState();
+  return state.groupNames?.[groupJid] || '';
+}
+
+/**
  * Atomically writes JSON state (tmp file + rename) so a crash mid-write
  * can never leave a half-written projects.json behind.
  */
@@ -459,6 +540,9 @@ export function atomicWriteJson(filePath, value) {
 
 export function saveProjectsState(state) {
   atomicWriteJson(PROJECTS_FILE, state);
+  try {
+    configEvents.emit('projects-updated', state);
+  } catch {}
 }
 
 // Speech-to-text phonetic dictionary to handle voice-note transcription mishearings
@@ -754,12 +838,26 @@ export function markGroupInitialized(groupJid, userJid = null) {
 }
 
 /**
+ * Deinitializes a WhatsApp group, placing it back behind the silent gate.
+ */
+export function markGroupDeinitialized(groupJid) {
+  if (!groupJid) return false;
+  const state = loadProjectsState();
+  if (state.initializedGroups?.[groupJid]) {
+    delete state.initializedGroups[groupJid];
+    saveProjectsState(state);
+    return true;
+  }
+  return false;
+}
+
+/**
  * Gets the active project for a specific group.
  */
 export function getGroupActiveProject(groupJid) {
   if (!groupJid) return null;
   const state = loadProjectsState();
-  return state.groupBindings?.[groupJid] || null;
+  return state.groupBindings?.[groupJid] || (!groupJid.endsWith('@g.us') ? state.activeProject : null) || null;
 }
 
 /**
@@ -821,6 +919,29 @@ export function deletePendingPoll(pollMsgId) {
     saveProjectsState(state);
   }
 }
+
+const messageMemoryStore = new Map();
+
+/**
+ * Stores raw Baileys messages in an LRU memory cache for retries and poll vote decryption.
+ */
+export function recordRawMessage(id, msg) {
+  if (!id || !msg) return;
+  messageMemoryStore.set(id, msg);
+  if (messageMemoryStore.size > 2000) {
+    const oldestKey = messageMemoryStore.keys().next().value;
+    messageMemoryStore.delete(oldestKey);
+  }
+}
+
+/**
+ * Retrieves raw Baileys message by ID from the LRU memory cache.
+ */
+export function getRawMessage(id) {
+  if (!id) return undefined;
+  return messageMemoryStore.get(id) || undefined;
+}
+
 
 /**
  * Completely resets state (wiping bindings, initialized groups, polls, and caches).

@@ -294,6 +294,11 @@ export async function checkAndApplyOtaUpdate({ force = false, timeoutMs = 8000 }
  * 2. Checks remote OTA manifest with a short timeout and applies any new push immediately.
  */
 export async function syncOtaOnBoot() {
+  const isDevWorkspace = fs.existsSync(path.join(INITIAL_ROOT_DIR, '.git'));
+  if (process.env.DISABLE_OTA === 'true' || isDevWorkspace) {
+    return INITIAL_ROOT_DIR;
+  }
+
   const targetDir = ensureWritableRuntimeDir();
 
   // Step 1: Apply cached bundle if newer than baked-in version
