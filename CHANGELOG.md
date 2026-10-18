@@ -7,6 +7,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v2.4.0] - 2026-10-18
+
+### 🩹 WhatsApp Baileys Reconnection, Session Ratchet Preservation & Clock Skew Calibration
+
+#### 1. Signal Session Ratchet Preservation (`src/bot.js`)
+- **Eliminated Destructive Startup Session Purging**:
+  - Removed arbitrary size-based (`> 15KB`) deletion of `session-*.json` files in `purgeClosedSessions()`.
+  - Signal protocol ratchet chains naturally accumulate keys over time and active sessions; deleting active session files broke the Signal ratchet with linked devices and group members, causing WhatsApp to fail to decrypt incoming messages and forcing users to repeatedly unlink and re-link the device.
+
+#### 2. Robust Clock Skew Calibration & Backlog Isolation (`src/bot.js`)
+- **Backlog-Aware Skew Calibration**:
+  - Previously, when coming online after being idle or offline for an hour, the first incoming backlog message (with a timestamp from 1 hour prior) distorted `serverTimeOffsetSec` to ~3600 seconds, permanently breaking message timestamp validation and causing real-time incoming messages to be dropped.
+  - Skew calibration against incoming messages is now strictly restricted to near-realtime messages (`|rawDiff| < 300s`).
+  - Network clock synchronization against `https://web.whatsapp.com` is verified against realistic tolerance boundaries.
+  - `BOT_START_TIME_SEC` is refreshed on every bot start/restart to ensure reconnection cycles correctly identify fresh incoming messages.
+
+#### 3. Graceful Socket Lifecycle & Pre-Key Management (`src/bot.js`)
+- **Safe Pre-Key Server Sync**:
+  - Replaced forced overwriting of pre-keys (`uploadPreKeys(30)`) on every connect with `uploadPreKeysToServerIfRequired()`, preventing sender pre-key mismatch for contacts that have cached previous keys.
+- **Clean Socket Termination**:
+  - Ensured prior Baileys socket instances are completely ended with `sock.end(undefined)` rather than leaving dangling WebSocket handles or event listener leaks.
+- **Restored History Sync Flow**:
+  - Removed rigid `shouldSyncHistoryMessage: () => false` override to allow Baileys to cleanly drain and flush incoming message queues upon reconnection without stalling the event loop.
+
+---
+
 ## [v2.3.0] - 2026-10-18
 
 ### 🔐 Project-Scoped Permission Architecture, Desktop UI Manager & Unauthorized Access Gating

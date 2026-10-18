@@ -183,30 +183,13 @@ const signalCacheStore = {
 };
 
 /**
- * Cleans up dead closed sessions or bloated session records on startup.
+ * Session integrity guard:
+ * WhatsApp Signal ratchet chains grow over time. We never delete active session files
+ * arbitrarily by file size on startup, as that corrupts the Signal ratchet state
+ * and prevents decrypting incoming messages.
  */
 function purgeClosedSessions() {
-  if (!fs.existsSync(AUTH_DIR)) return 0;
-  let purged = 0;
-  try {
-    const files = fs.readdirSync(AUTH_DIR);
-    for (const file of files) {
-      if (!file.startsWith('session-') || !file.endsWith('.json')) continue;
-      const filePath = path.join(AUTH_DIR, file);
-      try {
-        const stat = fs.statSync(filePath);
-        // If a session file has accumulated many dead sessions (> 15KB)
-        if (stat.size > 15000) {
-          fs.unlinkSync(filePath);
-          purged++;
-          console.log(`🛡️ [Session-Guard] Purged bloated/corrupted session file: ${file} (${stat.size} bytes)`);
-        }
-      } catch {}
-    }
-  } catch (err) {
-    console.warn('⚠️ Error purging closed sessions:', err?.message || err);
-  }
-  return purged;
+  return 0;
 }
 
 const recentBadMacPurges = new Map();
@@ -3718,7 +3701,7 @@ async function handleSlashCommand(sock, jid, msg, commandBody) {
 let activeSock = null;
 let reconnectTimer = null;
 let isStartingBot = false;
-const BOT_START_TIME_SEC = Math.floor(Date.now() / 1000);
+let BOT_START_TIME_SEC = Math.floor(Date.now() / 1000);
 let serverTimeOffsetSec = 0;
 let hasCalibratedClock = false;
 
@@ -3731,16 +3714,19 @@ async function syncNetworkClock() {
     const dateHeader = res.headers.get('date');
     if (dateHeader) {
       const networkTimeSec = Math.floor(new Date(dateHeader).getTime() / 1000);
-      serverTimeOffsetSec = Math.floor(Date.now() / 1000) - networkTimeSec;
-      hasCalibratedClock = true;
-      if (Math.abs(serverTimeOffsetSec) > 10) {
-        console.log(
-          `⏱️ Clock sync: Detected ${serverTimeOffsetSec}s skew between PC and WhatsApp server. Calibrated.`
-        );
+      const diff = Math.floor(Date.now() / 1000) - networkTimeSec;
+      if (Math.abs(diff) < 300) {
+        serverTimeOffsetSec = diff;
+        hasCalibratedClock = true;
+        if (Math.abs(serverTimeOffsetSec) > 5) {
+          console.log(
+            `⏱️ Clock sync: Detected ${serverTimeOffsetSec}s skew between PC and WhatsApp server. Calibrated.`
+          );
+        }
       }
     }
   } catch {
-    // Dynamic fallback on message arrival will calibrate if fetch is unreachable
+    // Dynamic fallback on message arrival will calibrate if within reasonable bounds
   }
 }
 
@@ -3751,12 +3737,19 @@ export async function startWhatsAppBot() {
   if (isStartingBot) return;
   isStartingBot = true;
 
+  BOT_START_TIME_SEC = Math.floor(Date.now() / 1000);
   syncNetworkClock().catch(() => {});
   purgeClosedSessions();
 
   if (activeSock) {
     try { activeSock.ev.removeAllListeners(); } catch {}
-    try { activeSock.ws?.close(); } catch {}
+    try {
+      if (typeof activeSock.end === 'function') {
+        activeSock.end(undefined);
+      } else {
+        activeSock.ws?.close();
+      }
+    } catch {}
     activeSock = null;
   }
 
@@ -3777,7 +3770,6 @@ export async function startWhatsAppBot() {
       printQRInTerminal: false,
       markOnlineOnConnect: true,
       syncFullHistory: false,
-      shouldSyncHistoryMessage: () => false,
       connectTimeoutMs: 60000,
       keepAliveIntervalMs: 25000,
       defaultQueryTimeoutMs: 60000,
@@ -3842,7 +3834,13 @@ export async function startWhatsAppBot() {
 
         if (activeSock === sock) {
           try { sock.ev.removeAllListeners(); } catch {}
-          try { sock.ws?.close(); } catch {}
+          try {
+            if (typeof sock.end === 'function') {
+              sock.end(undefined);
+            } else {
+              sock.ws?.close();
+            }
+          } catch {}
           activeSock = null;
         }
 
@@ -3900,12 +3898,12 @@ export async function startWhatsAppBot() {
           } catch {}
         }, 2000);
 
-        // Ensure server has fresh pre-keys so incoming messages from all group members decrypt cleanly
+        // Ensure server has sufficient pre-keys without blowing away existing ratchet state
         try {
-          await sock.uploadPreKeys(30);
-          console.log('🔑 Successfully refreshed & uploaded 30 pre-keys to WhatsApp server');
+          await sock.uploadPreKeysToServerIfRequired();
+          console.log('🔑 Verified & uploaded pre-keys if required');
         } catch (err) {
-          sock.uploadPreKeysToServerIfRequired(true).catch(() => {});
+          console.warn('⚠️ Pre-key verification note:', err?.message || err);
         }
         prewarmAllBoundProjects();
       }
@@ -4080,12 +4078,12 @@ async function handleIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfte
         }
       }
 
-      // Only ignore stale backlog messages from before this bot process was started (with 10-minute grace window)
       // Account for PC clock skew (e.g. dual-boot or RTC drift) by comparing against calibrated server time.
       const msgTime = Number(msg.messageTimestamp || 0);
       if (msgTime > 0) {
-        if (!hasCalibratedClock) {
-          const rawDiff = Math.floor(Date.now() / 1000) - msgTime;
+        const rawDiff = Math.floor(Date.now() / 1000) - msgTime;
+        // Only calibrate clock offset against recent messages (within 5 minutes), never against hour-old backlog
+        if (!hasCalibratedClock && Math.abs(rawDiff) < 300) {
           serverTimeOffsetSec = rawDiff;
           hasCalibratedClock = true;
           console.log(`⏱️ Calibrated clock offset against incoming message: ${rawDiff}s`);
@@ -4093,14 +4091,17 @@ async function handleIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfte
 
         const effectiveBotStartSec = BOT_START_TIME_SEC - serverTimeOffsetSec;
         if (effectiveBotStartSec > 0 && msgTime < effectiveBotStartSec - 600) {
-          console.log(`⏱️ [Stale Backlog Skipped] msgTime=${msgTime} effectiveBotStart=${effectiveBotStartSec}`);
+          console.log(`⏱️ [Stale Backlog Skipped] msgId=${msg.key?.id} msgTime=${msgTime} effectiveBotStart=${effectiveBotStartSec}`);
           return;
         }
       }
 
       // Never process messages sent by the bot itself or already processed / currently processing
       if (!msg.key?.id) return;
-      if (sentMessageIds.has(msg.key.id) || processedMessageIds.has(msg.key.id) || inFlightMessageIds.has(msg.key.id)) return;
+      if (sentMessageIds.has(msg.key.id) || processedMessageIds.has(msg.key.id) || inFlightMessageIds.has(msg.key.id)) {
+        console.log(`⏭️ [Duplicate/Self Message Skipped] id=${msg.key.id}`);
+        return;
+      }
       inFlightMessageIds.add(msg.key.id);
       recordProcessedMessageId(msg.key.id);
 
