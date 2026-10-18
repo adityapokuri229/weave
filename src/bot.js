@@ -979,25 +979,56 @@ async function sendWhatsAppFile(sock, targetJid, filePath, caption, quotedMsg) {
   const fileName = path.basename(filePath);
   const mimetype = getMimeType(filePath);
 
-  const sent = mimetype.startsWith('image/')
-    ? await sock.sendMessage(
-        targetJid,
+  // Normalize recipient JID: WhatsApp does not deliver media to @lid for self-notes.
+  // Resolve owner's @lid to their real @s.whatsapp.net phone JID.
+  let resolvedJid = targetJid;
+  const myLid = (sock?.user?.lid || '').split(':')[0].split('@')[0];
+  const myPhone = (sock?.user?.id || '').split(':')[0].split('@')[0];
+  if (resolvedJid.endsWith('@lid')) {
+    const targetLid = resolvedJid.split('@')[0];
+    if (myPhone && (targetLid === myLid || quotedMsg?.key?.fromMe)) {
+      resolvedJid = `${myPhone}@s.whatsapp.net`;
+    }
+  }
+
+  console.log(`[sendWhatsAppFile] Sending "${fileName}" (${mimetype}) to ${resolvedJid} (original: ${targetJid})`);
+  const shouldQuote = quotedMsg && resolvedJid === targetJid;
+  let sent;
+  try {
+    if (mimetype.startsWith('image/')) {
+      sent = await sock.sendMessage(
+        resolvedJid,
         {
           image: buffer,
           caption: caption || `📸 ${fileName}`,
         },
-        quotedMsg ? { quoted: quotedMsg } : undefined
-      )
-    : await sock.sendMessage(
-        targetJid,
+        shouldQuote ? { quoted: quotedMsg } : undefined
+      );
+    } else {
+      sent = await sock.sendMessage(
+        resolvedJid,
         {
           document: buffer,
           mimetype,
           fileName,
           caption: caption || `📎 ${fileName}`,
         },
-        quotedMsg ? { quoted: quotedMsg } : undefined
+        shouldQuote ? { quoted: quotedMsg } : undefined
       );
+    }
+  } catch (mediaErr) {
+    console.warn(`[sendWhatsAppFile] Media send error (${mediaErr.message}), falling back to document...`);
+    sent = await sock.sendMessage(
+      resolvedJid,
+      {
+        document: buffer,
+        mimetype: 'image/png',
+        fileName,
+        caption: caption || `📸 ${fileName}`,
+      },
+      shouldQuote ? { quoted: quotedMsg } : undefined
+    );
+  }
 
   if (sent?.key?.id) recordSentMessageId(sent.key.id);
   return sent;

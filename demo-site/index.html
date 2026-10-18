@@ -3,142 +3,336 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>NexusHack 2026 — Global 48-Hour Developer Sprint // October 23-25</title>
+  <title>Canter — Find the Perfect Match for Every Stride</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700;800&family=JetBrains+Mono:wght@700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;0,700;1,600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="https://unpkg.com/lucide@latest"></script>
   <style>
-    body { font-family: 'Space Grotesk', sans-serif; }
-    .mono { font-family: 'JetBrains Mono', monospace; }
-    .brutal-card {
-      background: #ffffff;
-      border: 3px solid #000000;
-      box-shadow: 6px 6px 0px #000000;
-      transition: all 0.15s ease-in-out;
+    :root {
+      --bg-primary: #0B1A14;
+      --bg-card: #132820;
+      --accent: #D4AF37;
+      --accent-sec: #32624D;
+      --text-primary: #F4F6F2;
+      --text-muted: #8CA396;
+      --border-color: #1E3B2F;
+      --radius: 1rem;
+      --border-width: 1px;
+      --shadow: 0 12px 32px -4px rgba(0, 0, 0, 0.45);
+      --font-heading: 'Cormorant Garamond', serif;
+      --font-body: 'Plus Jakarta Sans', sans-serif;
     }
-    .brutal-card:hover {
-      transform: translate(-2px, -2px);
-      box-shadow: 10px 10px 0px #000000;
+
+    body {
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: var(--font-body);
+      min-height: 100vh;
     }
-    .brutal-btn {
-      border: 3px solid #000000;
-      box-shadow: 4px 4px 0px #000000;
-      transition: all 0.1s ease-in-out;
+
+    h1, h2, h3, .font-heading {
+      font-family: var(--font-heading);
     }
-    .brutal-btn:hover {
-      transform: translate(-1px, -1px);
-      box-shadow: 6px 6px 0px #000000;
+
+    .theme-card {
+      background-color: var(--bg-card);
+      border: var(--border-width) solid var(--border-color);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
     }
-    .brutal-btn:active {
-      transform: translate(2px, 2px);
-      box-shadow: 0px 0px 0px #000000;
+
+    .theme-card:hover {
+      transform: translateY(-2px);
+    }
+
+    .btn-primary {
+      background-color: var(--accent);
+      color: #ffffff;
+      border-radius: var(--radius);
+      font-family: var(--font-heading);
+      transition: filter 0.2s, transform 0.2s;
+    }
+    .btn-primary:hover {
+      filter: brightness(1.1);
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background: transparent;
+      border: var(--border-width) solid var(--border-color);
+      color: var(--text-primary);
+      border-radius: var(--radius);
+      font-family: var(--font-heading);
+      transition: background 0.2s, transform 0.2s;
+    }
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.05);
+      transform: translateY(-1px);
+    }
+
+    .badge-category {
+      background: color-mix(in srgb, var(--accent) 15%, transparent);
+      color: var(--accent);
+      border: var(--border-width) solid color-mix(in srgb, var(--accent) 30%, transparent);
+      border-radius: 9999px;
+    }
+
+    .badge-status {
+      background: color-mix(in srgb, var(--accent-sec) 15%, transparent);
+      color: var(--accent-sec);
+      border-radius: 9999px;
     }
   </style>
 </head>
-<body class="bg-[#fef9c3] text-zinc-950 min-h-screen p-6 md:p-12 selection:bg-black selection:text-yellow-300">
-  <div class="max-w-5xl mx-auto">
-    <!-- Header Banner -->
-    <header class="brutal-card p-6 mb-8 flex justify-between items-center bg-[#a7f3d0]">
-      <div class="font-black text-xl tracking-tight uppercase">NexusHack 2026 // 2026</div>
-      <div class="mono text-xs font-bold uppercase tracking-wider bg-black text-white px-3 py-1 rounded">
-        SYSTEMS ONLINE
+<body class="selection:bg-amber-500/20">
+
+<div style="background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(8px); padding: 10px 16px; border-bottom: 1px solid rgba(255,255,255,0.12); display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 9999; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #fff; font-size: 13px;">
+  <div style="display: flex; align-items: center; gap: 8px;">
+    <span style="background: #38bdf8; color: #000; font-weight: 700; padding: 2px 8px; border-radius: 4px; font-size: 10px; letter-spacing: 0.05em;">DESIGN PREVIEW</span>
+    <span style="color: #cbd5e1;">Viewing: <strong style="color: #fff;">Option 1: Saratoga Turf & Morning Mist</strong></span>
+  </div>
+  <div style="display: flex; gap: 6px;">
+    
+      <a href="/option1.html" style="padding: 5px 12px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 12px; transition: all 0.2s; background: #38bdf8; color: #000;">Option 1</a>
+      <a href="/option2.html" style="padding: 5px 12px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 12px; transition: all 0.2s; background: rgba(255,255,255,0.1); color: #fff;">Option 2</a>
+      <a href="/option3.html" style="padding: 5px 12px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 12px; transition: all 0.2s; background: rgba(255,255,255,0.1); color: #fff;">Option 3</a>
+  </div>
+</div>
+  
+  <div class="fixed inset-0 pointer-events-none overflow-hidden z-0" style="background: radial-gradient(circle at 50% 20%, rgba(212, 175, 55, 0.15) 0%, rgba(11, 26, 20, 0) 70%)"></div>
+  
+
+  <div class="relative z-10 max-w-6xl mx-auto px-6 py-10 md:py-16">
+    <!-- Navigation -->
+    <header class="flex items-center justify-between pb-8 border-b mb-12" style="border-color: var(--border-color)">
+      <div class="flex items-center space-x-3">
+        <span class="font-heading text-lg font-bold tracking-tight">Canter</span>
+        <span class="badge-status px-3 py-1 text-xs font-medium">🌾 4,820 Verified Equine Profiles</span>
+      </div>
+      <div class="flex items-center space-x-6 text-sm" style="color: var(--text-muted)">
+        <a href="#about" class="hover:opacity-80 transition-opacity">About</a>
+        <a href="#offerings" class="hover:opacity-80 transition-opacity">Work</a>
+        <a href="mailto:concierge@canterapp.com" class="btn-primary px-4 py-2 text-xs font-semibold">List Your Horse</a>
       </div>
     </header>
 
-    <!-- Hero -->
-    <div class="grid grid-cols-1 md:grid-cols-12 gap-6 mb-8">
-      <div class="md:col-span-8 brutal-card p-8 md:p-12 bg-white">
-        <span class="mono text-xs font-black uppercase tracking-widest bg-yellow-300 border-2 border-black px-2 py-0.5 inline-block mb-4">
-          Global 48-Hour Developer Sprint // October 23-25
-        </span>
-        <h1 class="text-4xl md:text-6xl font-black uppercase tracking-tight leading-none mb-6">
-          Building Unbreakable Architecture.
-        </h1>
-        <p class="text-lg md:text-xl font-bold leading-relaxed mb-8">
-          500+ developers, designers, and innovators building next-gen autonomous systems. $25,000 in prizes.
-        </p>
-        <div class="flex flex-wrap gap-4">
-          <a href="#work" class="brutal-btn px-6 py-3 bg-[#f43f5e] text-white font-black text-sm uppercase">
-            View Deployments
-          </a>
-          <a href="mailto:team@nexushack.dev" class="brutal-btn px-6 py-3 bg-white text-black font-black text-sm uppercase">
-            Contact Direct
-          </a>
-        </div>
+    <!-- Hero Section -->
+    <section class="mb-16 md:mb-24 max-w-3xl">
+      <div class="inline-block badge-category px-3.5 py-1.5 text-xs font-semibold tracking-wider uppercase mb-6">
+        EQUINE COMPANIONSHIP & BREEDING
       </div>
-
-      <!-- Stats Box -->
-      <div class="md:col-span-4 flex flex-col gap-6">
-        <div class="brutal-card p-6 bg-[#bae6fd] flex-1 flex flex-col justify-center">
-          <span class="mono text-xs font-black uppercase mb-1">METRICS</span>
-          <div class="text-4xl font-black">$25,000</div>
-          <div class="text-sm font-bold">Prize Pool</div>
-        </div>
-        <div class="brutal-card p-6 bg-[#fed7aa] flex-1 flex flex-col justify-center">
-          <span class="mono text-xs font-black uppercase mb-1">DEPLOYED</span>
-          <div class="text-4xl font-black">500+</div>
-          <div class="text-sm font-bold">Builders Registered</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Philosophy -->
-    <div class="brutal-card p-8 mb-8 bg-[#fbcfe8]">
-      <span class="mono text-xs font-black uppercase tracking-widest bg-black text-white px-2 py-1 inline-block mb-3">
-        MANIFESTO
-      </span>
-      <p class="text-2xl md:text-3xl font-black leading-snug">
-        "Code at the frontier. 48 hours to assemble prototypes that solve real-world problems with AI & distributed compute."
+      <h1 class="text-4xl md:text-6xl font-extrabold tracking-tight leading-[1.1] mb-6">
+        Find the Perfect Match for Every Stride
+      </h1>
+      <p class="text-lg md:text-xl leading-relaxed mb-8" style="color: var(--text-muted)">
+        The premier connection platform for sport horses, breeding matches, and pasture companions. Swipe verified bloodlines, temperament scores, and competition records with total confidence.
       </p>
-    </div>
+      <div class="flex flex-wrap items-center gap-4">
+        <a href="#offerings" class="btn-primary px-6 py-3.5 text-sm font-bold flex items-center space-x-2">
+          <span>Find Matches</span>
+          <i data-lucide="arrow-right" class="w-4 h-4"></i>
+        </a>
+        <a href="mailto:concierge@canterapp.com" class="btn-secondary px-6 py-3.5 text-sm font-semibold">
+          List Your Horse
+        </a>
+      </div>
+    </section>
 
-    <!-- Projects -->
-    <div id="work" class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+    <!-- Key Metrics / Stats -->
+    <section class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-16">
       
-        <div class="brutal-card p-6 bg-white flex flex-col justify-between">
-          <div>
-            <div class="mono text-xs font-black text-zinc-500 mb-2">#01</div>
-            <h3 class="text-xl font-black uppercase mb-2">Track 1: Agent Swarms</h3>
-            <p class="text-sm font-medium leading-relaxed mb-6">Multi-agent orchestration, tool usage, consensus algorithms, and task completion engines.</p>
+        <div class="theme-card p-6">
+          <div class="font-heading text-3xl md:text-4xl font-extrabold tracking-tight mb-1" style="color: var(--accent)">
+            12,400+
           </div>
-          <div class="flex flex-wrap gap-1 border-t-2 border-black pt-4">
-            <span class="mono text-[10px] font-bold bg-zinc-100 border border-black px-1.5 py-0.5">TypeScript</span><span class="mono text-[10px] font-bold bg-zinc-100 border border-black px-1.5 py-0.5">Gemini Flash</span><span class="mono text-[10px] font-bold bg-zinc-100 border border-black px-1.5 py-0.5">WebSockets</span>
+          <div class="text-xs uppercase font-medium tracking-wider" style="color: var(--text-muted)">
+            Verified Bloodlines
           </div>
         </div>
       
-        <div class="brutal-card p-6 bg-white flex flex-col justify-between">
-          <div>
-            <div class="mono text-xs font-black text-zinc-500 mb-2">#02</div>
-            <h3 class="text-xl font-black uppercase mb-2">Track 2: Real-time Multimodal</h3>
-            <p class="text-sm font-medium leading-relaxed mb-6">Sub-second audio streaming, computer vision pipelines, and interactive spatial computing.</p>
+        <div class="theme-card p-6">
+          <div class="font-heading text-3xl md:text-4xl font-extrabold tracking-tight mb-1" style="color: var(--accent)">
+            98.4%
           </div>
-          <div class="flex flex-wrap gap-1 border-t-2 border-black pt-4">
-            <span class="mono text-[10px] font-bold bg-zinc-100 border border-black px-1.5 py-0.5">WebRTC</span><span class="mono text-[10px] font-bold bg-zinc-100 border border-black px-1.5 py-0.5">PyTorch</span><span class="mono text-[10px] font-bold bg-zinc-100 border border-black px-1.5 py-0.5">Rust</span>
+          <div class="text-xs uppercase font-medium tracking-wider" style="color: var(--text-muted)">
+            Match Success Rate
           </div>
         </div>
       
-        <div class="brutal-card p-6 bg-white flex flex-col justify-between">
-          <div>
-            <div class="mono text-xs font-black text-zinc-500 mb-2">#03</div>
-            <h3 class="text-xl font-black uppercase mb-2">Track 3: Edge & Local AI</h3>
-            <p class="text-sm font-medium leading-relaxed mb-6">Quantized on-device LLM inference, local vector search, and offline-first applications.</p>
+        <div class="theme-card p-6">
+          <div class="font-heading text-3xl md:text-4xl font-extrabold tracking-tight mb-1" style="color: var(--accent)">
+            100%
           </div>
-          <div class="flex flex-wrap gap-1 border-t-2 border-black pt-4">
-            <span class="mono text-[10px] font-bold bg-zinc-100 border border-black px-1.5 py-0.5">C++</span><span class="mono text-[10px] font-bold bg-zinc-100 border border-black px-1.5 py-0.5">ONNX</span><span class="mono text-[10px] font-bold bg-zinc-100 border border-black px-1.5 py-0.5">WebAssembly</span>
+          <div class="text-xs uppercase font-medium tracking-wider" style="color: var(--text-muted)">
+            FEI & USEF Synced
           </div>
         </div>
       
-    </div>
+        <div class="theme-card p-6">
+          <div class="font-heading text-3xl md:text-4xl font-extrabold tracking-tight mb-1" style="color: var(--accent)">
+            850+
+          </div>
+          <div class="text-xs uppercase font-medium tracking-wider" style="color: var(--text-muted)">
+            Partner Stables
+          </div>
+        </div>
+      
+    </section>
+
+    <!-- Approach / Manifesto -->
+    <section id="about" class="theme-card p-8 md:p-12 mb-16">
+      <div class="text-xs font-bold uppercase tracking-widest mb-3" style="color: var(--accent)">
+        CANTER // EQUINE CONNECT 2026
+      </div>
+      <h2 class="text-2xl md:text-3xl font-bold mb-4">
+        Pedigree Meets Chemistry
+      </h2>
+      <p class="text-base md:text-lg leading-relaxed max-w-3xl" style="color: var(--text-muted)">
+        Every horse deserves an ideal partner, whether in the championship ring, the breeding shed, or peaceful pasture turnout. We replace antiquated barn whispers with verified pedigree analytics and genuine equine compatibility.
+      </p>
+    </section>
+
+    <!-- Offerings / Work Cards -->
+    <section id="offerings" class="mb-16">
+      <div class="flex items-center justify-between mb-8">
+        <div>
+          <h2 class="text-2xl md:text-3xl font-bold tracking-tight">Featured Highlights</h2>
+          <p class="text-sm mt-1" style="color: var(--text-muted)">Curated selections representing our mission & craftsmanship</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        
+          <div class="theme-card p-6 flex flex-col justify-between">
+            <div>
+              <div class="text-xs font-semibold uppercase tracking-wider mb-2" style="color: var(--accent)">
+                Sport Horse Breeding
+              </div>
+              <h3 class="text-xl font-bold mb-3 tracking-tight">
+                Sire & Dam Genetic Pairing
+              </h3>
+              <p class="text-sm leading-relaxed mb-6" style="color: var(--text-muted)">
+                Cross-calculates temperament indexes, gait harmony metrics, and pedigree inbreeding coefficients before entering the breeding shed.
+              </p>
+            </div>
+            <div class="flex flex-wrap gap-2 pt-4 border-t" style="border-color: var(--border-color)">
+              
+                <span class="text-[11px] font-medium px-2.5 py-1 rounded-md" style="background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent)">
+                  Genomics
+                </span>
+              
+                <span class="text-[11px] font-medium px-2.5 py-1 rounded-md" style="background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent)">
+                  Breeding
+                </span>
+              
+            </div>
+          </div>
+        
+          <div class="theme-card p-6 flex flex-col justify-between">
+            <div>
+              <div class="text-xs font-semibold uppercase tracking-wider mb-2" style="color: var(--accent)">
+                Pasture Companions
+              </div>
+              <h3 class="text-xl font-bold mb-3 tracking-tight">
+                Turnout Soulmate Match
+              </h3>
+              <p class="text-sm leading-relaxed mb-6" style="color: var(--text-muted)">
+                Behavioral compatibility profiling to eliminate herd stress, cribbing, and separation anxiety in retired and recovering equines.
+              </p>
+            </div>
+            <div class="flex flex-wrap gap-2 pt-4 border-t" style="border-color: var(--border-color)">
+              
+                <span class="text-[11px] font-medium px-2.5 py-1 rounded-md" style="background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent)">
+                  Equine Welfare
+                </span>
+              
+                <span class="text-[11px] font-medium px-2.5 py-1 rounded-md" style="background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent)">
+                  Herd Dynamics
+                </span>
+              
+            </div>
+          </div>
+        
+          <div class="theme-card p-6 flex flex-col justify-between">
+            <div>
+              <div class="text-xs font-semibold uppercase tracking-wider mb-2" style="color: var(--accent)">
+                Equestrian Partnerships
+              </div>
+              <h3 class="text-xl font-bold mb-3 tracking-tight">
+                Half-Lease & Co-Ride Portal
+              </h3>
+              <p class="text-sm leading-relaxed mb-6" style="color: var(--text-muted)">
+                Pairs ambitious riders with private horse owners looking for verified exercise partners, matched strictly by discipline and skill.
+              </p>
+            </div>
+            <div class="flex flex-wrap gap-2 pt-4 border-t" style="border-color: var(--border-color)">
+              
+                <span class="text-[11px] font-medium px-2.5 py-1 rounded-md" style="background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent)">
+                  Leasing
+                </span>
+              
+                <span class="text-[11px] font-medium px-2.5 py-1 rounded-md" style="background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent)">
+                  Discipline Match
+                </span>
+              
+            </div>
+          </div>
+        
+      </div>
+    </section>
+
+    <!-- Focus Areas / Badges -->
+    <section class="theme-card p-8 mb-16">
+      <h3 class="text-sm font-bold uppercase tracking-wider mb-4" style="color: var(--text-muted)">
+        Core Focus & Capabilities
+      </h3>
+      <div class="flex flex-wrap gap-2.5">
+        
+          <div class="px-3.5 py-2 text-xs font-medium rounded-lg border" style="background: var(--bg-primary); border-color: var(--border-color)">
+            USEF & FEI Record Integration
+          </div>
+        
+          <div class="px-3.5 py-2 text-xs font-medium rounded-lg border" style="background: var(--bg-primary); border-color: var(--border-color)">
+            Temperament & Herd Compatibility
+          </div>
+        
+          <div class="px-3.5 py-2 text-xs font-medium rounded-lg border" style="background: var(--bg-primary); border-color: var(--border-color)">
+            Genetic Inbreeding Coeff Calc
+          </div>
+        
+          <div class="px-3.5 py-2 text-xs font-medium rounded-lg border" style="background: var(--bg-primary); border-color: var(--border-color)">
+            Biomechanic Stride Video Sync
+          </div>
+        
+          <div class="px-3.5 py-2 text-xs font-medium rounded-lg border" style="background: var(--bg-primary); border-color: var(--border-color)">
+            Verified Veterinary Health Passes
+          </div>
+        
+          <div class="px-3.5 py-2 text-xs font-medium rounded-lg border" style="background: var(--bg-primary); border-color: var(--border-color)">
+            Secure Escrow & Stud Contracts
+          </div>
+        
+      </div>
+    </section>
 
     <!-- Footer -->
-    <footer class="brutal-card p-6 bg-black text-white flex justify-between items-center">
-      <div class="mono text-xs font-bold uppercase">Deployed to Netlify Anonymous Drop</div>
-      <a href="mailto:team@nexushack.dev" class="text-xs font-bold uppercase underline hover:text-yellow-300">
-        team@nexushack.dev
-      </a>
+    <footer class="pt-8 border-t flex flex-col md:flex-row items-center justify-between gap-4 text-xs" style="border-color: var(--border-color); color: var(--text-muted)">
+      <div>
+        © 2026 Canter. All rights reserved.
+      </div>
+      <div class="flex items-center space-x-6">
+        <a href="mailto:concierge@canterapp.com" class="hover:underline font-semibold" style="color: var(--accent)">
+          concierge@canterapp.com
+        </a>
+      </div>
     </footer>
   </div>
+
+  <script>
+    lucide.createIcons();
+  </script>
 </body>
 </html>

@@ -621,12 +621,18 @@ export async function dispatchIntent({
       if (result.variants && result.variants.length > 0) {
         for (const v of result.variants) {
           if (v.screenshotPath && fs.existsSync(v.screenshotPath)) {
-            await sendWhatsAppFile(
-              sock,
-              jid,
-              v.screenshotPath,
-              `🎨 *Option ${v.option}: ${v.name}*\n${v.description}`
-            );
+            console.log(`[Dispatcher] Sending screenshot for Option ${v.option}: ${v.name} (${v.screenshotPath})`);
+            try {
+              await sendWhatsAppFile(
+                sock,
+                jid,
+                v.screenshotPath,
+                `🎨 *Option ${v.option}: ${v.name}*\n_${v.description}_`,
+                msg
+              );
+            } catch (shotErr) {
+              console.warn(`[Dispatcher] Failed to send screenshot for ${v.name}:`, shotErr.message);
+            }
           }
         }
       }
@@ -636,6 +642,7 @@ export async function dispatchIntent({
       await sendReply(sock, jid, cleanedText, msg);
       if (reactToMessage) await reactToMessage(sock, msg, '✅').catch(() => {});
     } catch (err) {
+      console.error('[Dispatcher] Portfolio Creation Error:', err);
       await sendReply(
         sock,
         jid,

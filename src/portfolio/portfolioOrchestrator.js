@@ -76,6 +76,8 @@ export async function renderAndCaptureVariants(portfolioData, outputDir = null) 
         id: v.id,
         name: v.name,
         description: v.description,
+        html: v.html,
+        htmlPath,
         screenshotPath: shot.filePath,
       });
     } catch (err) {
@@ -85,7 +87,9 @@ export async function renderAndCaptureVariants(portfolioData, outputDir = null) 
         id: v.id,
         name: v.name,
         description: v.description,
-        screenshotPath: htmlPath,
+        html: v.html,
+        htmlPath,
+        screenshotPath: null,
       });
     }
   }
@@ -140,18 +144,63 @@ export async function executePortfolioCreation({
   // 3. Render and capture all 3 design philosophy variants
   const variants = await renderAndCaptureVariants(portfolioData);
 
-  // 4. Assemble primary chosen design into project directory index.html
+  // Helper to build preview switcher bar
+  const buildSwitcherBar = (currentOpt) => `
+<div style="background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(8px); padding: 10px 16px; border-bottom: 1px solid rgba(255,255,255,0.12); display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 9999; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #fff; font-size: 13px;">
+  <div style="display: flex; align-items: center; gap: 8px;">
+    <span style="background: #38bdf8; color: #000; font-weight: 700; padding: 2px 8px; border-radius: 4px; font-size: 10px; letter-spacing: 0.05em;">DESIGN PREVIEW</span>
+    <span style="color: #cbd5e1;">Viewing: <strong style="color: #fff;">Option ${currentOpt}: ${variants.find((v) => v.option === currentOpt)?.name || ''}</strong></span>
+  </div>
+  <div style="display: flex; gap: 6px;">
+    ${variants
+      .map(
+        (v) => `
+      <a href="/option${v.option}.html" style="padding: 5px 12px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 12px; transition: all 0.2s; ${
+        v.option === currentOpt
+          ? 'background: #38bdf8; color: #000;'
+          : 'background: rgba(255,255,255,0.1); color: #fff;'
+      }">Option ${v.option}</a>`
+      )
+      .join('')}
+  </div>
+</div>`;
+
+  // 4. Save each variant HTML and screenshot into projectDir for live hosting on Netlify
+  for (const v of variants) {
+    const optNum = v.option;
+    const bar = buildSwitcherBar(optNum);
+    const htmlContent = v.html || generatePortfolioHtml(String(optNum), portfolioData);
+    const fullHtml = htmlContent.includes('<body')
+      ? htmlContent.replace(/<body[^>]*>/i, (match) => `${match}\n${bar}`)
+      : `${bar}\n${htmlContent}`;
+
+    fs.writeFileSync(path.join(projectDir, `option${optNum}.html`), fullHtml, 'utf8');
+
+    if (v.screenshotPath && fs.existsSync(v.screenshotPath) && v.screenshotPath.endsWith('.png')) {
+      try {
+        fs.copyFileSync(v.screenshotPath, path.join(projectDir, `option${optNum}.png`));
+      } catch {}
+    }
+  }
+
+  // 5. Assemble primary active design into index.html
+  const initialOptNum = parseInt(initialPhilosophy, 10) || 1;
   const primaryHtml = generatePortfolioHtml(initialPhilosophy, portfolioData);
+  const primaryBar = buildSwitcherBar(initialOptNum);
+  const primaryIndexHtml = primaryHtml.includes('<body')
+    ? primaryHtml.replace(/<body[^>]*>/i, (match) => `${match}\n${primaryBar}`)
+    : `${primaryBar}\n${primaryHtml}`;
   const indexPath = path.join(projectDir, 'index.html');
-  fs.writeFileSync(indexPath, primaryHtml, 'utf8');
+  fs.writeFileSync(indexPath, primaryIndexHtml, 'utf8');
 
-  // 5. Deploy to Netlify Anonymous Drop
-  const netlifyDeploy = await deployToNetlifyDrop(projectDir, { title: 'portfolio' });
+  // 6. Deploy to Netlify
+  const netlifyDeploy = await deployToNetlifyDrop(projectDir, { title: projectAlias || 'portfolio' });
 
-  // 6. Capture live preview screenshot directly from local HTML
+  // 7. Capture live preview screenshot directly from local HTML
   let livePreviewScreenshot = null;
   try {
     const liveShot = await captureWebScreenshot(indexPath, {
+      outputPath: path.join(projectDir, 'screenshot-live.png'),
       width: 1280,
       height: 800,
     });
@@ -161,7 +210,7 @@ export async function executePortfolioCreation({
     livePreviewScreenshot = variants[0]?.screenshotPath || null;
   }
 
-  // 7. Persist session state in projects.json
+  // 8. Persist session state in projects.json
   try {
     const state = loadProjectsState();
     state.portfolioSessions = state.portfolioSessions || {};
@@ -179,6 +228,7 @@ export async function executePortfolioCreation({
         option: v.option,
         id: v.id,
         name: v.name,
+        description: v.description,
         screenshotPath: v.screenshotPath,
       })),
       updatedAt: new Date().toISOString(),
@@ -188,17 +238,15 @@ export async function executePortfolioCreation({
     console.warn('Failed to save portfolio state:', stateErr.message);
   }
 
-  // 8. Format WhatsApp response with [SEND_FILE] directives
+  // 9. Format WhatsApp response with [SEND_FILE] directives
   const directives = [];
-  if (livePreviewScreenshot && fs.existsSync(livePreviewScreenshot)) {
-    directives.push(`[SEND_FILE: HERE | ${livePreviewScreenshot}]`);
-  }
-
-  // Also include the other variant screenshots
   for (const v of variants) {
-    if (v.screenshotPath && fs.existsSync(v.screenshotPath) && v.screenshotPath !== livePreviewScreenshot) {
+    if (v.screenshotPath && fs.existsSync(v.screenshotPath) && v.screenshotPath.endsWith('.png')) {
       directives.push(`[SEND_FILE: HERE | ${v.screenshotPath}]`);
     }
+  }
+  if (directives.length === 0 && livePreviewScreenshot && fs.existsSync(livePreviewScreenshot)) {
+    directives.push(`[SEND_FILE: HERE | ${livePreviewScreenshot}]`);
   }
 
   let deployNotice = '';
@@ -217,8 +265,9 @@ export async function executePortfolioCreation({
     deployNotice = `The website has been compiled locally in your workspace.`;
   }
 
+  const rawBase = netlifyDeploy.siteUrl ? netlifyDeploy.siteUrl.replace(/\/$/, '') : '';
   const variantLines = variants.map(
-    (v) => `• *Option ${v.option}*: *${v.name}*\n   _${v.description}_`
+    (v) => `• *Option ${v.option}*: *${v.name}*${rawBase ? `\n   🔗 _Live Preview:_ ${rawBase}/option${v.option}.html` : ''}\n   _${v.description}_`
   );
 
   const messageText = [
@@ -227,7 +276,7 @@ export async function executePortfolioCreation({
     `🎨 *Bespoke Design Directions for "${portfolioData.name || 'Your Website'}":*`,
     ...variantLines,
     ``,
-    `_Reply right here in WhatsApp (e.g. "option 2", "option 3", or dictate styling) to update your live site!_`,
+    `_Reply right here in WhatsApp (e.g. "option 2", "option 3", or dictate styling) to update your primary live site!_`,
     ``,
     ...directives,
   ].join('\n');
@@ -298,8 +347,24 @@ export async function iteratePortfolioDesign({ chatJid, feedbackText }) {
 
   // Re-generate HTML
   const updatedHtml = generatePortfolioHtml(updatedPhilosophy, portfolioData);
+  const optNum = parseInt(updatedPhilosophy, 10) || 1;
+  const switcherBar = `
+<div style="background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(8px); padding: 10px 16px; border-bottom: 1px solid rgba(255,255,255,0.12); display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 9999; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #fff; font-size: 13px;">
+  <div style="display: flex; align-items: center; gap: 8px;">
+    <span style="background: #38bdf8; color: #000; font-weight: 700; padding: 2px 8px; border-radius: 4px; font-size: 10px; letter-spacing: 0.05em;">ACTIVE DESIGN</span>
+    <span style="color: #cbd5e1;">Selected: <strong style="color: #fff;">Option ${optNum}</strong></span>
+  </div>
+  <div style="display: flex; gap: 6px;">
+    <a href="/option1.html" style="padding: 5px 12px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 12px; ${optNum === 1 ? 'background: #38bdf8; color: #000;' : 'background: rgba(255,255,255,0.1); color: #fff;'}">Option 1</a>
+    <a href="/option2.html" style="padding: 5px 12px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 12px; ${optNum === 2 ? 'background: #38bdf8; color: #000;' : 'background: rgba(255,255,255,0.1); color: #fff;'}">Option 2</a>
+    <a href="/option3.html" style="padding: 5px 12px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 12px; ${optNum === 3 ? 'background: #38bdf8; color: #000;' : 'background: rgba(255,255,255,0.1); color: #fff;'}">Option 3</a>
+  </div>
+</div>`;
+  const primaryIndexHtml = updatedHtml.includes('<body')
+    ? updatedHtml.replace(/<body[^>]*>/i, (match) => `${match}\n${switcherBar}`)
+    : `${switcherBar}\n${updatedHtml}`;
   const indexPath = path.join(session.projectDir, 'index.html');
-  fs.writeFileSync(indexPath, updatedHtml, 'utf8');
+  fs.writeFileSync(indexPath, primaryIndexHtml, 'utf8');
 
   // Re-deploy to Netlify
   const netlifyDeploy = await deployToNetlifyDrop(session.projectDir, {

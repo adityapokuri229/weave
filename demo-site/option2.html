@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Canter — Find the Perfect Match for Every Stride</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;0,800;1,500&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    :root {
+      --bg-primary: #FAF6F0;
+      --bg-card: #FFFFFF;
+      --accent: #9E472A;
+      --accent-sec: #C5832B;
+      --text-primary: #2C1E1A;
+      --text-muted: #7A6B66;
+      --border-color: #E8DEC8;
+      --radius: 0.375rem;
+      --border-width: 1px;
+      --shadow: 0 8px 24px -2px rgba(44, 30, 26, 0.08);
+      --font-heading: 'Playfair Display', serif;
+      --font-body: 'DM Sans', sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: var(--font-body);
+      min-height: 100vh;
+    }
+
+    h1, h2, h3, .font-heading {
+      font-family: var(--font-heading);
+    }
+
+    .theme-card {
+      background-color: var(--bg-card);
+      border: var(--border-width) solid var(--border-color);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .theme-card:hover {
+      transform: translateY(-2px);
+    }
+
+    .btn-primary {
+      background-color: var(--accent);
+      color: #ffffff;
+      border-radius: var(--radius);
+      font-family: var(--font-heading);
+      transition: filter 0.2s, transform 0.2s;
+    }
+    .btn-primary:hover {
+      filter: brightness(1.1);
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background: transparent;
+      border: var(--border-width) solid var(--border-color);
+      color: var(--text-primary);
+      border-radius: var(--radius);
+      font-family: var(--font-heading);
+      transition: background 0.2s, transform 0.2s;
+    }
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.05);
+      transform: translateY(-1px);
+    }
+
+    .badge-category {
+      background: color-mix(in srgb, var(--accent) 15%, transparent);
+      color: var(--accent);
+      border: var(--border-width) solid color-mix(in srgb, var(--accent) 30%, transparent);
+      border-radius: 9999px;
+    }
+
+    .badge-status {
+      background: color-mix(in srgb, var(--accent-sec) 15%, transparent);
+      color: var(--accent-sec);
+      border-radius: 9999px;
+    }
+  </style>
+</head>
+<body class="selection:bg-amber-500/20">
+
+<div style="background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(8px); padding: 10px 16px; border-bottom: 1px solid rgba(255,255,255,0.12); display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 9999; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #fff; font-size: 13px;">
+  <div style="display: flex; align-items: center; gap: 8px;">
+    <span style="background: #38bdf8; color: #000; font-weight: 700; padding: 2px 8px; border-radius: 4px; font-size: 10px; letter-spacing: 0.05em;">DESIGN PREVIEW</span>
+    <span style="color: #cbd5e1;">Viewing: <strong style="color: #fff;">Option 2: Warm Vachetta & Bridle Leather</strong></span>
+  </div>
+  <div style="display: flex; gap: 6px;">
+    
+      <a href="/option1.html" style="padding: 5px 12px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 12px; transition: all 0.2s; background: rgba(255,255,255,0.1); color: #fff;">Option 1</a>
+      <a href="/option2.html" style="padding: 5px 12px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 12px; transition: all 0.2s; background: #38bdf8; color: #000;">Option 2</a>
+      <a href="/option3.html" style="padding: 5px 12px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 12px; transition: all 0.2s; background: rgba(255,255,255,0.1); color: #fff;">Option 3</a>
+  </div>
+</div>
+  
+  <div class="fixed inset-0 pointer-events-none overflow-hidden z-0" style="background: radial-gradient(circle at 60% 30%, rgba(197, 131, 43, 0.12) 0%, rgba(250, 246, 240, 0) 65%)"></div>
+  
+
+  <div class="relative z-10 max-w-6xl mx-auto px-6 py-10 md:py-16">
+    <!-- Navigation -->
+    <header class="flex items-center justify-between pb-8 border-b mb-12" style="border-color: var(--border-color)">
+      <div class="flex items-center space-x-3">
+        <span class="font-heading text-lg font-bold tracking-tight">Canter</span>
+        <span class="badge-status px-3 py-1 text-xs font-medium">🌾 4,820 Verified Equine Profiles</span>
+      </div>
+      <div class="flex items-center space-x-6 text-sm" style="color: var(--text-muted)">
+        <a href="#about" class="hover:opacity-80 transition-opacity">About</a>
+        <a href="#offerings" class="hover:opacity-80 transition-opacity">Work</a>
+        <a href="mailto:concierge@canterapp.com" class="btn-primary px-4 py-2 text-xs font-semibold">List Your Horse</a>
+      </div>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="mb-16 md:mb-24 max-w-3xl">
+      <div class="inline-block badge-category px-3.5 py-1.5 text-xs font-semibold tracking-wider uppercase mb-6">
+        EQUINE COMPANIONSHIP & BREEDING
+      </div>
+      <h1 class="text-4xl md:text-6xl font-extrabold tracking-tight leading-[1.1] mb-6">
+        Find the Perfect Match for Every Stride
+      </h1>
+      <p class="text-lg md:text-xl leading-relaxed mb-8" style="color: var(--text-muted)">
+        The premier connection platform for sport horses, breeding matches, and pasture companions. Swipe verified bloodlines, temperament scores, and competition records with total confidence.
+      </p>
+      <div class="flex flex-wrap items-center gap-4">
+        <a href="#offerings" class="btn-primary px-6 py-3.5 text-sm font-bold flex items-center space-x-2">
+          <span>Find Matches</span>
+          <i data-lucide="arrow-right" class="w-4 h-4"></i>
+        </a>
+        <a href="mailto:concierge@canterapp.com" class="btn-secondary px-6 py-3.5 text-sm font-semibold">
+          List Your Horse
+        </a>
+      </div>
+    </section>
+
+    <!-- Key Metrics / Stats -->
+    <section class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-16">
+      
+        <div class="theme-card p-6">
+          <div class="font-heading text-3xl md:text-4xl font-extrabold tracking-tight mb-1" style="color: var(--accent)">
+            12,400+
+          </div>
+          <div class="text-xs uppercase font-medium tracking-wider" style="color: var(--text-muted)">
+            Verified Bloodlines
+          </div>
+        </div>
+      
+        <div class="theme-card p-6">
+          <div class="font-heading text-3xl md:text-4xl font-extrabold tracking-tight mb-1" style="color: var(--accent)">
+            98.4%
+          </div>
+          <div class="text-xs uppercase font-medium tracking-wider" style="color: var(--text-muted)">
+            Match Success Rate
+          </div>
+        </div>
+      
+        <div class="theme-card p-6">
+          <div class="font-heading text-3xl md:text-4xl font-extrabold tracking-tight mb-1" style="color: var(--accent)">
+            100%
+          </div>
+          <div class="text-xs uppercase font-medium tracking-wider" style="color: var(--text-muted)">
+            FEI & USEF Synced
+          </div>
+        </div>
+      
+        <div class="theme-card p-6">
+          <div class="font-heading text-3xl md:text-4xl font-extrabold tracking-tight mb-1" style="color: var(--accent)">
+            850+
+          </div>
+          <div class="text-xs uppercase font-medium tracking-wider" style="color: var(--text-muted)">
+            Partner Stables
+          </div>
+        </div>
+      
+    </section>
+
+    <!-- Approach / Manifesto -->
+    <section id="about" class="theme-card p-8 md:p-12 mb-16">
+      <div class="text-xs font-bold uppercase tracking-widest mb-3" style="color: var(--accent)">
+        CANTER // EQUINE CONNECT 2026
+      </div>
+      <h2 class="text-2xl md:text-3xl font-bold mb-4">
+        Pedigree Meets Chemistry
+      </h2>
+      <p class="text-base md:text-lg leading-relaxed max-w-3xl" style="color: var(--text-muted)">
+        Every horse deserves an ideal partner, whether in the championship ring, the breeding shed, or peaceful pasture turnout. We replace antiquated barn whispers with verified pedigree analytics and genuine equine compatibility.
+      </p>
+    </section>
+
+    <!-- Offerings / Work Cards -->
+    <section id="offerings" class="mb-16">
+      <div class="flex items-center justify-between mb-8">
+        <div>
+          <h2 class="text-2xl md:text-3xl font-bold tracking-tight">Featured Highlights</h2>
+          <p class="text-sm mt-1" style="color: var(--text-muted)">Curated selections representing our mission & craftsmanship</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        
+          <div class="theme-card p-6 flex flex-col justify-between">
+            <div>
+              <div class="text-xs font-semibold uppercase tracking-wider mb-2" style="color: var(--accent)">
+                Sport Horse Breeding
+              </div>
+              <h3 class="text-xl font-bold mb-3 tracking-tight">
+                Sire & Dam Genetic Pairing
+              </h3>
+              <p class="text-sm leading-relaxed mb-6" style="color: var(--text-muted)">
+                Cross-calculates temperament indexes, gait harmony metrics, and pedigree inbreeding coefficients before entering the breeding shed.
+              </p>
+            </div>
+            <div class="flex flex-wrap gap-2 pt-4 border-t" style="border-color: var(--border-color)">
+              
+                <span class="text-[11px] font-medium px-2.5 py-1 rounded-md" style="background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent)">
+                  Genomics
+                </span>
+              
+                <span class="text-[11px] font-medium px-2.5 py-1 rounded-md" style="background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent)">
+                  Breeding
+                </span>
+              
+            </div>
+          </div>
+        
+          <div class="theme-card p-6 flex flex-col justify-between">
+            <div>
+              <div class="text-xs font-semibold uppercase tracking-wider mb-2" style="color: var(--accent)">
+                Pasture Companions
+              </div>
+              <h3 class="text-xl font-bold mb-3 tracking-tight">
+                Turnout Soulmate Match
+              </h3>
+              <p class="text-sm leading-relaxed mb-6" style="color: var(--text-muted)">
+                Behavioral compatibility profiling to eliminate herd stress, cribbing, and separation anxiety in retired and recovering equines.
+              </p>
+            </div>
+            <div class="flex flex-wrap gap-2 pt-4 border-t" style="border-color: var(--border-color)">
+              
+                <span class="text-[11px] font-medium px-2.5 py-1 rounded-md" style="background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent)">
+                  Equine Welfare
+                </span>
+              
+                <span class="text-[11px] font-medium px-2.5 py-1 rounded-md" style="background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent)">
+                  Herd Dynamics
+                </span>
+              
+            </div>
+          </div>
+        
+          <div class="theme-card p-6 flex flex-col justify-between">
+            <div>
+              <div class="text-xs font-semibold uppercase tracking-wider mb-2" style="color: var(--accent)">
+                Equestrian Partnerships
+              </div>
+              <h3 class="text-xl font-bold mb-3 tracking-tight">
+                Half-Lease & Co-Ride Portal
+              </h3>
+              <p class="text-sm leading-relaxed mb-6" style="color: var(--text-muted)">
+                Pairs ambitious riders with private horse owners looking for verified exercise partners, matched strictly by discipline and skill.
+              </p>
+            </div>
+            <div class="flex flex-wrap gap-2 pt-4 border-t" style="border-color: var(--border-color)">
+              
+                <span class="text-[11px] font-medium px-2.5 py-1 rounded-md" style="background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent)">
+                  Leasing
+                </span>
+              
+                <span class="text-[11px] font-medium px-2.5 py-1 rounded-md" style="background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent)">
+                  Discipline Match
+                </span>
+              
+            </div>
+          </div>
+        
+      </div>
+    </section>
+
+    <!-- Focus Areas / Badges -->
+    <section class="theme-card p-8 mb-16">
+      <h3 class="text-sm font-bold uppercase tracking-wider mb-4" style="color: var(--text-muted)">
+        Core Focus & Capabilities
+      </h3>
+      <div class="flex flex-wrap gap-2.5">
+        
+          <div class="px-3.5 py-2 text-xs font-medium rounded-lg border" style="background: var(--bg-primary); border-color: var(--border-color)">
+            USEF & FEI Record Integration
+          </div>
+        
+          <div class="px-3.5 py-2 text-xs font-medium rounded-lg border" style="background: var(--bg-primary); border-color: var(--border-color)">
+            Temperament & Herd Compatibility
+          </div>
+        
+          <div class="px-3.5 py-2 text-xs font-medium rounded-lg border" style="background: var(--bg-primary); border-color: var(--border-color)">
+            Genetic Inbreeding Coeff Calc
+          </div>
+        
+          <div class="px-3.5 py-2 text-xs font-medium rounded-lg border" style="background: var(--bg-primary); border-color: var(--border-color)">
+            Biomechanic Stride Video Sync
+          </div>
+        
+          <div class="px-3.5 py-2 text-xs font-medium rounded-lg border" style="background: var(--bg-primary); border-color: var(--border-color)">
+            Verified Veterinary Health Passes
+          </div>
+        
+          <div class="px-3.5 py-2 text-xs font-medium rounded-lg border" style="background: var(--bg-primary); border-color: var(--border-color)">
+            Secure Escrow & Stud Contracts
+          </div>
+        
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="pt-8 border-t flex flex-col md:flex-row items-center justify-between gap-4 text-xs" style="border-color: var(--border-color); color: var(--text-muted)">
+      <div>
+        © 2026 Canter. All rights reserved.
+      </div>
+      <div class="flex items-center space-x-6">
+        <a href="mailto:concierge@canterapp.com" class="hover:underline font-semibold" style="color: var(--accent)">
+          concierge@canterapp.com
+        </a>
+      </div>
+    </footer>
+  </div>
+
+  <script>
+    lucide.createIcons();
+  </script>
+</body>
+</html>
