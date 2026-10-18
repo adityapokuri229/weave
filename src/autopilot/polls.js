@@ -1,6 +1,7 @@
 import crypto from 'crypto';
 import { decryptPollVote, jidNormalizedUser } from '@whiskeysockets/baileys';
 import { savePendingPoll, getPendingPoll, deletePendingPoll, recordRawMessage } from '../config.js';
+import { recordSentMessageId } from '../bot.js';
 
 const FALLBACK_EMOJIS = ['🟢', '🔵', '🟡', '🟣', '🟠', '🔴', '⚪', '🟤'];
 
@@ -40,8 +41,11 @@ export async function sendChoicePoll(sock, {
     });
 
     const pollMsgId = sent.key?.id;
-    if (pollMsgId && sent.message) {
-      recordRawMessage(pollMsgId, sent.message);
+    if (pollMsgId) {
+      recordSentMessageId(pollMsgId);
+      if (sent.message) {
+        recordRawMessage(pollMsgId, sent.message);
+      }
     }
     const rawSecret = sent.message?.messageContextInfo?.messageSecret;
     const messageSecret = rawSecret ? Buffer.from(rawSecret).toString('base64') : null;

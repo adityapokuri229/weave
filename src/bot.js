@@ -133,7 +133,7 @@ function trimIdSet(set, max = 500) {
   }
 }
 
-function recordSentMessageId(id) {
+export function recordSentMessageId(id) {
   if (!id) return;
   sentMessageIds.add(id);
   trimIdSet(sentMessageIds, 500);
@@ -792,21 +792,11 @@ function isReplyingToBot(msg, sock = null) {
   if (!contextInfo) return false;
   const stanzaId = contextInfo.stanzaId;
 
-  // 1. Matched directly against tracked sentMessageIds
+  // 1. Matched directly against tracked sentMessageIds (messages originated by this agent instance)
   if (stanzaId && sentMessageIds.has(stanzaId)) return true;
 
-  // 2. Matched against pending polls created by the bot
+  // 2. Matched against pending polls created by this agent instance
   if (stanzaId && getPendingPoll(stanzaId)) return true;
-
-  // 3. Fallback: Check if quoted participant matches this bot's JID or LID
-  if (sock?.user && contextInfo.participant) {
-    const botNumber = (sock.user.id || '').split(':')[0].split('@')[0];
-    const botLid = (sock.user.lid || '').split(':')[0].split('@')[0];
-    const quotedBase = (contextInfo.participant || '').split(':')[0].split('@')[0];
-    if ((botNumber && quotedBase === botNumber) || (botLid && quotedBase === botLid)) {
-      return true;
-    }
-  }
 
   return false;
 }
@@ -4363,7 +4353,7 @@ async function _processIncomingMessage(sock, msg, type, nowSec, acceptMessagesAf
       }
 
       const quotedText = extractQuotedText(msg);
-      const replyingToBot = isReplyingToBot(msg);
+      const replyingToBot = isReplyingToBot(msg, sock);
 
       // If user sent just "@agent" while quoting a message, use the quoted message as the task!
       if (!rawBody && quotedText && !replyingToBot) {
