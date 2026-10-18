@@ -1,8 +1,8 @@
 {
   "version": "1.0.0",
-  "commitHash": "7f8128a",
-  "builtAt": 1792333883906,
+  "commitHash": "7596fb4",
+  "builtAt": 1792343835731,
   "filesCount": 52,
-  "sha256": "fbea6790f7bcf581b5eb0268eab8a5446ccae57771ff173e8f803a47d7b4b0a5",
+  "sha256": "47f5093dac88c6a5ba12847e127ac8829c8be6aeb91d34eabe50353ee86ce34d",
   "bundleUrl": "https://tryweave.vercel.app/ota/bundle.json"
 }
