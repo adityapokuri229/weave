@@ -11,12 +11,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🧠 Pure Natural Language Architecture, DM Gating & Session Self-Healing
 
-#### 1. Pure Natural Language Permission Management (`src/autopilot/`, `src/bot.js`, `src/config.js`)
+#### 1. Pure Natural Language Permission Management & Group Member Validation (`src/autopilot/`, `src/bot.js`, `src/config.js`)
 - **Eliminated Brittle Regex Pattern Matching**:
   - Deprecated legacy regex parsing for access commands. All permission queries and access grants/revocations now flow through the Gemini 2.5 Flash Intent Router as first-class `system_command` lanes (`manage_access` and `view_access`).
   - Native understanding of natural conversational phrasing, possessives, and developer slang (e.g., *"give agent permissions to tinchu"*, *"allow tinchu to use agent"*, *"revoke tinchus perms lol"*, *"revoke access for tinchu"*, *"who has perms"*, *"list access perms"*).
   - Tolerant and friend-aware identifier resolution: automatically cleans slang suffixes (`babys`, `baby`, `lol`, `'s`), normalizes handles, and resolves against registered friends directory.
   - Cascade unbinding & cleanup: when an active project is deleted or unmounted, associated group bindings and permissions clean up automatically.
+- **Strict Group Member Validation & Anti-Phantom Guard**:
+  - Validates candidates against actual group metadata (`sock.groupMetadata`) before granting permissions, rejecting random or non-existent names instead of creating phantom permissions.
+  - Returns a helpful candidate member list when a requested user is not found in the group or friends directory.
+- **Participant Phone Number & Access Listing**:
+  - In `handleViewAccessCommand` (`who has perms`), members are clearly rendered by their actual phone numbers (`+<country_code><number>`) and contact/push names alongside Granted Access or No Access badges.
+- **Fuzzy Intent Matching with Typo Tolerance**:
+  - Added Levenshtein distance matching and phone digit matching to gracefully handle slight typos and character changes when referring to group members.
 
 #### 2. Private DM Trigger Gating & Full Auto Mode (`src/bot.js`)
 - **Strict Prefix Requirement in Personal Send-to-Self DM**:

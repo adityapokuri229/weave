@@ -1038,11 +1038,19 @@ function isSenderAuthorized(msg, targetProjectAlias = null) {
     if (activeAlias) {
       const allowedList = getProjectAccess(activeAlias, jid);
       if (allowedList && allowedList.length > 0) {
+        const rawPId = msg.key.participant || '';
+        const pBase = rawPId.split('@')[0].split(':')[0];
+        const contacts = loadContactsMap();
+        const contactName = (contacts[rawPId] || contacts[senderNum] || contacts[pBase] || '').toLowerCase();
+
         const hasAccess = allowedList.some((entry) => {
-          const cleanEntry = entry.trim().toLowerCase();
+          const cleanEntry = entry.trim().toLowerCase().replace(/^@/, '');
+          const cleanDigits = cleanEntry.replace(/[^0-9]/g, '');
           return (
-            (senderNum && (cleanEntry === senderNum || senderNum.endsWith(cleanEntry) || cleanEntry.endsWith(senderNum))) ||
-            (pushName && cleanEntry === pushName)
+            (senderNum && cleanDigits && (senderNum === cleanDigits || senderNum.endsWith(cleanDigits) || cleanDigits.endsWith(senderNum))) ||
+            (pBase && cleanEntry === pBase.toLowerCase()) ||
+            (pushName && (cleanEntry === pushName || pushName.includes(cleanEntry) || cleanEntry.includes(pushName))) ||
+            (contactName && (cleanEntry === contactName || contactName.includes(cleanEntry) || cleanEntry.includes(contactName)))
           );
         });
         if (hasAccess) return true;
@@ -4655,6 +4663,27 @@ async function _processIncomingMessage(sock, msg, type, nowSec, acceptMessagesAf
         return;
       }
 
+      // Helper: Calculate Levenshtein distance for fuzzy matching typos
+      function getLevenshteinDistance(a, b) {
+        const s1 = String(a || '').toLowerCase();
+        const s2 = String(b || '').toLowerCase();
+        const m = s1.length;
+        const n = s2.length;
+        const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+        for (let i = 0; i <= m; i++) dp[i][0] = i;
+        for (let j = 0; j <= n; j++) dp[0][j] = j;
+        for (let i = 1; i <= m; i++) {
+          for (let j = 1; j <= n; j++) {
+            if (s1[i - 1] === s2[j - 1]) {
+              dp[i][j] = dp[i - 1][j - 1];
+            } else {
+              dp[i][j] = 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+            }
+          }
+        }
+        return dp[m][n];
+      }
+
       // Helper: View access permissions
       async function handleViewAccessCommand(sock, jid, msg, isGroup) {
         const stateNow = loadProjectsState();
@@ -4690,29 +4719,32 @@ async function _processIncomingMessage(sock, msg, type, nowSec, acceptMessagesAf
               (botUserId && pNum === botUserId) ||
               (CONFIG.adminNumbers.length > 0 && pNum && CONFIG.adminNumbers.some(a => pNum.endsWith(a) || a.endsWith(pNum)));
 
-            // Contact / display name
-            const knownName = contacts[rawPId] || (pNum ? `+${pNum}` : rawPId);
+            // Identifier with phone number prioritized
+            const contactName = contacts[rawPId] || contacts[pNum] || contacts[pBase] || '';
+            const phoneDisplay = pNum ? `+${pNum}` : pBase;
+            const label = contactName ? `${phoneDisplay} (${contactName})` : phoneDisplay;
 
             if (isBotSelf) {
-              memberLines.push(`🤖 *${knownName}* (Weave Agent): Active`);
+              memberLines.push(`🤖 *${label}* (Weave Agent): Active`);
             } else if (isParticipantOwner) {
-              memberLines.push(`👑 *${knownName}* (Owner): Full Access (All commands, DM project deletion, access grants)`);
+              memberLines.push(`👑 *${label}* (Owner): Full Access (All commands, DM project deletion, access grants)`);
             } else {
               // Check if participant has granted project access
               const isGranted = groupAllowed.some((entry) => {
                 const cleanEntry = entry.trim().toLowerCase();
                 const matched = (
-                  (pNum && (cleanEntry === pNum || pNum.endsWith(cleanEntry) || cleanEntry.endsWith(pNum))) ||
-                  (knownName && (cleanEntry === knownName.toLowerCase() || knownName.toLowerCase().includes(cleanEntry)))
+                  (pNum && (cleanEntry === pNum || cleanEntry === `+${pNum}` || pNum.endsWith(cleanEntry) || cleanEntry.endsWith(pNum))) ||
+                  (pBase && cleanEntry === pBase.toLowerCase()) ||
+                  (contactName && (cleanEntry === contactName.toLowerCase() || contactName.toLowerCase().includes(cleanEntry)))
                 );
                 if (matched) accountedAllowed.add(cleanEntry);
                 return matched;
               });
 
               if (isGranted) {
-                memberLines.push(`🟢 *${knownName}*: Granted Access (Can interact with \`${activeAlias || 'project'}\`)`);
+                memberLines.push(`🟢 *${label}*: Granted Access (Can interact with \`${activeAlias || 'project'}\`)`);
               } else {
-                memberLines.push(`⚪ *${knownName}*: No Access (Owner only by default)`);
+                memberLines.push(`⚪ *${label}*: No Access (Owner only by default)`);
               }
             }
           }
@@ -4735,7 +4767,7 @@ async function _processIncomingMessage(sock, msg, type, nowSec, acceptMessagesAf
             `📋 *Member Permissions:*`,
             memberListText,
             '',
-            `💡 *Owner Tip:* To grant a member access, say *"allow <name> from now"*. To revoke, say *"revoke <name> access"*.`,
+            `💡 *Owner Tip:* To grant a member access, say *"allow <number or name> from now"*. To revoke, say *"revoke <number or name> access"*.`,
           ].join('\n');
 
           await sendReply(sock, jid, permsReply, msg);
@@ -4782,8 +4814,172 @@ async function _processIncomingMessage(sock, msg, type, nowSec, acceptMessagesAf
           .replace(/\s+(access|perms|permission|permissions|from|now|babys|baby)$/i, '')
           .trim();
 
-        const friend = findFriend(userCandidate);
-        const userIdentifier = friend ? friend.name : userCandidate;
+        if (!userCandidate) {
+          await sendReply(sock, jid, `❓ Please specify the group member's phone number or name to ${action} access for.`, msg);
+          return;
+        }
+
+        let verifiedTarget = null;
+        let memberListForHint = [];
+
+        if (isGroup) {
+          let groupMeta = null;
+          try {
+            groupMeta = await sock.groupMetadata(jid);
+          } catch (err) {
+            console.warn(`⚠️ Failed to fetch group metadata for ${jid} during manage_access:`, err?.message || err);
+          }
+
+          const contacts = loadContactsMap();
+          const participants = groupMeta?.participants || [];
+          const candidateDigits = userCandidate.replace(/[^0-9]/g, '');
+          const candidateLower = userCandidate.toLowerCase();
+
+          // Collect group candidate info
+          const memberCandidates = [];
+          for (const p of participants) {
+            const rawPId = p.id || '';
+            const pNum = rawPId.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+            const pBase = rawPId.split('@')[0].split(':')[0];
+            const contactName = contacts[rawPId] || contacts[pNum] || contacts[pBase] || '';
+            const displayName = contactName ? `+${pNum} (${contactName})` : (pNum ? `+${pNum}` : pBase);
+            memberCandidates.push({
+              rawPId,
+              pNum,
+              pBase,
+              contactName,
+              displayName,
+            });
+            memberListForHint.push(`• *${displayName}*`);
+          }
+
+          // 1. Exact or suffix match on phone number
+          if (candidateDigits.length >= 4) {
+            const phoneMatch = memberCandidates.find(
+              m => m.pNum && (m.pNum === candidateDigits || m.pNum.endsWith(candidateDigits) || candidateDigits.endsWith(m.pNum))
+            );
+            if (phoneMatch) {
+              verifiedTarget = {
+                identifier: phoneMatch.pNum ? `+${phoneMatch.pNum}` : phoneMatch.pBase,
+                displayName: phoneMatch.displayName,
+              };
+            }
+          }
+
+          // 2. Exact match on contact name or pushName
+          if (!verifiedTarget) {
+            const exactNameMatch = memberCandidates.find(
+              m => m.contactName && m.contactName.toLowerCase() === candidateLower
+            );
+            if (exactNameMatch) {
+              verifiedTarget = {
+                identifier: exactNameMatch.pNum ? `+${exactNameMatch.pNum}` : exactNameMatch.pBase,
+                displayName: exactNameMatch.displayName,
+              };
+            }
+          }
+
+          // 3. Substring / partial match on contact name (e.g. "Tinchu" matching "Tinchu Kumar")
+          if (!verifiedTarget && candidateLower.length >= 3) {
+            const partialNameMatch = memberCandidates.find(
+              m => m.contactName && (
+                m.contactName.toLowerCase().includes(candidateLower) ||
+                candidateLower.includes(m.contactName.toLowerCase())
+              )
+            );
+            if (partialNameMatch) {
+              verifiedTarget = {
+                identifier: partialNameMatch.pNum ? `+${partialNameMatch.pNum}` : partialNameMatch.pBase,
+                displayName: partialNameMatch.displayName,
+              };
+            }
+          }
+
+          // 4. Fuzzy typo matching (Levenshtein distance <= 2) on contact names
+          if (!verifiedTarget && candidateLower.length >= 3) {
+            let bestMatch = null;
+            let bestDistance = Infinity;
+            for (const m of memberCandidates) {
+              if (!m.contactName) continue;
+              const dist = getLevenshteinDistance(candidateLower, m.contactName);
+              const maxAllowedDist = candidateLower.length <= 4 ? 1 : 2;
+              if (dist <= maxAllowedDist && dist < bestDistance) {
+                bestDistance = dist;
+                bestMatch = m;
+              }
+            }
+            if (bestMatch) {
+              verifiedTarget = {
+                identifier: bestMatch.pNum ? `+${bestMatch.pNum}` : bestMatch.pBase,
+                displayName: bestMatch.displayName,
+              };
+            }
+          }
+
+          // 5. Check registered friends directory
+          if (!verifiedTarget) {
+            const friend = findFriend(userCandidate);
+            if (friend) {
+              // Check if any group member matches this friend's name or github
+              const friendMember = memberCandidates.find(
+                m => m.contactName && (
+                  m.contactName.toLowerCase() === friend.name.toLowerCase() ||
+                  m.contactName.toLowerCase() === friend.github.toLowerCase()
+                )
+              );
+              if (friendMember) {
+                verifiedTarget = {
+                  identifier: friendMember.pNum ? `+${friendMember.pNum}` : friendMember.pBase,
+                  displayName: friendMember.displayName,
+                };
+              } else {
+                verifiedTarget = {
+                  identifier: friend.name,
+                  displayName: `${friend.name} (@${friend.github})`,
+                };
+              }
+            }
+          }
+
+          // 6. Check existing granted list for revoke (so owner can revoke an existing granted entry even if non-member)
+          if (!verifiedTarget && action === 'revoke') {
+            const existingGranted = groupAllowed.find(entry => {
+              const eLow = entry.toLowerCase();
+              return eLow === candidateLower || eLow.includes(candidateLower) || candidateLower.includes(eLow);
+            });
+            if (existingGranted) {
+              verifiedTarget = {
+                identifier: existingGranted,
+                displayName: existingGranted,
+              };
+            }
+          }
+
+          // If STILL not verified, REJECT! Do NOT create phantom access for random names!
+          if (!verifiedTarget) {
+            const hintText = memberListForHint.length > 0
+              ? `\n\n👥 *Group Members:*\n${memberListForHint.join('\n')}`
+              : '';
+            await reactToMessage(sock, msg, '❓');
+            await sendReply(
+              sock,
+              jid,
+              `❓ *Could not find "${userCandidate}" in this group.* No permissions were changed.\n\nPlease verify their phone number or exact contact name from the member list below.${hintText}`,
+              msg
+            );
+            return;
+          }
+        } else {
+          // Direct chat / DM: Check registered friends or numeric phone number
+          const friend = findFriend(userCandidate);
+          verifiedTarget = {
+            identifier: friend ? friend.name : userCandidate,
+            displayName: friend ? `${friend.name} (@${friend.github})` : userCandidate,
+          };
+        }
+
+        const userIdentifier = verifiedTarget.identifier;
+        const displayLabel = verifiedTarget.displayName || userIdentifier;
 
         if (action === 'grant') {
           grantProjectAccess(activeAlias, jid, userIdentifier);
@@ -4791,7 +4987,7 @@ async function _processIncomingMessage(sock, msg, type, nowSec, acceptMessagesAf
           await sendReply(
             sock,
             jid,
-            `🔑 *Access Granted:* Allowed *${userIdentifier}* to interact with project \`${activeAlias}\` in this chat.`,
+            `🔑 *Access Granted:* Allowed *${displayLabel}* to interact with project \`${activeAlias}\` in this chat.`,
             msg
           );
         } else {
@@ -4800,7 +4996,7 @@ async function _processIncomingMessage(sock, msg, type, nowSec, acceptMessagesAf
           await sendReply(
             sock,
             jid,
-            `🔒 *Access Revoked:* Revoked *${userIdentifier}*'s access to project \`${activeAlias}\` in this chat.`,
+            `🔒 *Access Revoked:* Revoked *${displayLabel}*'s access to project \`${activeAlias}\` in this chat.`,
             msg
           );
         }
