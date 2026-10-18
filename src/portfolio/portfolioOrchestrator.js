@@ -97,13 +97,27 @@ export async function executePortfolioCreation({
   projectAlias = 'portfolio-website',
   senderName = 'Founder / Architect',
   initialPhilosophy = '1',
+  preferredVibe = null,
+  productNotes = '',
 }) {
   const projectDir = targetProjectDir || path.resolve(process.cwd(), 'demo-site');
   fs.mkdirSync(projectDir, { recursive: true });
 
   // 1. Live Inspiration & Domain Research (Minimal Gallery, Dribbble, Top Web References)
-  console.log(`[PortfolioOrchestrator] Researching Dribbble & Minimal Gallery inspirations for: "${prompt}"`);
-  const research = await researchDesignInspirations(prompt);
+  const state = loadProjectsState();
+  const sessionPreferredVibe = preferredVibe || state.portfolioSessions?.[chatJid]?.preferredVibe || null;
+  const sessionProductNotes = productNotes || state.portfolioSessions?.[chatJid]?.productNotes || '';
+
+  let researchPrompt = prompt;
+  if (sessionPreferredVibe) {
+    researchPrompt += `. Preferred design vibe & aesthetic: ${sessionPreferredVibe}`;
+  }
+  if (sessionProductNotes) {
+    researchPrompt += `. Key product emphasis & notes: ${sessionProductNotes}`;
+  }
+
+  console.log(`[PortfolioOrchestrator] Researching Dribbble & Minimal Gallery inspirations for: "${researchPrompt}"`);
+  const research = await researchDesignInspirations(researchPrompt);
   const topicAnalysis = research.topicAnalysis || {};
   const inspirations = research.inspirations || [];
 
@@ -332,9 +346,11 @@ export async function executePortfolioCreation({
     const state = loadProjectsState();
     state.portfolioSessions = state.portfolioSessions || {};
     state.portfolioSessions[chatJid] = {
+      ...(state.portfolioSessions[chatJid] || {}),
       projectDir,
       projectAlias,
       activePhilosophy: String(activeOptNum),
+      status: 'completed',
       siteUrl: netlifyDeploy.siteUrl || null,
       siteId: netlifyDeploy.siteId || null,
       password: netlifyDeploy.password || null,
@@ -343,6 +359,8 @@ export async function executePortfolioCreation({
       stitchScreenId: stitchScreen?.name || null,
       topicAnalysis,
       inspirations,
+      preferredVibe: sessionPreferredVibe,
+      productNotes: sessionProductNotes,
       portfolioData: {
         name: topicAnalysis.brandName || 'Signature',
         headline: topicAnalysis.headline || prompt,

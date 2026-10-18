@@ -33,6 +33,8 @@ import {
   executePortfolioCreation,
   iteratePortfolioDesign,
 } from '../portfolio/portfolioOrchestrator.js';
+import { geminiClient } from '../gemini-client.js';
+import { sendChoicePoll } from '../autopilot/polls.js';
 
 /**
  * Dispatches a classified intent to its corresponding handler.
@@ -609,47 +611,110 @@ export async function dispatchIntent({
         (boundProject && state?.projects?.[boundProject]) ||
         path.resolve(process.cwd(), 'demo-site');
 
-      // Send immediate progress indication to WhatsApp
-      if (reactToMessage) await reactToMessage(sock, msg, '🎨').catch(() => {});
+      // 1. Instant acknowledgment without long pause
+      if (reactToMessage) await reactToMessage(sock, msg, '🚀').catch(() => {});
       await sendReply(
         sock,
         jid,
-        `🎨 *Researching & architecting your bespoke website via Google Stitch MCP...*\n_Analyzing industry design standards, color theory, and deploying live previews!_`,
+        `Yeah, hey, I'm just working on it! 🚀`,
         msg
       ).catch(() => {});
 
-      const result = await executePortfolioCreation({
-        prompt: rawBody,
-        chatJid: jid,
-        targetProjectDir: defaultProjDir,
-        projectAlias: boundProject || 'portfolio-website',
-        senderName: msg?.pushName || 'Founder / Architect',
-      });
+      // 2. Interactive Discovery Poll (Vibe & Aesthetic)
+      const voterJid = msg?.key?.fromMe
+        ? (sock?.user?.id || jid)
+        : (msg?.key?.participant || msg?.key?.remoteJid || jid);
 
-      // Send all 3 Google Stitch design variations
-      if (result.variants && result.variants.length > 0) {
-        for (const v of result.variants) {
-          if (v.screenshotPath && fs.existsSync(v.screenshotPath)) {
-            console.log(`[Dispatcher] Sending screenshot for Option ${v.option}: ${v.name} (${v.screenshotPath})`);
-            try {
-              await sendWhatsAppFile(
-                sock,
-                jid,
-                v.screenshotPath,
-                `🎨 *Option ${v.option}: ${v.name}*\n_${v.description}_`,
-                msg
-              );
-            } catch (shotErr) {
-              console.warn(`[Dispatcher] Failed to send screenshot for ${v.name}:`, shotErr.message);
-            }
-          }
-        }
+      try {
+        await sendChoicePoll(sock, {
+          groupJid: jid,
+          allowedVoterJid: voterJid,
+          question: 'What vibe or aesthetic are you going for?',
+          options: [
+            '1️⃣ Minimalist & Clean (Editorial whitespace)',
+            '2️⃣ Dark Cyber & High-Tech (Glowing accents)',
+            '3️⃣ Warm & Artisanal (Craft tones & serif)',
+            '4️⃣ Bold & Vibrant (Bento grid & dynamic)',
+          ],
+          intent: 'choice_needed',
+          originalTask: rawBody,
+          context: 'website_vibe_choice',
+        });
+      } catch (pollErr) {
+        console.warn('[Dispatcher] Vibe poll notice:', pollErr.message);
       }
 
-      // Send deploy card message
-      const cleanedText = result.messageText.replace(/\[SEND_FILE:[^\]]+\]/g, '').trim();
-      await sendReply(sock, jid, cleanedText, msg);
-      if (reactToMessage) await reactToMessage(sock, msg, '✅').catch(() => {});
+      // 3. Product Discovery Follow-up (Agent 2 - Conversational Product Discovery)
+      await sendReply(
+        sock,
+        jid,
+        `While the Stitch UI agent creates the layouts in the background, tell me a bit more about the product:\n• What's the main goal or call-to-action for visitors (e.g. book a call, order online, join waitlist)?\n• Are there any specific features or products you want front and center?`,
+        msg
+      ).catch(() => {});
+
+      // Initialize session state so early poll votes and product notes can attach immediately
+      const preState = loadProjectsState();
+      preState.portfolioSessions = preState.portfolioSessions || {};
+      preState.portfolioSessions[jid] = {
+        ...(preState.portfolioSessions[jid] || {}),
+        projectDir: defaultProjDir,
+        projectAlias: boundProject || 'portfolio-website',
+        originalPrompt: rawBody,
+        status: 'generating',
+        createdAt: new Date().toISOString(),
+      };
+      saveProjectsState(preState);
+
+      // 4. Background UI Generation Agent (Agent 1 - Stitch MCP UI Agent)
+      // Runs autonomously in the background without blocking conversation
+      (async () => {
+        try {
+          console.log(`[StitchUIAgent] Background generation started for prompt: "${rawBody}"`);
+          const result = await executePortfolioCreation({
+            prompt: rawBody,
+            chatJid: jid,
+            targetProjectDir: defaultProjDir,
+            projectAlias: boundProject || 'portfolio-website',
+            senderName: msg?.pushName || 'Founder / Architect',
+          });
+
+          // Send all 3 Google Stitch design variations
+          if (result.variants && result.variants.length > 0) {
+            for (const v of result.variants) {
+              if (v.screenshotPath && fs.existsSync(v.screenshotPath)) {
+                console.log(`[StitchUIAgent] Sending screenshot for Option ${v.option}: ${v.name} (${v.screenshotPath})`);
+                try {
+                  await sendWhatsAppFile(
+                    sock,
+                    jid,
+                    v.screenshotPath,
+                    `🎨 *Option ${v.option}: ${v.name}*\n_${v.description}_`,
+                    msg
+                  );
+                } catch (shotErr) {
+                  console.warn(`[StitchUIAgent] Failed to send screenshot for ${v.name}:`, shotErr.message);
+                }
+              }
+            }
+          }
+
+          // Send deploy card message
+          const cleanedText = result.messageText.replace(/\[SEND_FILE:[^\]]+\]/g, '').trim();
+          await sendReply(sock, jid, cleanedText, msg);
+          if (reactToMessage) await reactToMessage(sock, msg, '✅').catch(() => {});
+        } catch (err) {
+          console.error('[StitchUIAgent] Portfolio Creation Error:', err);
+          await sendReply(
+            sock,
+            jid,
+            `❌ *Stitch Screen Generation Error:* ${err.message}`,
+            msg
+          );
+          if (reactToMessage) await reactToMessage(sock, msg, '❌').catch(() => {});
+        }
+      })();
+
+      return { handled: true };
     } catch (err) {
       console.error('[Dispatcher] Portfolio Creation Error:', err);
       await sendReply(
@@ -659,8 +724,50 @@ export async function dispatchIntent({
         msg
       );
       if (reactToMessage) await reactToMessage(sock, msg, '❌').catch(() => {});
+      return { handled: true };
     }
-    return { handled: true };
+  }
+
+  // 8.6. Product Discovery & Personalization: Handle founder's product emphasis while or after website build
+  const activePortfolioSession = state?.portfolioSessions?.[jid];
+  const isWebsiteCreationOrIteration = intent === INTENTS.PORTFOLIO;
+  const isExplicitControl = intent === INTENTS.TASK_CONTROL || intent === INTENTS.WORKSPACE_MANAGEMENT || intent === INTENTS.GIT_GITHUB;
+
+  if (activePortfolioSession && !isWebsiteCreationOrIteration && !isExplicitControl) {
+    const isProductDetailMessage =
+      intent === INTENTS.CONVERSATIONAL_QA ||
+      /\b(?:emphasize|highlight|feature|features|call\s*to\s*action|cta|goal|visitors?|product|service|audience|pricing|headline|logo|brand|order|book|sell|contact|signup|sign\s*up)\b/i.test(rawBody);
+
+    if (isProductDetailMessage) {
+      if (reactToMessage) await reactToMessage(sock, msg, '✨').catch(() => {});
+      try {
+        const productAckPrompt = `You are Weave, a sharp, friendly developer and product designer chatting with a founder on WhatsApp.
+The founder just responded with their product focus, key features, or what to emphasize on their website:
+"${rawBody}"
+
+Original website request: "${activePortfolioSession.originalPrompt || activePortfolioSession.projectAlias || 'Website'}"
+
+In 1-2 punchy, encouraging, conversational sentences:
+1. Validate their product emphasis and highlight why it makes the site stronger.
+2. Confirm you are weaving that into the messaging, hero section, and offerings.
+Tone: Helpful developer friend on WhatsApp (informal, confident, zero corporate fluff).`;
+
+        const res = await geminiClient.generateContent(productAckPrompt);
+        const replyText = res.text?.trim() || `Love that focus! Incorporating that directly into the site's layout and messaging ✨`;
+        await sendReply(sock, jid, replyText, msg);
+
+        // Store into session
+        const freshState = loadProjectsState();
+        if (freshState.portfolioSessions?.[jid]) {
+          const prevNotes = freshState.portfolioSessions[jid].productNotes || '';
+          freshState.portfolioSessions[jid].productNotes = prevNotes ? `${prevNotes}\n${rawBody}` : rawBody;
+          saveProjectsState(freshState);
+        }
+        return { handled: true };
+      } catch (noteErr) {
+        console.warn('[Dispatcher] Product note acknowledgement notice:', noteErr.message);
+      }
+    }
   }
 
   // 9. Conversational Q&A (Informational question without file edits)

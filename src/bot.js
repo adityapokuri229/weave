@@ -4010,6 +4010,19 @@ async function handleVoteResolution(sock, voteRes) {
     return;
   }
 
+  if (pending.context === 'website_vibe_choice') {
+    const cleanVibe = chosenOption.replace(/^[0-9️⃣\s]+/, '').trim();
+    await sendReply(sock, groupJid, `Got it: "${cleanVibe}" aesthetic locked in! Tuning the design tokens 🎨`);
+    const state = loadProjectsState();
+    state.portfolioSessions = state.portfolioSessions || {};
+    if (!state.portfolioSessions[groupJid]) {
+      state.portfolioSessions[groupJid] = {};
+    }
+    state.portfolioSessions[groupJid].preferredVibe = cleanVibe;
+    saveProjectsState(state);
+    return;
+  }
+
   // Choice resolution: check if the choice or context is activating/switching a project
   const state = loadProjectsState();
   let activeAlias = getGroupActiveProject(groupJid) || state.activeProject;
