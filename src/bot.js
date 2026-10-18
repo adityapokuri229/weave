@@ -5099,6 +5099,11 @@ async function _processIncomingMessage(sock, msg, type, nowSec, acceptMessagesAf
           const projectDir = state.projects[activeAlias];
           const taskInstructions = routeResult.laptopTaskInstructions || rawBody;
 
+          // Send immediate natural context-aware acknowledgement before Antigravity runs
+          if (routeResult.acknowledgementText) {
+            await sendReply(sock, jid, routeResult.acknowledgementText, msg);
+          }
+
           await reactToMessage(sock, msg, '⚡');
 
           taskQueue.push({

@@ -48,6 +48,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Purged all previous test project folders (`anagha`, `ramu1`, `srinivas`) from the master directory (`Weave Master`).
   - Reset `projectAccess`, `groupBindings`, `projects`, and active project associations to an empty clean slate while preserving master directory configuration for a fresh start.
 
+#### 7. Context-Aware Pre-Task Acknowledgement (`src/autopilot/guidelines.js`, `src/bot.js`)
+- **Conversational Mirroring Before Task Execution**:
+  - The Gemini router now generates an immediate, context-aware pre-task acknowledgment (`acknowledgementText`) mirroring user style (e.g. *"my bad bro, on it"*, *"bet, tweaking that rn"*, *"say less, on it"*).
+  - Sent to chat immediately before Antigravity runs in the background.
+  - Preserves the initial hourglass reaction (`⏳`) and final completion reaction (`✅`).
+
 ---
 
 ## [v2.2.0] - 2026-10-18

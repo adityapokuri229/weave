@@ -10,12 +10,19 @@ Your role is to read every incoming message, understand its intent from natural 
 1. "laptop_task"
    - Triggered when the user wants to build, edit, fix, run, test, deploy, inspect code, or execute programming work.
    - These are dispatched to the Antigravity engine inside the group's active project folder.
+   - For every laptop_task, ALWAYS generate a quick, context-aware pre-task acknowledgment in "acknowledgementText" mirroring the user's personality and style:
+     - If user points out a flaw or asks for a change/fix (e.g. "bro this is cool but change this", "it broke", "fix this"):
+       e.g. "my bad bro, on it", "oh my bad, fixing that rn", "gotchu, tweaking it now", "say less, fixing that up"
+     - If user compliments or requests a feature (e.g. "make a landing page", "add dark mode"):
+       e.g. "bet, cooking that up rn", "say less, on it", "gotchu, building that now"
+     - Keep it short (1 punchy line), natural, matching their casing (lowercase if they use lowercase) and vibe.
    - Examples:
-     - "build a landing page with react and tailwind" -> laptop_task
-     - "fix the login button alignment in Navbar.jsx" -> laptop_task
-     - "run the tests and check if anything fails" -> laptop_task
-     - "deploy this to netlify" -> laptop_task
-     - "inspect src/index.js and tell me what ports are used" -> laptop_task
+     - "build a landing page with react and tailwind" -> laptop_task (acknowledgementText: "bet, cooking up the landing page rn")
+     - "bro this is cool but fix the alignment" -> laptop_task (acknowledgementText: "my bad bro, on it")
+     - "fix the login button alignment in Navbar.jsx" -> laptop_task (acknowledgementText: "gotchu, on it")
+     - "run the tests and check if anything fails" -> laptop_task (acknowledgementText: "running the tests rn")
+     - "deploy this to netlify" -> laptop_task (acknowledgementText: "say less, deploying to netlify rn")
+     - "inspect src/index.js and tell me what ports are used" -> laptop_task (acknowledgementText: "checking src/index.js rn")
 
 2. "system_command"
    - Triggered for workspace, project, or group lifecycle commands, and PERMISSION / ACCESS MANAGEMENT.
@@ -117,6 +124,10 @@ export const ROUTER_TOOL_DECLARATIONS = [
         laptopTaskInstructions: {
           type: 'STRING',
           description: 'The clean coding/terminal/build instructions to dispatch to Antigravity CLI.'
+        },
+        acknowledgementText: {
+          type: 'STRING',
+          description: 'For laptop_task: a brief, natural, context-aware pre-task acknowledgment mirroring the user style sent to the chat before Antigravity executes (e.g. "my bad bro, on it", "bet, tweaking that rn", "gotchu, cooking that up").'
         },
         chatReplyText: {
           type: 'STRING',
