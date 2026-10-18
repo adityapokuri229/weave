@@ -767,6 +767,7 @@ export async function dispatchIntent({
 
   // 8.6. Product Discovery & Personalization: Handle founder's product emphasis while or after website build
   const activePortfolioSession = state?.portfolioSessions?.[jid];
+  const isWebsiteCreationOrIteration = intent === INTENTS.PORTFOLIO;
   const isExplicitControl =
     intent === INTENTS.TASK_CONTROL ||
     intent === INTENTS.WORKSPACE_MANAGEMENT ||
@@ -779,10 +780,15 @@ export async function dispatchIntent({
     intent === INTENTS.EMAIL ||
     /\b(?:email|mail|summary|recap|catch\s*up|context|calendar|meeting)\b/i.test(rawBody);
 
+  const productKeywordsRegex =
+    /\b(?:emphasize|highlight|feature|features|call\s*to\s*action|cta|goal|visitors?|product|service|audience|pricing|headline|logo|brand|order|book|sell|contact|signup|sign\s*up)\b/i;
+
+  const isWebsiteContext =
+    activePortfolioSession?.status === 'generating' ||
+    /\b(?:website|site|page|hero|navbar|footer|layout|vibe|portfolio|design|section)\b/i.test(rawBody);
+
   if (activePortfolioSession && !isWebsiteCreationOrIteration && !isExplicitControl && !isEmailOrSummary) {
-    const isProductDetailMessage =
-      intent === INTENTS.CONVERSATIONAL_QA ||
-      /\b(?:emphasize|highlight|feature|features|call\s*to\s*action|cta|goal|visitors?|product|service|audience|pricing|headline|logo|brand|order|book|sell|contact|signup|sign\s*up)\b/i.test(rawBody);
+    const isProductDetailMessage = isWebsiteContext && productKeywordsRegex.test(rawBody);
 
     if (isProductDetailMessage) {
       if (reactToMessage) await reactToMessage(sock, msg, '✨').catch(() => {});
