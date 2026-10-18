@@ -26,32 +26,38 @@ export async function renderAndCaptureVariants(portfolioData, outputDir = null) 
   const targetDir = outputDir || path.join(os.tmpdir(), 'portfolio-stitch-variants', `${Date.now()}`);
   fs.mkdirSync(targetDir, { recursive: true });
 
-  const variants = [
-    {
-      option: 1,
-      id: DESIGN_PHILOSOPHIES.BENTO,
-      name: 'Obsidian Bento Grid',
-      description: 'Dark mode, glowing neon cyan/purple accents, modular tech cards, and monospace badges.',
-      html: renderBentoPortfolio(portfolioData),
-      filename: 'option1_bento',
-    },
-    {
-      option: 2,
-      id: DESIGN_PHILOSOPHIES.SWISS,
-      name: 'Swiss Editorial Minimal',
-      description: 'Clean typography, serif headlines, generous whitespace, and high-contrast editorial layout.',
-      html: renderSwissPortfolio(portfolioData),
-      filename: 'option2_swiss',
-    },
-    {
-      option: 3,
-      id: DESIGN_PHILOSOPHIES.BRUTALIST,
-      name: 'Neo-Brutalist Dynamic',
-      description: 'Bold 2px dark outlines, high-energy highlighter badges, and tactile interactive elements.',
-      html: renderBrutalistPortfolio(portfolioData),
-      filename: 'option3_brutalist',
-    },
-  ];
+  const aesthetics =
+    Array.isArray(portfolioData.aesthetics) && portfolioData.aesthetics.length >= 3
+      ? portfolioData.aesthetics
+      : [
+          {
+            option: 1,
+            id: DESIGN_PHILOSOPHIES.BENTO,
+            name: 'Obsidian Bento Grid',
+            description: 'Dark mode, glowing neon cyan/purple accents, modular tech cards, and monospace badges.',
+          },
+          {
+            option: 2,
+            id: DESIGN_PHILOSOPHIES.SWISS,
+            name: 'Swiss Editorial Minimal',
+            description: 'Clean typography, serif headlines, generous whitespace, and high-contrast editorial layout.',
+          },
+          {
+            option: 3,
+            id: DESIGN_PHILOSOPHIES.BRUTALIST,
+            name: 'Neo-Brutalist Dynamic',
+            description: 'Bold 2px dark outlines, high-energy highlighter badges, and tactile interactive elements.',
+          },
+        ];
+
+  const variants = aesthetics.map((a, idx) => ({
+    option: a.option || idx + 1,
+    id: a.id || `option-${idx + 1}`,
+    name: a.name || `Design Option ${idx + 1}`,
+    description: a.description || 'Custom aesthetic layout',
+    html: generatePortfolioHtml(String(a.option || idx + 1), portfolioData),
+    filename: `option${idx + 1}_${(a.id || 'variant').replace(/[^a-z0-9]/gi, '_')}`,
+  }));
 
   const results = [];
   for (const v of variants) {
@@ -211,15 +217,17 @@ export async function executePortfolioCreation({
     deployNotice = `The website has been compiled locally in your workspace.`;
   }
 
+  const variantLines = variants.map(
+    (v) => `• *Option ${v.option}*: *${v.name}*\n   _${v.description}_`
+  );
+
   const messageText = [
     deployNotice,
     ``,
-    `🎨 *Google Stitch Design Variations Created:*`,
-    `• *Option 1*: Obsidian Bento Grid (Dark Modern Tech)`,
-    `• *Option 2*: Swiss Editorial Minimal (Clean & Typography-focused)`,
-    `• *Option 3*: Neo-Brutalist Dynamic (Bold High-Contrast & Tactile)`,
+    `🎨 *Bespoke Design Directions for "${portfolioData.name || 'Your Website'}":*`,
+    ...variantLines,
     ``,
-    `_Reply right here in WhatsApp to choose a design (e.g. "option 2", "option 3") or dictate changes, and I will update your live site!_`,
+    `_Reply right here in WhatsApp (e.g. "option 2", "option 3", or dictate styling) to update your live site!_`,
     ``,
     ...directives,
   ].join('\n');
@@ -248,14 +256,30 @@ export async function iteratePortfolioDesign({ chatJid, feedbackText }) {
   }
 
   const lower = (feedbackText || '').toLowerCase();
-  let updatedPhilosophy = session.activePhilosophy;
+  let updatedPhilosophy = session.activePhilosophy || '1';
 
-  if (lower.includes('option 2') || lower.includes('swiss') || lower.includes('editorial')) {
-    updatedPhilosophy = DESIGN_PHILOSOPHIES.SWISS;
-  } else if (lower.includes('option 3') || lower.includes('brutalist') || lower.includes('yellow')) {
-    updatedPhilosophy = DESIGN_PHILOSOPHIES.BRUTALIST;
-  } else if (lower.includes('option 1') || lower.includes('bento') || lower.includes('obsidian') || lower.includes('dark')) {
-    updatedPhilosophy = DESIGN_PHILOSOPHIES.BENTO;
+  // Check numeric options first: "option 1", "option 2", "option 3", "1", "2", "3"
+  if (lower.match(/\b(option\s*1|first\s*option|^1$)\b/i)) {
+    updatedPhilosophy = '1';
+  } else if (lower.match(/\b(option\s*2|second\s*option|^2$)\b/i)) {
+    updatedPhilosophy = '2';
+  } else if (lower.match(/\b(option\s*3|third\s*option|^3$)\b/i)) {
+    updatedPhilosophy = '3';
+  } else if (Array.isArray(session.portfolioData?.aesthetics)) {
+    // Check if user mentioned words from aesthetic names or ids
+    for (const a of session.portfolioData.aesthetics) {
+      const nameWords = (a.name || '').toLowerCase().split(/\s+/).filter((w) => w.length > 3);
+      if (lower.includes(a.id?.toLowerCase()) || nameWords.some((w) => lower.includes(w))) {
+        updatedPhilosophy = String(a.option);
+        break;
+      }
+    }
+  } else if (lower.includes('swiss') || lower.includes('editorial')) {
+    updatedPhilosophy = '2';
+  } else if (lower.includes('brutalist') || lower.includes('yellow')) {
+    updatedPhilosophy = '3';
+  } else if (lower.includes('bento') || lower.includes('obsidian') || lower.includes('dark')) {
+    updatedPhilosophy = '1';
   }
 
   // If user dictates custom content or adjustments
@@ -322,12 +346,19 @@ export async function iteratePortfolioDesign({ chatJid, feedbackText }) {
     statusNotice = `Design updated locally in project directory.`;
   }
 
+  const currentAesthetic = session.portfolioData?.aesthetics?.find(
+    (a) => String(a.option) === String(updatedPhilosophy) || a.id === updatedPhilosophy
+  );
+
   const philosophyLabels = {
-    [DESIGN_PHILOSOPHIES.BENTO]: 'Option 1: Obsidian Bento Grid (Dark Modern Tech)',
-    [DESIGN_PHILOSOPHIES.SWISS]: 'Option 2: Swiss Editorial Minimal (Clean Serif Typography)',
-    [DESIGN_PHILOSOPHIES.BRUTALIST]: 'Option 3: Neo-Brutalist Dynamic (Bold High-Contrast & Tactile)',
+    [DESIGN_PHILOSOPHIES.BENTO]: 'Obsidian Bento Grid (Dark Modern Tech)',
+    [DESIGN_PHILOSOPHIES.SWISS]: 'Swiss Editorial Minimal (Clean Serif Typography)',
+    [DESIGN_PHILOSOPHIES.BRUTALIST]: 'Neo-Brutalist Dynamic (Bold High-Contrast & Tactile)',
   };
-  const activeLabel = philosophyLabels[updatedPhilosophy] || updatedPhilosophy.toUpperCase();
+
+  const activeLabel = currentAesthetic
+    ? `Option ${currentAesthetic.option}: ${currentAesthetic.name}`
+    : philosophyLabels[updatedPhilosophy] || `Option ${updatedPhilosophy}`;
 
   const messageText = [
     `✅ *Website Design Updated!*`,

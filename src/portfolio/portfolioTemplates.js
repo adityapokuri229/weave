@@ -794,10 +794,301 @@ export function renderBrutalistPortfolio(data) {
 }
 
 /**
- * Renders the chosen design philosophy template.
+ * Renders a bespoke, domain-tailored website based on dynamic aesthetic tokens.
+ *
+ * @param {object} data - Synthesized portfolio content
+ * @param {object} aesthetic - Synthesized or domain aesthetic tokens
+ * @returns {string} Fully rendered HTML
  */
-export function generatePortfolioHtml(philosophy = DESIGN_PHILOSOPHIES.BENTO, data = {}) {
-  switch (philosophy.toLowerCase()) {
+export function renderDynamicAestheticPortfolio(data, aesthetic = {}) {
+  const d = buildPortfolioData(data);
+  const a = aesthetic || {};
+
+  const colors = a.colors || {
+    bg: '#0F172A',
+    bgCard: '#1E293B',
+    accent: '#38BDF8',
+    accentSecondary: '#818CF8',
+    textPrimary: '#F8FAFC',
+    textMuted: '#94A3B8',
+    border: 'rgba(255, 255, 255, 0.1)',
+    heroGlow: 'radial-gradient(circle at 50% 20%, rgba(56, 189, 248, 0.15) 0%, transparent 60%)',
+  };
+
+  const ui = a.ui || {
+    borderRadius: '1rem',
+    borderWidth: '1px',
+    shadow: '0 10px 30px -5px rgba(0, 0, 0, 0.2)',
+    layoutMode: 'modular',
+  };
+
+  const fontHeading = a.fontHeading || "'Plus Jakarta Sans', sans-serif";
+  const fontBody = a.fontBody || "'Inter', sans-serif";
+  const fontsUrl = a.googleFontsUrl || 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap';
+
+  return `<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>${d.name} — ${d.headline}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="${fontsUrl}" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    :root {
+      --bg-primary: ${colors.bg};
+      --bg-card: ${colors.bgCard};
+      --accent: ${colors.accent};
+      --accent-sec: ${colors.accentSecondary || colors.accent};
+      --text-primary: ${colors.textPrimary};
+      --text-muted: ${colors.textMuted};
+      --border-color: ${colors.border};
+      --radius: ${ui.borderRadius || '0.75rem'};
+      --border-width: ${ui.borderWidth || '1px'};
+      --shadow: ${ui.shadow || 'none'};
+      --font-heading: ${fontHeading};
+      --font-body: ${fontBody};
+    }
+
+    body {
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: var(--font-body);
+      min-height: 100vh;
+    }
+
+    h1, h2, h3, .font-heading {
+      font-family: var(--font-heading);
+    }
+
+    .theme-card {
+      background-color: var(--bg-card);
+      border: var(--border-width) solid var(--border-color);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .theme-card:hover {
+      transform: translateY(-2px);
+    }
+
+    .btn-primary {
+      background-color: var(--accent);
+      color: #ffffff;
+      border-radius: var(--radius);
+      font-family: var(--font-heading);
+      transition: filter 0.2s, transform 0.2s;
+    }
+    .btn-primary:hover {
+      filter: brightness(1.1);
+      transform: translateY(-1px);
+    }
+
+    .btn-secondary {
+      background: transparent;
+      border: var(--border-width) solid var(--border-color);
+      color: var(--text-primary);
+      border-radius: var(--radius);
+      font-family: var(--font-heading);
+      transition: background 0.2s, transform 0.2s;
+    }
+    .btn-secondary:hover {
+      background: rgba(255, 255, 255, 0.05);
+      transform: translateY(-1px);
+    }
+
+    .badge-category {
+      background: color-mix(in srgb, var(--accent) 15%, transparent);
+      color: var(--accent);
+      border: var(--border-width) solid color-mix(in srgb, var(--accent) 30%, transparent);
+      border-radius: 9999px;
+    }
+
+    .badge-status {
+      background: color-mix(in srgb, var(--accent-sec) 15%, transparent);
+      color: var(--accent-sec);
+      border-radius: 9999px;
+    }
+  </style>
+</head>
+<body class="selection:bg-amber-500/20">
+  ${colors.heroGlow && colors.heroGlow !== 'none' ? `
+  <div class="fixed inset-0 pointer-events-none overflow-hidden z-0" style="background: ${colors.heroGlow}"></div>
+  ` : ''}
+
+  <div class="relative z-10 max-w-6xl mx-auto px-6 py-10 md:py-16">
+    <!-- Navigation -->
+    <header class="flex items-center justify-between pb-8 border-b mb-12" style="border-color: var(--border-color)">
+      <div class="flex items-center space-x-3">
+        <span class="font-heading text-lg font-bold tracking-tight">${d.name}</span>
+        <span class="badge-status px-3 py-1 text-xs font-medium">${d.statusBadge}</span>
+      </div>
+      <div class="flex items-center space-x-6 text-sm" style="color: var(--text-muted)">
+        <a href="#about" class="hover:opacity-80 transition-opacity">About</a>
+        <a href="#offerings" class="hover:opacity-80 transition-opacity">Work</a>
+        <a href="mailto:${d.email}" class="btn-primary px-4 py-2 text-xs font-semibold">${d.ctaSecondary}</a>
+      </div>
+    </header>
+
+    <!-- Hero Section -->
+    <section class="mb-16 md:mb-24 max-w-3xl">
+      <div class="inline-block badge-category px-3.5 py-1.5 text-xs font-semibold tracking-wider uppercase mb-6">
+        ${d.categoryBadge}
+      </div>
+      <h1 class="text-4xl md:text-6xl font-extrabold tracking-tight leading-[1.1] mb-6">
+        ${d.headline}
+      </h1>
+      <p class="text-lg md:text-xl leading-relaxed mb-8" style="color: var(--text-muted)">
+        ${d.tagline}
+      </p>
+      <div class="flex flex-wrap items-center gap-4">
+        <a href="#offerings" class="btn-primary px-6 py-3.5 text-sm font-bold flex items-center space-x-2">
+          <span>${d.ctaPrimary}</span>
+          <i data-lucide="arrow-right" class="w-4 h-4"></i>
+        </a>
+        <a href="mailto:${d.email}" class="btn-secondary px-6 py-3.5 text-sm font-semibold">
+          ${d.ctaSecondary}
+        </a>
+      </div>
+    </section>
+
+    <!-- Key Metrics / Stats -->
+    <section class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-16">
+      ${d.stats.map((s) => `
+        <div class="theme-card p-6">
+          <div class="font-heading text-3xl md:text-4xl font-extrabold tracking-tight mb-1" style="color: var(--accent)">
+            ${s.value}
+          </div>
+          <div class="text-xs uppercase font-medium tracking-wider" style="color: var(--text-muted)">
+            ${s.label}
+          </div>
+        </div>
+      `).join('')}
+    </section>
+
+    <!-- Approach / Manifesto -->
+    <section id="about" class="theme-card p-8 md:p-12 mb-16">
+      <div class="text-xs font-bold uppercase tracking-widest mb-3" style="color: var(--accent)">
+        ${d.headerTag}
+      </div>
+      <h2 class="text-2xl md:text-3xl font-bold mb-4">
+        ${d.manifestoTitle}
+      </h2>
+      <p class="text-base md:text-lg leading-relaxed max-w-3xl" style="color: var(--text-muted)">
+        ${d.philosophy}
+      </p>
+    </section>
+
+    <!-- Offerings / Work Cards -->
+    <section id="offerings" class="mb-16">
+      <div class="flex items-center justify-between mb-8">
+        <div>
+          <h2 class="text-2xl md:text-3xl font-bold tracking-tight">Featured Highlights</h2>
+          <p class="text-sm mt-1" style="color: var(--text-muted)">Curated selections representing our mission & craftsmanship</p>
+        </div>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        ${d.projects.map((p) => `
+          <div class="theme-card p-6 flex flex-col justify-between">
+            <div>
+              <div class="text-xs font-semibold uppercase tracking-wider mb-2" style="color: var(--accent)">
+                ${p.category}
+              </div>
+              <h3 class="text-xl font-bold mb-3 tracking-tight">
+                ${p.title}
+              </h3>
+              <p class="text-sm leading-relaxed mb-6" style="color: var(--text-muted)">
+                ${p.description}
+              </p>
+            </div>
+            <div class="flex flex-wrap gap-2 pt-4 border-t" style="border-color: var(--border-color)">
+              ${(p.tags || []).map((t) => `
+                <span class="text-[11px] font-medium px-2.5 py-1 rounded-md" style="background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent)">
+                  ${t}
+                </span>
+              `).join('')}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </section>
+
+    <!-- Focus Areas / Badges -->
+    <section class="theme-card p-8 mb-16">
+      <h3 class="text-sm font-bold uppercase tracking-wider mb-4" style="color: var(--text-muted)">
+        Core Focus & Capabilities
+      </h3>
+      <div class="flex flex-wrap gap-2.5">
+        ${(d.skills || []).map((skill) => `
+          <div class="px-3.5 py-2 text-xs font-medium rounded-lg border" style="background: var(--bg-primary); border-color: var(--border-color)">
+            ${skill}
+          </div>
+        `).join('')}
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="pt-8 border-t flex flex-col md:flex-row items-center justify-between gap-4 text-xs" style="border-color: var(--border-color); color: var(--text-muted)">
+      <div>
+        © ${new Date().getFullYear()} ${d.name}. All rights reserved.
+      </div>
+      <div class="flex items-center space-x-6">
+        <a href="mailto:${d.email}" class="hover:underline font-semibold" style="color: var(--accent)">
+          ${d.email}
+        </a>
+      </div>
+    </footer>
+  </div>
+
+  <script>
+    lucide.createIcons();
+  </script>
+</body>
+</html>`;
+}
+
+/**
+ * Renders the chosen design philosophy template.
+ * Supports:
+ * - Bespoke dynamic aesthetic options (1, 2, 3 or aesthetic id)
+ * - Legacy philosophy names ('swiss', 'brutalist', 'bento')
+ */
+export function generatePortfolioHtml(philosophy = '1', data = {}) {
+  const aesthetics = data.aesthetics || [];
+
+  // 1. Check if option is a numeric index (1, 2, 3)
+  const optionNum = parseInt(philosophy, 10);
+  if (!isNaN(optionNum) && aesthetics.length >= optionNum) {
+    return renderDynamicAestheticPortfolio(data, aesthetics[optionNum - 1]);
+  }
+
+  // 2. Check if option matches an aesthetic ID
+  const matchedById = aesthetics.find(
+    (a) => a.id === philosophy || a.name?.toLowerCase().includes(String(philosophy).toLowerCase())
+  );
+  if (matchedById) {
+    return renderDynamicAestheticPortfolio(data, matchedById);
+  }
+
+  // 3. If aesthetics exist and legacy names passed, map them intuitively
+  if (aesthetics.length > 0) {
+    const philLower = String(philosophy).toLowerCase();
+    if (philLower === 'swiss' && aesthetics[1]) {
+      return renderDynamicAestheticPortfolio(data, aesthetics[1]);
+    }
+    if (philLower === 'brutalist' && aesthetics[2]) {
+      return renderDynamicAestheticPortfolio(data, aesthetics[2]);
+    }
+    return renderDynamicAestheticPortfolio(data, aesthetics[0]);
+  }
+
+  // 4. Legacy template fallbacks
+  switch (String(philosophy).toLowerCase()) {
     case 'swiss':
       return renderSwissPortfolio(data);
     case 'brutalist':
