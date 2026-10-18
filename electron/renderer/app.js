@@ -40,24 +40,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   const step3Card = document.getElementById('step-3-card');
   const step3Badge = document.getElementById('step-3-badge');
 
+  let hasAutoNavigated = false;
+
   function showView(view) {
     if (view === 'workspace') {
-      if (!isConnected) {
-        appendLog('warn', '⚠️ Complete Step 1 (Link WhatsApp) first before opening the workspace.');
-        if (stepBtn1) {
-          stepBtn1.classList.add('animate-pulse');
-          setTimeout(() => stepBtn1.classList.remove('animate-pulse'), 1500);
-        }
-        return;
-      }
-      if (!isGoogleConnected) {
-        appendLog('warn', '⚠️ Complete Step 2 (Connect Google Account) first before opening the workspace.');
-        if (stepBtn2) {
-          stepBtn2.classList.add('animate-pulse');
-          setTimeout(() => stepBtn2.classList.remove('animate-pulse'), 1500);
-        }
-        return;
-      }
       viewOnboarding.classList.add('hidden');
       viewWorkspace.classList.remove('hidden');
       tabWorkspace.className = 'px-2.5 py-0.5 rounded text-[11px] font-medium text-black bg-white transition-all flex items-center gap-1.5 cursor-pointer';
@@ -66,11 +52,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       viewWorkspace.classList.add('hidden');
       viewOnboarding.classList.remove('hidden');
       tabOnboarding.className = 'px-2.5 py-0.5 rounded text-[11px] font-medium text-black bg-white transition-all flex items-center gap-1.5 cursor-pointer';
-      if (isConnected && isGoogleConnected) {
-        tabWorkspace.className = 'px-2.5 py-0.5 rounded text-[11px] font-medium text-app-secondary hover:text-white transition-all flex items-center gap-1.5 cursor-pointer';
-      } else {
-        tabWorkspace.className = 'px-2.5 py-0.5 rounded text-[11px] font-medium text-app-dim opacity-50 cursor-not-allowed transition-all flex items-center gap-1.5';
-      }
+      tabWorkspace.className = 'px-2.5 py-0.5 rounded text-[11px] font-medium text-app-secondary hover:text-white transition-all flex items-center gap-1.5 cursor-pointer';
     }
   }
 
@@ -180,6 +162,24 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
+  const btnCopyLogs = document.getElementById('btn-copy-logs');
+  if (btnCopyLogs) {
+    btnCopyLogs.addEventListener('click', async () => {
+      if (!terminalBody) return;
+      const textToCopy = terminalBody.innerText || '';
+      try {
+        await navigator.clipboard.writeText(textToCopy);
+        const originalHTML = btnCopyLogs.innerHTML;
+        btnCopyLogs.innerHTML = '<i class="fa-solid fa-check text-[10px] text-white"></i><span>copied!</span>';
+        setTimeout(() => {
+          btnCopyLogs.innerHTML = originalHTML;
+        }, 1800);
+      } catch (err) {
+        console.error('Failed to copy stream text:', err);
+      }
+    });
+  }
+
   function escapeHtml(str) {
     if (typeof str !== 'string') return '';
     return str
@@ -190,7 +190,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       .replace(/'/g, '&#39;');
   }
 
-  function renderProjectsList(projects, activeProject, groupBindings = {}) {
+  function renderProjectsList(projects, activeProject, groupBindings = {}, groupNames = {}, projectAccess = {}, friends = []) {
     if (!projectsListContainer) return;
     const projectEntries = Object.entries(projects || {});
     if (projectEntries.length === 0) {
@@ -225,21 +225,110 @@ document.addEventListener('DOMContentLoaded', async () => {
             .map((jid) => {
               const cleanJid = escapeHtml(jid);
               const shortJid = escapeHtml(jid.replace('@g.us', ''));
+              const realGroupName = groupNames[jid] ? escapeHtml(groupNames[jid]) : `Group ${shortJid}`;
+              const currentAllowed = (projectAccess[jid]?.[alias.toLowerCase()] || []);
+
+              // Permissions list / toggles for this group project (Owner has full access by default)
+              let accessTogglesHtml = `
+                <div class="mt-2 pt-1.5 border-t border-zinc-800 flex flex-col gap-1">
+                  <div class="text-[9px] font-mono text-zinc-400 uppercase flex items-center justify-between">
+                    <span>Permissions</span>
+                    <span class="text-[8px] text-zinc-500">${currentAllowed.length + 1} Authorized</span>
+                  </div>
+                  <div class="flex flex-wrap gap-1 mt-0.5">
+                    <!-- Owner Badge (Default Full Access) -->
+                    <span class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-amber-950/50 text-amber-300 border border-amber-600/50 flex items-center gap-1 select-none" title="Owner has full access by default">
+                      <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
+                      <span>👑 Owner (Full Access)</span>
+                    </span>
+                    ${(() => {
+                      const renderedButtons = [];
+                      const handledNames = new Set();
+
+                      // 1. Registered friends
+                      friends.forEach(f => {
+                        const safeFriendName = escapeHtml(f.name);
+                        const isGranted = currentAllowed.some(u => 
+                          u.toLowerCase() === f.name.toLowerCase() || 
+                          (f.github && u.toLowerCase() === f.github.toLowerCase())
+                        );
+                        if (isGranted) {
+                          handledNames.add(f.name.toLowerCase());
+                          if (f.github) handledNames.add(f.github.toLowerCase());
+                        }
+                        renderedButtons.push(`
+                          <button
+                            class="btn-toggle-access text-[9px] font-mono px-1.5 py-0.5 rounded border transition cursor-pointer flex items-center gap-1 ${
+                              isGranted
+                                ? 'bg-emerald-950/80 text-emerald-400 border-emerald-600/70 hover:bg-red-950/60 hover:text-red-300 hover:border-red-600/50'
+                                : 'bg-zinc-800/80 text-zinc-400 border-zinc-700 hover:text-white hover:border-zinc-500'
+                            }"
+                            data-alias="${escapeHtml(alias)}"
+                            data-jid="${cleanJid}"
+                            data-name="${safeFriendName}"
+                            data-granted="${isGranted ? 'true' : 'false'}"
+                            title="${isGranted ? 'Click to revoke access' : 'Click to grant access'}"
+                          >
+                            <span class="w-1.5 h-1.5 rounded-full ${isGranted ? 'bg-emerald-400' : 'bg-zinc-600'}"></span>
+                            <span>${safeFriendName}</span>
+                            <span class="text-[8px] opacity-70">${isGranted ? '✓' : '+'}</span>
+                          </button>
+                        `);
+                      });
+
+                      // 2. Extra collaborators in currentAllowed that aren't registered friends
+                      currentAllowed.forEach(name => {
+                        if (!handledNames.has(name.toLowerCase())) {
+                          const safeName = escapeHtml(name);
+                          renderedButtons.push(`
+                            <button
+                              class="btn-toggle-access text-[9px] font-mono px-1.5 py-0.5 rounded border transition cursor-pointer flex items-center gap-1 bg-emerald-950/80 text-emerald-400 border-emerald-600/70 hover:bg-red-950/60 hover:text-red-300 hover:border-red-600/50"
+                              data-alias="${escapeHtml(alias)}"
+                              data-jid="${cleanJid}"
+                              data-name="${safeName}"
+                              data-granted="true"
+                              title="Click to revoke access"
+                            >
+                              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                              <span>${safeName}</span>
+                              <span class="text-[8px] opacity-70">✕</span>
+                            </button>
+                          `);
+                        }
+                      });
+
+                      if (renderedButtons.length > 0) {
+                        return renderedButtons.join('');
+                      }
+                      return `<span class="text-[8px] font-mono text-zinc-500 italic py-0.5">Owner only (No collaborators granted)</span>`;
+                    })()}
+                  </div>
+                </div>
+              `;
+
               return `
-                <div class="flex items-center justify-between gap-1 text-[10px] font-mono bg-zinc-900/90 border border-zinc-800 rounded px-2 py-1 mt-1">
-                  <span class="flex items-center gap-1.5 text-emerald-400 truncate" title="${cleanJid}">
-                    <i class="fa-brands fa-whatsapp text-[11px] shrink-0"></i>
-                    <span class="text-zinc-300 truncate">Group ${shortJid}</span>
-                    <span class="text-[8px] px-1 py-0.2 bg-emerald-950/60 text-emerald-400 border border-emerald-800/50 rounded uppercase shrink-0 font-medium">Bound</span>
-                  </span>
-                  <button
-                    class="btn-unbind-group text-[9px] text-zinc-400 hover:text-red-400 hover:bg-red-500/10 px-1.5 py-0.5 rounded border border-zinc-700/60 hover:border-red-500/30 transition cursor-pointer shrink-0"
-                    data-jid="${cleanJid}"
-                    data-alias="${escapeHtml(alias)}"
-                    title="Unbind this group from project"
-                  >
-                    Unbind
-                  </button>
+                <div class="flex flex-col text-[10px] font-mono bg-zinc-900/90 border border-zinc-800 rounded p-2 mt-1">
+                  <div class="flex items-center justify-between gap-1">
+                    <span class="flex items-center gap-1.5 text-emerald-400 truncate" title="${cleanJid}">
+                      <i class="fa-brands fa-whatsapp text-[12px] shrink-0 text-emerald-400"></i>
+                      <div class="flex flex-col truncate">
+                        <span class="text-zinc-200 font-semibold truncate text-[11px]">${realGroupName}</span>
+                        <span class="text-[9px] text-zinc-500 tracking-tight select-all"><sub>id: ${shortJid}</sub></span>
+                      </div>
+                    </span>
+                    <div class="flex items-center gap-1 shrink-0">
+                      <span class="text-[8px] px-1 py-0.5 bg-emerald-950/60 text-emerald-400 border border-emerald-800/50 rounded uppercase font-medium">Bound</span>
+                      <button
+                        class="btn-unbind-group text-[9px] text-zinc-400 hover:text-red-400 hover:bg-red-500/10 px-1.5 py-0.5 rounded border border-zinc-700/60 hover:border-red-500/30 transition cursor-pointer"
+                        data-jid="${cleanJid}"
+                        data-alias="${escapeHtml(alias)}"
+                        title="Unbind this group from project"
+                      >
+                        Unbind
+                      </button>
+                    </div>
+                  </div>
+                  ${accessTogglesHtml}
                 </div>
               `;
             })
@@ -375,6 +464,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     isConnected = Boolean(state.bot?.connected);
     isGoogleConnected = Boolean(state.google?.authenticated && state.google?.email);
 
+    // Automatically transition to workspace view when WhatsApp is online!
+    if (isConnected && !hasAutoNavigated) {
+      hasAutoNavigated = true;
+      showView('workspace');
+    }
+
     // 1. WhatsApp Bot State (Step 1)
     if (isConnected) {
       waHeaderDot.className = 'w-1.5 h-1.5 rounded-full bg-white inline-block';
@@ -461,13 +556,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     callsignDisplay.textContent = trigger;
 
-    if (isConnected && isGoogleConnected) {
+    if (isConnected) {
       // Unlock Step 3 & Workspace
       if (step3Card) step3Card.style.opacity = '1';
-      if (step3Badge) {
-        step3Badge.textContent = 'In-chat mention';
-        step3Badge.className = 'text-[11px] text-app-secondary font-mono';
-      }
       botTagInput.disabled = false;
       botTagInput.className = 'bg-transparent border-none text-white font-mono text-xs focus:outline-none w-full px-1 tracking-tight';
       btnSaveHandle.disabled = false;
@@ -482,13 +573,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       // Unlock Launch Workspace Button & Top Tab
       btnLaunchWorkspace.className = 'w-full py-3 px-6 rounded-lg bg-white hover:bg-neutral-200 text-black text-xs font-mono font-semibold uppercase tracking-wider flex items-center justify-center gap-2 shadow-lg transition-all active:scale-[0.99] cursor-pointer';
-      btnLaunchWorkspace.innerHTML = '<span>Launch Desktop Workspace</span><i class="fa-solid fa-arrow-right text-[11px]"></i>';
+      btnLaunchWorkspace.innerHTML = '<span>Open Desktop Workspace</span><i class="fa-solid fa-arrow-right text-[11px]"></i>';
 
       tabWorkspace.className = 'px-2.5 py-0.5 rounded text-[11px] font-medium text-app-secondary hover:text-white transition-all flex items-center gap-1.5 cursor-pointer';
       tabWorkspace.removeAttribute('title');
       if (tabWorkspaceIcon) tabWorkspaceIcon.textContent = 'terminal';
     } else {
-      // Keep Step 3 call-sign editable anytime, lock only Workspace launch
       if (step3Card) step3Card.style.opacity = '1';
       botTagInput.disabled = false;
       botTagInput.className = 'bg-transparent border-none text-white font-mono text-xs focus:outline-none w-full px-1 tracking-tight';
@@ -502,9 +592,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         stepBtn3.className = 'flex items-center justify-center gap-1.5 py-1.5 px-2 rounded text-app-dim font-medium';
       }
 
-      const lockMsg = !isConnected
-        ? 'Complete Steps 1 & 2 to Unlock Workspace'
-        : 'Complete Step 2 (Google Auth) to Unlock Workspace';
+      const lockMsg = 'Link WhatsApp in Step 1 to Unlock Workspace';
       btnLaunchWorkspace.className = 'w-full py-3 px-6 rounded-lg bg-app-subtle text-app-dim border border-app-border text-xs font-mono font-semibold uppercase tracking-wider flex items-center justify-center gap-2 transition-all opacity-50 cursor-not-allowed';
       btnLaunchWorkspace.innerHTML = `<span class="material-symbols-outlined text-[14px]">lock</span><span>${lockMsg}</span>`;
 
@@ -530,14 +618,18 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (badgeMountedCount) {
         badgeMountedCount.textContent = `${projCount} MOUNTED`;
       }
-      renderProjectsList(state.projects, state.activeProject, state.groupBindings);
+      renderProjectsList(
+        state.projects,
+        state.activeProject,
+        state.groupBindings || {},
+        state.groupNames || {},
+        state.projectAccess || {},
+        state.friends || []
+      );
     }
 
     if (activeProjectPath && state.activeProject && state.projects?.[state.activeProject]) {
       activeProjectPath.textContent = state.projects[state.activeProject];
-    }
-    if (typeof state.autopilot === 'boolean') {
-      setAutopilotUI(state.autopilot);
     }
     if (state.friends) {
       renderFriendsList(state.friends);
@@ -590,6 +682,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     api.onLog(({ level, text, time }) => {
       appendLog(level, text, time);
     });
+
+    if (api.onProjectsUpdate) {
+      api.onProjectsUpdate((updatedState) => {
+        if (updatedState) {
+          renderState(updatedState);
+          appendLog('info', '🔄 Dashboard state updated live.');
+        }
+      });
+    }
   }
 
   // Pairing Code Alternative Handler
@@ -664,45 +765,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       btnGoogleLogin.textContent = isGoogleConnected ? 'Connected ✓' : 'Sign In';
     }
   });
-
-  // Autopilot Toggle Button
-  const btnToggleAutopilot = document.getElementById('btn-toggle-autopilot');
-  const autopilotPill = document.getElementById('autopilot-pill');
-  const autopilotIcon = document.getElementById('autopilot-icon');
-  let isAutopilot = false;
-
-  function setAutopilotUI(enabled) {
-    isAutopilot = Boolean(enabled);
-    if (!autopilotPill || !btnToggleAutopilot) return;
-    if (isAutopilot) {
-      autopilotPill.textContent = 'ON';
-      autopilotPill.className = 'px-1.5 py-0.2 rounded text-[9px] font-mono uppercase bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 font-bold';
-      btnToggleAutopilot.className = 'flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-emerald-950/40 border border-emerald-500/40 transition text-xs font-mono cursor-pointer shadow-sm';
-      if (autopilotIcon) autopilotIcon.className = 'material-symbols-outlined text-[14px] text-emerald-400';
-    } else {
-      autopilotPill.textContent = 'OFF';
-      autopilotPill.className = 'px-1.5 py-0.2 rounded text-[9px] font-mono uppercase bg-zinc-800 text-zinc-400 border border-zinc-700';
-      btnToggleAutopilot.className = 'flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-app-surface hover:bg-zinc-800 border border-app-border transition text-xs font-mono cursor-pointer';
-      if (autopilotIcon) autopilotIcon.className = 'material-symbols-outlined text-[14px] text-zinc-400';
-    }
-  }
-
-  if (btnToggleAutopilot) {
-    btnToggleAutopilot.addEventListener('click', async () => {
-      const next = !isAutopilot;
-      setAutopilotUI(next);
-      try {
-        const res = await api?.toggleAutopilot(next);
-        if (res?.success) {
-          setAutopilotUI(res.autopilot);
-          appendLog('info', `✈️ Autopilot mode ${res.autopilot ? 'ENABLED' : 'DISABLED'}`);
-        }
-      } catch (err) {
-        setAutopilotUI(!next);
-        appendLog('error', `Failed to toggle Autopilot: ${err.message}`);
-      }
-    });
-  }
 
   // Handle Save (Unique Call-Sign)
   btnSaveHandle.addEventListener('click', async () => {
@@ -934,6 +996,32 @@ document.addEventListener('DOMContentLoaded', async () => {
           appendLog('error', `Error unbinding group: ${err.message}`);
           unbindBtn.disabled = false;
           unbindBtn.textContent = 'Unbind';
+        }
+        return;
+      }
+
+      // 4. Toggle Project Access for Friend
+      const toggleAccessBtn = e.target.closest('.btn-toggle-access');
+      if (toggleAccessBtn) {
+        const alias = toggleAccessBtn.dataset.alias;
+        const jid = toggleAccessBtn.dataset.jid;
+        const friendName = toggleAccessBtn.dataset.name;
+        const isGranted = toggleAccessBtn.dataset.granted === 'true';
+
+        toggleAccessBtn.disabled = true;
+        try {
+          if (isGranted && api?.revokeProjectAccess) {
+            await api.revokeProjectAccess(alias, jid, friendName);
+            appendLog('info', `🔒 Revoked ${friendName}'s access to "${alias}" in group`);
+          } else if (!isGranted && api?.grantProjectAccess) {
+            await api.grantProjectAccess(alias, jid, friendName);
+            appendLog('info', `🔑 Granted ${friendName} access to "${alias}" in group`);
+          }
+          await syncStatus();
+        } catch (err) {
+          appendLog('error', `Failed to update access: ${err.message}`);
+        } finally {
+          toggleAccessBtn.disabled = false;
         }
         return;
       }

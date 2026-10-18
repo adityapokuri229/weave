@@ -77,24 +77,13 @@ function createWindow(runtimeDir) {
   });
 
   mainWindow.webContents.on('did-finish-load', () => {
+    const botStatus = botMod?.getBotStatus?.();
+    if (botStatus?.connected || botStatus?.registered) {
+      currentQrData = null;
+      return;
+    }
     if (currentQrData) {
       mainWindow.webContents.send('weave:qr-update', currentQrData);
-    } else if (configMod) {
-      const qrPath = path.join(configMod.DATA_DIR, 'whatsapp-qr.png');
-      const fallbackPath = path.join(configMod.ROOT_DIR, 'whatsapp-qr.png');
-      const targetPath = fs.existsSync(qrPath)
-        ? qrPath
-        : fs.existsSync(fallbackPath)
-        ? fallbackPath
-        : null;
-      if (targetPath) {
-        try {
-          const imgBuffer = fs.readFileSync(targetPath);
-          const dataUrl = `data:image/png;base64,${imgBuffer.toString('base64')}`;
-          currentQrData = { dataUrl, qrPath: targetPath };
-          mainWindow.webContents.send('weave:qr-update', currentQrData);
-        } catch {}
-      }
     }
   });
 
@@ -188,26 +177,7 @@ ipcMain.handle('weave:get-status', async () => {
   const botStatus = botMod.getBotStatus();
   const state = configMod.loadProjectsState();
 
-  let qrToSend = currentQrData;
-  if (!qrToSend && !botStatus.connected) {
-    const qrPath = path.join(configMod.DATA_DIR, 'whatsapp-qr.png');
-    const fallbackPath = path.join(configMod.ROOT_DIR, 'whatsapp-qr.png');
-    const targetPath = fs.existsSync(qrPath)
-      ? qrPath
-      : fs.existsSync(fallbackPath)
-      ? fallbackPath
-      : null;
-    if (targetPath) {
-      try {
-        const imgBuffer = fs.readFileSync(targetPath);
-        qrToSend = {
-          dataUrl: `data:image/png;base64,${imgBuffer.toString('base64')}`,
-          qrPath: targetPath,
-        };
-        currentQrData = qrToSend;
-      } catch {}
-    }
-  }
+  const qrToSend = (botStatus.connected || botStatus.registered) ? null : currentQrData;
 
   return {
     bot: {
@@ -227,8 +197,10 @@ ipcMain.handle('weave:get-status', async () => {
     activeProject: state.activeProject,
     masterDir: state.masterDir || '',
     groupBindings: state.groupBindings,
-    autopilot: Boolean(state.autopilot),
+    initializedGroups: configMod.getAllInitializedGroups(),
     friends: state.friends || [],
+    projectAccess: state.projectAccess || {},
+    groupNames: state.groupNames || {},
   };
 });
 
@@ -368,11 +340,17 @@ ipcMain.handle('weave:bind-group', async (_event, { groupJid, alias }) => {
   return { success: true, groupBindings: state.groupBindings };
 });
 
-ipcMain.handle('weave:toggle-autopilot', async (_event, enabled) => {
-  const state = configMod.loadProjectsState();
-  state.autopilot = typeof enabled === 'boolean' ? enabled : !state.autopilot;
-  configMod.saveProjectsState(state);
-  return { success: true, autopilot: state.autopilot };
+ipcMain.handle('weave:toggle-autopilot', async () => {
+  return { success: true, nativeAutonomous: true };
+});
+
+ipcMain.handle('weave:reset-state', async (_event, { preserveMasterDir = true } = {}) => {
+  try {
+    const newState = configMod.resetAllState({ preserveMasterDir });
+    return { success: true, state: newState };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
 });
 
 ipcMain.handle('weave:get-friends', async () => {
@@ -393,6 +371,24 @@ ipcMain.handle('weave:remove-friend', async (_event, nameOrId) => {
   try {
     const removed = configMod.removeFriend(nameOrId);
     return { success: removed, friends: configMod.getFriends() };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('weave:grant-project-access', async (_event, { projectAlias, groupJid, userIdentifier }) => {
+  try {
+    const ok = configMod.grantProjectAccess(projectAlias, groupJid, userIdentifier);
+    return { success: ok, accessList: configMod.getProjectAccess(projectAlias, groupJid) };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('weave:revoke-project-access', async (_event, { projectAlias, groupJid, userIdentifier }) => {
+  try {
+    const ok = configMod.revokeProjectAccess(projectAlias, groupJid, userIdentifier);
+    return { success: ok, accessList: configMod.getProjectAccess(projectAlias, groupJid) };
   } catch (err) {
     return { success: false, error: err.message };
   }
@@ -470,6 +466,12 @@ app.whenReady().then(async () => {
     }
     sendToRenderer('weave:status-update', data);
   });
+
+  if (configMod?.configEvents) {
+    configMod.configEvents.on('projects-updated', (state) => {
+      sendToRenderer('weave:projects-update', state);
+    });
+  }
 
   // 3. Create window from active runtime directory
   createWindow(activeRuntimeDir);

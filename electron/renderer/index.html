@@ -100,7 +100,7 @@
         </div>
       </div>
 
-      <!-- Center: View Switcher Tabs & Autopilot Mode Toggle -->
+      <!-- Center: View Switcher Tabs -->
       <div class="flex items-center gap-2 no-drag">
         <div class="flex items-center gap-1 bg-app-surface p-1 rounded-md border border-app-border text-xs font-mono">
           <button id="tab-onboarding" class="px-2.5 py-0.5 rounded text-[11px] font-medium text-black bg-white transition-all flex items-center gap-1.5 cursor-pointer">
@@ -110,13 +110,6 @@
             <span id="tab-workspace-icon" class="material-symbols-outlined text-[13px]">lock</span> Workspace
           </button>
         </div>
-
-        <!-- Autopilot Mode Toggle Button -->
-        <button id="btn-toggle-autopilot" class="flex items-center gap-2 px-2.5 py-1.5 rounded-md bg-app-surface hover:bg-zinc-800 border border-app-border transition text-xs font-mono cursor-pointer" title="Toggle Autopilot Autonomous Mode">
-          <span class="material-symbols-outlined text-[14px] text-zinc-400" id="autopilot-icon">smart_toy</span>
-          <span class="text-[11px] font-medium text-zinc-300">Autopilot</span>
-          <span id="autopilot-pill" class="px-1.5 py-0.2 rounded text-[9px] font-mono uppercase bg-zinc-800 text-zinc-400 border border-zinc-700">OFF</span>
-        </button>
       </div>
 
       <!-- Right: Google Account & Standard Window Control Buttons -->
@@ -365,113 +358,53 @@
       <div id="view-workspace" class="flex-1 min-h-0 flex flex-col overflow-hidden hidden bg-app-canvas">
         <main class="flex-1 min-h-0 overflow-y-auto p-4 sm:p-5 space-y-3.5 bg-app-canvas">
           
-          <!-- Section 1: Bot Call-Sign & Agent Telemetry Row -->
-          <div class="grid grid-cols-1 md:grid-cols-12 gap-3">
-            <!-- Bot Call-Sign Card (5 cols) -->
-            <div class="md:col-span-5 bg-app-surface border border-app-border rounded-md p-3.5 flex flex-col justify-between">
-              <div>
-                <div class="flex items-center justify-between mb-2.5">
-                  <span class="text-[10px] font-mono font-medium tracking-wider uppercase text-app-tertiary flex items-center gap-1.5">
-                    <i class="fa-solid fa-terminal text-[10px] text-white"></i>
-                    Bot Call-Sign
-                  </span>
-                  <span id="workspace-bot-status-tag" class="text-[10px] text-app-secondary bg-app-canvas border border-app-border px-1.5 py-0.5 rounded font-mono">
-                    LISTENING
-                  </span>
-                </div>
-                <div class="flex items-center justify-between bg-app-canvas border border-app-border rounded p-2.5">
-                  <div class="flex items-center gap-2.5">
-                    <div class="w-7 h-7 rounded bg-app-subtle border border-app-border flex items-center justify-center text-white font-mono font-medium text-xs">
-                      @
-                    </div>
-                    <div>
-                      <div class="font-mono font-medium text-sm text-white tracking-tight flex items-center gap-1.5">
-                        <span id="callsign-display">@weave</span>
-                        <i class="fa-solid fa-circle-check text-white text-[11px]" title="Verified Hook"></i>
-                      </div>
-                      <p class="text-[11px] text-app-tertiary mt-0.5 font-sans">Trigger via group or direct thread</p>
-                    </div>
-                  </div>
-                  <button class="px-2 py-1 bg-app-subtle hover:bg-white hover:text-black text-white border border-app-border rounded text-[11px] font-mono transition flex items-center gap-1.5 active:scale-95" id="btn-copy-callsign">
-                    <span class="text-app-tertiary">⌘C</span>
-                    <span>Copy</span>
-                  </button>
-                </div>
-              </div>
-              <div class="mt-3 flex items-center justify-between text-[11px] text-app-tertiary pt-2 border-t border-app-borderSubtle font-mono">
-                <span class="flex items-center gap-1.5">
-                  <span class="w-1.5 h-1.5 rounded-full bg-white inline-block"></span>
-                  <span>latency: <strong class="text-app-secondary font-medium">320ms</strong></span>
-                </span>
-                <span>tunnel: <span class="text-app-secondary">local socket</span></span>
-              </div>
-            </div>
-
-            <!-- Telemetry & Status Badges (7 cols) -->
-            <div class="md:col-span-7 bg-app-surface border border-app-border rounded-md p-3.5 flex flex-col justify-between">
-              <div>
-                <div class="flex items-center justify-between mb-2.5">
-                  <span class="text-[10px] font-mono font-medium tracking-wider uppercase text-app-tertiary flex items-center gap-1.5">
-                    <i class="fa-solid fa-sliders text-[10px] text-white"></i>
-                    Engine Telemetry &amp; Security
-                  </span>
-                  <span class="text-[10px] text-app-secondary font-mono flex items-center gap-1.5 uppercase">
-                    <span class="w-1.5 h-1.5 rounded-full bg-white"></span>
-                    Ready
-                  </span>
-                </div>
-                <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                  <!-- Active Agent Pill -->
-                  <div class="bg-app-canvas border border-app-border rounded p-2.5 flex flex-col justify-between">
-                    <div class="flex items-center justify-between mb-1">
-                      <span class="text-[10px] text-app-tertiary uppercase font-mono">Model</span>
-                      <i class="fa-solid fa-microchip text-app-secondary text-[11px]"></i>
-                    </div>
-                    <div>
-                      <div class="text-xs font-medium text-white truncate">Gemini 2.5 Flash</div>
-                      <div class="text-[10px] text-app-tertiary font-mono mt-0.5">Antigravity Loop</div>
-                    </div>
-                  </div>
-                  <!-- Bridge Status -->
-                  <div class="bg-app-canvas border border-app-border rounded p-2.5 flex flex-col justify-between">
-                    <div class="flex items-center justify-between mb-1">
-                      <span class="text-[10px] text-app-tertiary uppercase font-mono">Bridge Queue</span>
-                      <span class="w-1.5 h-1.5 rounded-full bg-white"></span>
-                    </div>
-                    <div>
-                      <div class="text-xs font-medium text-white" id="queue-status-text">Active</div>
-                      <div class="text-[10px] text-app-tertiary font-mono mt-0.5">0 pending tasks</div>
-                    </div>
-                  </div>
-                  <!-- Safety Mode -->
-                  <div class="bg-app-canvas border border-app-border rounded p-2.5 flex flex-col justify-between">
-                    <div class="flex items-center justify-between mb-1">
-                      <span class="text-[10px] text-app-tertiary uppercase font-mono">Sandbox</span>
-                      <i class="fa-solid fa-shield text-app-secondary text-[10px]"></i>
-                    </div>
-                    <div>
-                      <div class="text-xs font-medium text-white truncate">Scoped Folders Only</div>
-                      <div class="text-[10px] text-app-tertiary font-mono mt-0.5">Strict Airgap</div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div class="mt-3 flex items-center justify-between text-[11px] text-app-tertiary pt-2 border-t border-app-borderSubtle font-mono">
-                <span class="flex items-center gap-1.5 text-app-tertiary">
-                  <i class="fa-solid fa-circle-nodes text-[10px]"></i> loopback: <span class="text-app-secondary font-mono">127.0.0.1:8085</span>
-                </span>
-                <span class="text-[10px] text-app-secondary bg-app-canvas border border-app-border px-1.5 py-0.5 rounded uppercase">E2EE Locked</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Section 2: Split Columns - Connected Workspaces & Live Feed -->
-          <div class="grid grid-cols-1 md:grid-cols-12 gap-3">
-            <!-- Left Column: Workspaces & Friends (5 cols) -->
-            <div id="left-pane" class="md:col-span-5 flex flex-col gap-3 overflow-y-auto max-h-[calc(100vh-210px)] pr-1.5">
+          <!-- Split Columns: Unified Left Control Column & Right Live Feed/Telemetry Column -->
+          <div class="grid grid-cols-1 md:grid-cols-12 gap-3 min-h-0">
+            <!-- Left Column: Unified Bot Call-Sign, Workspaces, and Friends (5 cols) -->
+            <div id="left-pane" class="md:col-span-5 flex flex-col gap-3 overflow-y-auto max-h-[calc(100vh-140px)] scrollbar-left pl-1.5 pr-0.5">
               
+              <!-- Bot Call-Sign Card -->
+              <div class="bg-app-surface border border-app-border rounded-md p-3.5 flex flex-col justify-between shrink-0">
+                <div>
+                  <div class="flex items-center justify-between mb-2.5">
+                    <span class="text-[10px] font-mono font-medium tracking-wider uppercase text-app-tertiary flex items-center gap-1.5">
+                      <i class="fa-solid fa-terminal text-[10px] text-white"></i>
+                      Bot Call-Sign
+                    </span>
+                    <span id="workspace-bot-status-tag" class="text-[10px] text-app-secondary bg-app-canvas border border-app-border px-1.5 py-0.5 rounded font-mono">
+                      LISTENING
+                    </span>
+                  </div>
+                  <div class="flex items-center justify-between bg-app-canvas border border-app-border rounded p-2.5">
+                    <div class="flex items-center gap-2.5">
+                      <div class="w-7 h-7 rounded bg-app-subtle border border-app-border flex items-center justify-center text-white font-mono font-medium text-xs">
+                        @
+                      </div>
+                      <div>
+                        <div class="font-mono font-medium text-sm text-white tracking-tight flex items-center gap-1.5">
+                          <span id="callsign-display">@weave</span>
+                          <i class="fa-solid fa-circle-check text-white text-[11px]" title="Verified Hook"></i>
+                        </div>
+                        <p class="text-[11px] text-app-tertiary mt-0.5 font-sans">Trigger via group or direct thread</p>
+                      </div>
+                    </div>
+                    <button class="px-2 py-1 bg-app-subtle hover:bg-white hover:text-black text-white border border-app-border rounded text-[11px] font-mono transition flex items-center gap-1.5 active:scale-95" id="btn-copy-callsign">
+                      <span class="text-app-tertiary">⌘C</span>
+                      <span>Copy</span>
+                    </button>
+                  </div>
+                </div>
+                <div class="mt-3 flex items-center justify-between text-[11px] text-app-tertiary pt-2 border-t border-app-borderSubtle font-mono">
+                  <span class="flex items-center gap-1.5">
+                    <span class="w-1.5 h-1.5 rounded-full bg-white inline-block"></span>
+                    <span>latency: <strong class="text-app-secondary font-medium">320ms</strong></span>
+                  </span>
+                  <span>tunnel: <span class="text-app-secondary">local socket</span></span>
+                </div>
+              </div>
+
               <!-- Connected Workspaces Panel -->
-              <div class="bg-app-surface border border-app-border rounded-md p-3.5 flex flex-col justify-between">
+              <div class="bg-app-surface border border-app-border rounded-md p-3.5 flex flex-col justify-between shrink-0">
                 <div>
                   <div class="flex items-center justify-between mb-2.5">
                     <div class="flex items-center gap-1.5">
@@ -503,7 +436,7 @@
                   </div>
                   
                   <!-- Folders / Projects list -->
-                  <div id="projects-list-container" class="space-y-2 max-h-[260px] overflow-y-auto pr-1">
+                  <div id="projects-list-container" class="space-y-2 pr-1">
                     <!-- Dynamically populated by app.js -->
                     <div class="p-3 rounded bg-app-canvas border border-app-border text-center text-app-tertiary text-xs font-mono">
                       Discovering workspaces...
@@ -556,7 +489,7 @@
                   </div>
 
                   <!-- Dynamic Friends List Container -->
-                  <div id="friends-list-container" class="space-y-1.5 max-h-[220px] overflow-y-auto pr-1">
+                  <div id="friends-list-container" class="space-y-1.5 pr-1">
                     <div class="p-2.5 rounded bg-app-canvas border border-app-border text-center text-app-tertiary text-xs font-mono">
                       No friends added yet.
                     </div>
@@ -571,19 +504,79 @@
 
             </div>
 
-            <!-- Live WhatsApp Activity Feed (7 cols) -->
-            <div class="md:col-span-7 bg-app-surface border border-app-border rounded-md p-3.5 flex flex-col justify-between">
-              <div>
-                <div class="flex items-center justify-between mb-2.5">
-                  <div class="flex items-center gap-1.5">
-                    <i class="fa-solid fa-bolt text-white text-xs"></i>
-                    <h2 class="text-[10px] font-mono font-medium text-app-tertiary tracking-wider uppercase">Live WhatsApp Event Bus</h2>
+            <!-- Right Column: Engine Telemetry & Live Activity Feed (7 cols) -->
+            <div class="md:col-span-7 flex flex-col gap-3">
+
+              <!-- Engine Telemetry & Security Card -->
+              <div class="bg-app-surface border border-app-border rounded-md p-3.5 flex flex-col justify-between">
+                <div>
+                  <div class="flex items-center justify-between mb-2.5">
+                    <span class="text-[10px] font-mono font-medium tracking-wider uppercase text-app-tertiary flex items-center gap-1.5">
+                      <i class="fa-solid fa-sliders text-[10px] text-white"></i>
+                      Engine Telemetry &amp; Security
+                    </span>
+                    <span class="text-[10px] text-app-secondary font-mono flex items-center gap-1.5 uppercase">
+                      <span class="w-1.5 h-1.5 rounded-full bg-white"></span>
+                      Ready
+                    </span>
                   </div>
-                  <div class="flex items-center gap-1.5">
-                    <span class="w-1.5 h-1.5 rounded-full bg-white"></span>
-                    <span class="text-[10px] text-app-secondary font-mono uppercase">STREAMING</span>
+                  <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <!-- Active Agent Pill -->
+                    <div class="bg-app-canvas border border-app-border rounded p-2.5 flex flex-col justify-between">
+                      <div class="flex items-center justify-between mb-1">
+                        <span class="text-[10px] text-app-tertiary uppercase font-mono">Model</span>
+                        <i class="fa-solid fa-microchip text-app-secondary text-[11px]"></i>
+                      </div>
+                      <div>
+                        <div class="text-xs font-medium text-white truncate">Gemini 2.5 Flash</div>
+                        <div class="text-[10px] text-app-tertiary font-mono mt-0.5">Antigravity Loop</div>
+                      </div>
+                    </div>
+                    <!-- Bridge Status -->
+                    <div class="bg-app-canvas border border-app-border rounded p-2.5 flex flex-col justify-between">
+                      <div class="flex items-center justify-between mb-1">
+                        <span class="text-[10px] text-app-tertiary uppercase font-mono">Bridge Queue</span>
+                        <span class="w-1.5 h-1.5 rounded-full bg-white"></span>
+                      </div>
+                      <div>
+                        <div class="text-xs font-medium text-white" id="queue-status-text">Active</div>
+                        <div class="text-[10px] text-app-tertiary font-mono mt-0.5">0 pending tasks</div>
+                      </div>
+                    </div>
+                    <!-- Safety Mode -->
+                    <div class="bg-app-canvas border border-app-border rounded p-2.5 flex flex-col justify-between">
+                      <div class="flex items-center justify-between mb-1">
+                        <span class="text-[10px] text-app-tertiary uppercase font-mono">Sandbox</span>
+                        <i class="fa-solid fa-shield text-app-secondary text-[10px]"></i>
+                      </div>
+                      <div>
+                        <div class="text-xs font-medium text-white truncate">Scoped Folders Only</div>
+                        <div class="text-[10px] text-app-tertiary font-mono mt-0.5">Strict Airgap</div>
+                      </div>
+                    </div>
                   </div>
                 </div>
+                <div class="mt-3 flex items-center justify-between text-[11px] text-app-tertiary pt-2 border-t border-app-borderSubtle font-mono">
+                  <span class="flex items-center gap-1.5 text-app-tertiary">
+                    <i class="fa-solid fa-circle-nodes text-[10px]"></i> loopback: <span class="text-app-secondary font-mono">127.0.0.1:8085</span>
+                  </span>
+                  <span class="text-[10px] text-app-secondary bg-app-canvas border border-app-border px-1.5 py-0.5 rounded uppercase">E2EE Locked</span>
+                </div>
+              </div>
+
+              <!-- Live WhatsApp Activity Feed -->
+              <div class="bg-app-surface border border-app-border rounded-md p-3.5 flex flex-col justify-between flex-1">
+                <div>
+                  <div class="flex items-center justify-between mb-2.5">
+                    <div class="flex items-center gap-1.5">
+                      <i class="fa-solid fa-bolt text-white text-xs"></i>
+                      <h2 class="text-[10px] font-mono font-medium text-app-tertiary tracking-wider uppercase">Live WhatsApp Event Bus</h2>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                      <span class="w-1.5 h-1.5 rounded-full bg-white"></span>
+                      <span class="text-[10px] text-app-secondary font-mono uppercase">STREAMING</span>
+                    </div>
+                  </div>
 
                 <!-- Feed Stream Terminal Body -->
                 <div id="terminal-body" class="space-y-1.5 h-64 overflow-y-auto bg-app-canvas border border-app-border rounded p-2.5 font-mono text-[11px]">
@@ -596,7 +589,14 @@
                   <span class="w-1 h-1 rounded-full bg-white"></span>
                   socket heartbeat: <span id="heartbeat-text" class="text-app-secondary">200 OK</span>
                 </span>
-                <button id="btn-clear-logs" class="hover:text-white transition cursor-pointer">clear stream</button>
+                <div class="flex items-center gap-3">
+                  <button id="btn-copy-logs" class="hover:text-white transition cursor-pointer flex items-center gap-1" title="Copy entire stream to clipboard">
+                    <i class="fa-regular fa-copy text-[10px]"></i>
+                    <span>copy stream</span>
+                  </button>
+                  <span class="text-app-borderSubtle">|</span>
+                  <button id="btn-clear-logs" class="hover:text-white transition cursor-pointer">clear stream</button>
+                </div>
               </div>
             </div>
           </div>

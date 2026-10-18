@@ -240,29 +240,71 @@ export class GeminiClient {
    * Generates content using local Antigravity CLI as headless fallback.
    */
   async generateViaAgy(prompt, systemInstruction = null) {
-    const { execFile } = await import('child_process');
+    const { spawn } = await import('child_process');
     return new Promise((resolve, reject) => {
       const agyBin = process.env.AGY_BIN || 'agy';
-      const fullPrompt = systemInstruction ? `${systemInstruction}\n\n${prompt}` : prompt;
-      execFile(
+      const child = spawn(
         agyBin,
-        ['--effort', 'low', '--output-format', 'json', '-p', fullPrompt],
+        [
+          '--input-format',
+          'stream-json',
+          '--output-format',
+          'stream-json',
+          '--dangerously-skip-permissions',
+          '--effort',
+          'low',
+          '-p=',
+        ],
         {
           cwd: process.cwd(),
           env: { ...process.env, PAGER: 'cat' },
-          maxBuffer: 20 * 1024 * 1024,
-        },
-        (err, stdout) => {
-          if (err) return reject(err);
-          try {
-            const data = JSON.parse(stdout.trim());
-            const text = data.response || data.result?.response || stdout.trim();
-            resolve({ text: text.trim(), raw: data });
-          } catch {
-            resolve({ text: stdout.trim(), raw: { source: 'agy' } });
-          }
+          stdio: ['pipe', 'pipe', 'pipe'],
         }
       );
+
+      let output = '';
+      let responseText = '';
+
+      child.stdout.on('data', (chunk) => {
+        output += chunk.toString();
+        const lines = output.split('\n');
+        output = lines.pop();
+        for (const line of lines) {
+          if (!line.trim().startsWith('{')) continue;
+          try {
+            const evt = JSON.parse(line.trim());
+            if (evt.event === 'result') {
+              responseText = evt.result?.response || evt.response || '';
+            }
+          } catch {}
+        }
+      });
+
+      child.on('close', (code) => {
+        if (!responseText && output && output.trim().startsWith('{')) {
+          try {
+            const evt = JSON.parse(output.trim());
+            if (evt.event === 'result') {
+              responseText = evt.result?.response || evt.response || '';
+            }
+          } catch {}
+        }
+        if (responseText) {
+          resolve({ text: responseText.trim(), raw: { source: 'agy' } });
+        } else {
+          reject(new Error(`agy CLI exited with code ${code}`));
+        }
+      });
+
+      child.on('error', (err) => reject(err));
+
+      const fullPrompt = systemInstruction ? `${systemInstruction}\n\n${prompt}` : prompt;
+      const payload = JSON.stringify({
+        event: 'user',
+        message: { role: 'user', content: fullPrompt },
+      });
+      child.stdin.write(`${payload}\n`);
+      child.stdin.end();
     });
   }
 }

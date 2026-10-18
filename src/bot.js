@@ -26,7 +26,32 @@ import {
   resolveProjectAndTask,
   PROJECT_PHONETIC_PATTERNS,
   updateTriggerPrefix,
+  isGroupInitialized,
+  markGroupInitialized,
+  getGroupActiveProject,
+  setGroupActiveProject,
+  resetAllState,
+  getAllInitializedGroups,
+  getProjectAccess,
+  grantProjectAccess,
+  revokeProjectAccess,
+  setGroupName,
+  getGroupName,
+  addFriend,
+  removeFriend,
+  getFriends,
+  recordRawMessage,
+  getRawMessage,
+  getPendingPoll,
+  markGroupDeinitialized,
 } from './config.js';
+import { TEMPLATES } from './autopilot/templates.js';
+import {
+  sendChoicePoll,
+  sendReactionFallback,
+  handlePollVote,
+  handleReactionVote,
+} from './autopilot/polls.js';
 import { transcribeAudioFile } from './transcribe.js';
 import { buildGoogleCalendarUrl, createIcsFile, sendCalendarInviteDirectly } from './calendar.js';
 import { captureWebScreenshot, getProjectDeploymentUrl } from './qa.js';
@@ -56,6 +81,7 @@ import {
   handleCollaboratorRequest,
   resolvePendingCollaborator,
   executeCollaboratorInvite,
+  findFriend,
 } from './autopilot/friends.js';
 import {
   createPendingClarification,
@@ -96,6 +122,7 @@ function safeStatIsFile(p) {
 
 const sentMessageIds = new Set(readIdArrayFile(SENT_MSGS_FILE));
 const processedMessageIds = new Set(readIdArrayFile(PROCESSED_MSGS_FILE));
+const inFlightMessageIds = new Set();
 const activeLiveLocations = new Map();
 const taskQueue = [];
 let isProcessingQueue = false;
@@ -108,7 +135,7 @@ function trimIdSet(set, max = 500) {
   }
 }
 
-function recordSentMessageId(id) {
+export function recordSentMessageId(id) {
   if (!id) return;
   sentMessageIds.add(id);
   trimIdSet(sentMessageIds, 500);
@@ -128,6 +155,141 @@ function recordProcessedMessageId(id) {
     atomicWriteJsonFile(PROCESSED_MSGS_FILE, arr);
   } catch {
     // Ignore write errors
+  }
+}
+
+// In-memory retry counter cache for Baileys to coordinate key exchanges across message retries
+const msgRetryCounterCache = new Map();
+const retryCacheStore = {
+  get(key) {
+    return msgRetryCounterCache.get(key);
+  },
+  set(key, value) {
+    msgRetryCounterCache.set(key, value);
+  },
+  del(key) {
+    msgRetryCounterCache.delete(key);
+  },
+  flushAll() {
+    msgRetryCounterCache.clear();
+  },
+};
+
+// In-memory Signal key cache for Baileys
+const signalCacheMap = new Map();
+const signalCacheStore = {
+  get(k) { return signalCacheMap.get(k); },
+  set(k, v) { signalCacheMap.set(k, v); },
+  del(k) { signalCacheMap.delete(k); },
+  flushAll() { signalCacheMap.clear(); },
+};
+
+/**
+ * Cleans up dead closed sessions or bloated session records on startup.
+ */
+function purgeClosedSessions() {
+  if (!fs.existsSync(AUTH_DIR)) return 0;
+  let purged = 0;
+  try {
+    const files = fs.readdirSync(AUTH_DIR);
+    for (const file of files) {
+      if (!file.startsWith('session-') || !file.endsWith('.json')) continue;
+      const filePath = path.join(AUTH_DIR, file);
+      try {
+        const stat = fs.statSync(filePath);
+        // If a session file has accumulated many dead sessions (> 15KB)
+        if (stat.size > 15000) {
+          fs.unlinkSync(filePath);
+          purged++;
+          console.log(`🛡️ [Session-Guard] Purged bloated/corrupted session file: ${file} (${stat.size} bytes)`);
+        }
+      } catch {}
+    }
+  } catch (err) {
+    console.warn('⚠️ Error purging closed sessions:', err?.message || err);
+  }
+  return purged;
+}
+
+const recentBadMacPurges = new Map();
+
+/**
+ * Handles corrupted session / Bad MAC.
+ * Resolves both phone number and LID so linked device sessions are healed,
+ * purges corrupted files, and flushes in-memory cache so stale ratchets are evicted.
+ */
+function healCorruptedSession(jid, participant = null) {
+  try {
+    const targetKey = participant || jid || 'unknown';
+    const count = (recentBadMacPurges.get(targetKey) || 0) + 1;
+    recentBadMacPurges.set(targetKey, count);
+    setTimeout(() => {
+      recentBadMacPurges.delete(targetKey);
+    }, 60000);
+
+    if (activeSock) {
+      activeSock.uploadPreKeysToServerIfRequired(true).catch(() => {});
+    }
+
+    // Only delete session files if Baileys retries failed multiple times (>= 2)
+    if (count < 2) {
+      return;
+    }
+
+    if (!fs.existsSync(AUTH_DIR)) return;
+    const allFiles = fs.readdirSync(AUTH_DIR);
+
+    // Read creds.json to know both our phone number and LID
+    let myPn = '';
+    let myLid = '';
+    try {
+      if (fs.existsSync(path.join(AUTH_DIR, 'creds.json'))) {
+        const c = JSON.parse(fs.readFileSync(path.join(AUTH_DIR, 'creds.json'), 'utf8'));
+        myPn = (c?.me?.id || '').split(':')[0].split('@')[0].replace(/[^0-9]/g, '');
+        myLid = (c?.me?.lid || '').split(':')[0].split('@')[0].replace(/[^0-9]/g, '');
+      }
+    } catch {}
+
+    const rawJidDigits = (jid || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+    const rawPartDigits = (participant || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+    const targetDigits = [rawJidDigits, rawPartDigits].filter(Boolean);
+
+    // If target matches either our own phone number or our LID, include BOTH so all device sessions heal
+    if ((myPn && targetDigits.includes(myPn)) || (myLid && targetDigits.includes(myLid))) {
+      if (myPn && !targetDigits.includes(myPn)) targetDigits.push(myPn);
+      if (myLid && !targetDigits.includes(myLid)) targetDigits.push(myLid);
+    }
+
+    let purgedCount = 0;
+    for (const file of allFiles) {
+      if (file === 'creds.json' || file.startsWith('pre-key-') || file.startsWith('app-state-sync-')) {
+        continue;
+      }
+
+      const shouldPurgeSession = file.startsWith('session-') && targetDigits.some((d) => file.includes(d));
+      const shouldPurgeSenderKey = file.startsWith('sender-key-') && (
+        (jid && file.includes(jid.replace(/:/g, '-'))) ||
+        targetDigits.some((d) => file.includes(d))
+      );
+
+      if (shouldPurgeSession || shouldPurgeSenderKey) {
+        try {
+          fs.unlinkSync(path.join(AUTH_DIR, file));
+          purgedCount++;
+        } catch {}
+      }
+    }
+
+    // Crucial: flush the in-memory cache so stale sessions are never re-saved or served
+    if (signalCacheStore) {
+      signalCacheStore.flushAll();
+    }
+
+    if (purgedCount > 0) {
+      console.log(`🛡️ [Self-Heal] Purged ${purgedCount} desynced session/sender-key files & flushed signal cache for ${jid}.`);
+    }
+  } catch (err) {
+    console.warn(`⚠️ Error in healCorruptedSession:`, err?.message || err);
   }
 }
 
@@ -171,6 +333,7 @@ function saveContactsList(contacts) {
  * Unwraps ephemeral/disappearing wrappers from a Baileys message.
  */
 function unwrapMessage(msg) {
+  if (!msg) return null;
   let m = msg.message;
   if (!m) return null;
   if (m.ephemeralMessage?.message) m = m.ephemeralMessage.message;
@@ -324,6 +487,7 @@ function ensureGitExcludeUploads(projectDir) {
  * Returns `{ filePath, fileName, type: 'document' | 'image' | 'video' }` or `null`.
  */
 async function downloadWhatsAppAttachment(msg, projectDir) {
+  if (!msg) return null;
   const docMsg = extractDocumentMessage(msg);
   if (docMsg) {
     try {
@@ -616,9 +780,9 @@ function isStopWord(str) {
 
 /**
  * Checks if the user is swipe-replying to a message sent by THIS Weave bot instance.
- * Relies strictly on tracked sentMessageIds so it never collides with another bot (like @agent).
+ * Checks tracked sentMessageIds, pending polls, and bot's own WhatsApp participant ID.
  */
-function isReplyingToBot(msg) {
+function isReplyingToBot(msg, sock = null) {
   const m = unwrapMessage(msg);
   const contextInfo =
     m?.extendedTextMessage?.contextInfo ||
@@ -627,12 +791,48 @@ function isReplyingToBot(msg) {
     m?.audioMessage?.contextInfo ||
     m?.documentMessage?.contextInfo;
 
-  const stanzaId = contextInfo?.stanzaId;
-  return Boolean(stanzaId && sentMessageIds.has(stanzaId));
+  if (!contextInfo) return false;
+  const stanzaId = contextInfo.stanzaId;
+
+  // 1. Matched directly against tracked sentMessageIds (messages originated by this agent instance)
+  if (stanzaId && sentMessageIds.has(stanzaId)) return true;
+
+  // 2. Matched against pending polls created by this agent instance
+  if (stanzaId && getPendingPoll(stanzaId)) return true;
+
+  return false;
 }
 
 function matchesCommand(lowerText, cmd) {
   return lowerText === cmd || lowerText.startsWith(cmd + ' ') || lowerText.startsWith(cmd + '\n');
+}
+
+/**
+ * Checks if the message is in a "Send to Self" (Message Yourself) chat thread.
+ * In WhatsApp, texting yourself has remoteJid matching your own phone number or LID.
+ */
+function isSendToSelf(msg, sock) {
+  if (!msg || !msg.key) return false;
+  const jid = msg.key.remoteJid || '';
+  if (!jid || jid.endsWith('@g.us')) return false;
+
+  const botNumber = (sock?.user?.id || '').split(':')[0].split('@')[0].replace(/[^0-9]/g, '');
+  const botLid = (sock?.user?.lid || '').split(':')[0].split('@')[0];
+  const remoteDigits = jid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+  const remoteBase = jid.split('@')[0].split(':')[0];
+
+  // 1. Matches bot's own phone number or LID
+  if (botNumber && remoteDigits === botNumber) return true;
+  if (botLid && remoteBase === botLid) return true;
+
+  // 2. If message is fromMe to own number in adminNumbers
+  if (msg.key.fromMe && CONFIG.adminNumbers.length > 0) {
+    if (CONFIG.adminNumbers.some((admin) => remoteDigits.endsWith(admin) || admin.endsWith(remoteDigits))) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -649,7 +849,9 @@ function extractTriggeredBody(sock, msg, text) {
   const jid = msg.key?.remoteJid;
 
   const state = loadProjectsState();
-  const isFullAuto = Boolean(state.fullAutoGroups?.[jid]);
+  const isGroup = Boolean(jid && jid.endsWith('@g.us'));
+  // Full auto is strictly scoped per group, never global or in 1-on-1 chats
+  const isFullAuto = Boolean(isGroup && state.fullAutoGroups?.[jid]);
   const hasPendingClarification = Boolean(state.pendingClarifications?.[jid]);
   const hasPendingCollaborator = Boolean(state.pendingCollaborators?.[jid]);
 
@@ -678,18 +880,35 @@ function extractTriggeredBody(sock, msg, text) {
     }
   }
 
-  // 2. Explicit triggers: configured triggerPrefix (@weave), @agent, or @ap
-  const prefixes = [trigger.toLowerCase(), '@agent', '@ap'];
+  // 2. Explicit triggers: configured triggerPrefix (@weave), @agent, agent, @ap, ap, @weave, weave
+  const prefixes = [
+    trigger.toLowerCase(),
+    '@agent',
+    'agent',
+    '@ap',
+    'ap',
+    '@weave',
+    'weave',
+  ];
   for (const prefix of prefixes) {
     if (
       lowerText === prefix ||
       lowerText.startsWith(prefix + ' ') ||
-      lowerText.startsWith(prefix + '\n')
+      lowerText.startsWith(prefix + '\n') ||
+      lowerText.startsWith(prefix + ':')
     ) {
-      const rest = trimmedText.slice(prefix.length).trim();
+      const rest = trimmedText.slice(prefix.length).replace(/^[:\s]+/, '').trim();
       if (isStopWord(rest)) return '/stop';
       return rest || 'status';
     }
+  }
+
+  // 2b. Personal Send-to-Self DM ("Message Yourself" personal chat with the bot)
+  // Requires explicit prefix (@ap or trigger) UNLESS full auto is explicitly turned ON for this DM!
+  const isSelf = isSendToSelf(msg, sock);
+  if (isSelf && state.fullAutoGroups?.[jid]) {
+    if (isStopWord(lowerText)) return '/stop';
+    return trimmedText || '[voice note]';
   }
 
   // 2. Owner pending confirmation replies or /callsign command
@@ -710,9 +929,9 @@ function extractTriggeredBody(sock, msg, text) {
   }
 
   // 3. Swipe-replying directly to a message sent by THIS Weave instance (unless addressing another @bot)
-  if (!lowerText.startsWith('@') && isReplyingToBot(msg)) {
+  if (!lowerText.startsWith('@') && isReplyingToBot(msg, sock)) {
     if (isStopWord(lowerText)) return '/stop';
-    return trimmedText;
+    return trimmedText || '[voice note]';
   }
 
   // 4. Native WhatsApp @mention in a chat (only when TRIGGER_ON_MENTION=true)
@@ -763,6 +982,7 @@ function extractTriggeredBody(sock, msg, text) {
  * Extracts numeric sender phone/ID from a message.
  */
 function getSenderNumber(msg) {
+  if (!msg || !msg.key) return '';
   const rawJid = msg.key.participant || msg.key.remoteJid || '';
   return rawJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
 }
@@ -773,6 +993,7 @@ function getSenderNumber(msg) {
  * - If you also listed your phone number in ADMIN_NUMBERS in .env, that matches too.
  */
 function isOwner(msg) {
+  if (!msg || !msg.key) return true; // Safe default for internal/queued tasks triggered by owner vote
   if (msg.key.fromMe) return true;
   if (CONFIG.adminNumbers.length > 0) {
     const senderNum = getSenderNumber(msg);
@@ -788,16 +1009,53 @@ function isOwner(msg) {
 
 /**
  * Checks if sender is allowed to trigger tasks in a bound group.
+ * Respects owner, allowedSenders, and granular projectAccess per group.
  */
-function isSenderAuthorized(msg) {
+function isSenderAuthorized(msg, targetProjectAlias = null) {
+  if (!msg || !msg.key) return true;
   // fromMe = the linked device itself (respects ALLOW_FROM_ME).
   // Admin numbers from a *different* device are always authorized.
   if (msg.key.fromMe) return CONFIG.allowFromMe;
   if (isOwner(msg)) return true;
+
+  const senderNum = getSenderNumber(msg);
+  const pushName = (msg.pushName || '').trim().toLowerCase();
+  const jid = msg.key.remoteJid || '';
+  const isGroup = Boolean(jid && jid.endsWith('@g.us'));
+  // In group chats: By default, ONLY the owner has permissions!
+  // Collaborators/friends only have permissions if explicitly granted for this project/group.
+  if (isGroup) {
+    const state = loadProjectsState();
+    const activeAlias = targetProjectAlias || state.groupBindings?.[jid] || null;
+    if (activeAlias) {
+      const allowedList = getProjectAccess(activeAlias, jid);
+      if (allowedList && allowedList.length > 0) {
+        const rawPId = msg.key.participant || '';
+        const pBase = rawPId.split('@')[0].split(':')[0];
+        const contacts = loadContactsMap();
+        const contactName = (contacts[rawPId] || contacts[senderNum] || contacts[pBase] || '').toLowerCase();
+
+        const hasAccess = allowedList.some((entry) => {
+          const cleanEntry = entry.trim().toLowerCase().replace(/^@/, '');
+          const cleanDigits = cleanEntry.replace(/[^0-9]/g, '');
+          return (
+            (senderNum && cleanDigits && (senderNum === cleanDigits || senderNum.endsWith(cleanDigits) || cleanDigits.endsWith(senderNum))) ||
+            (pBase && cleanEntry === pBase.toLowerCase()) ||
+            (pushName && (cleanEntry === pushName || pushName.includes(cleanEntry) || cleanEntry.includes(pushName))) ||
+            (contactName && (cleanEntry === contactName || contactName.includes(cleanEntry) || cleanEntry.includes(contactName)))
+          );
+        });
+        if (hasAccess) return true;
+      }
+    }
+    // Non-owners in groups are NOT authorized by default
+    return false;
+  }
+
+  // In 1-on-1 chats:
   if (CONFIG.allowedSenders.includes('*') || CONFIG.allowedSenders.length === 0) {
     return true;
   }
-  const senderNum = getSenderNumber(msg);
   if (!senderNum) return false;
   return CONFIG.allowedSenders.some(
     (allowed) => senderNum.endsWith(allowed) || allowed.endsWith(senderNum)
@@ -805,11 +1063,29 @@ function isSenderAuthorized(msg) {
 }
 
 /**
+ * Appends the standardized agent badge footer to messages.
+ */
+function formatAgentMessage(text) {
+  if (typeof text !== 'string') return text;
+  const trimmed = text.trim();
+  if (!trimmed) return trimmed;
+  // If text already ends with `agent message`, don't duplicate
+  if (trimmed.endsWith('`agent message`')) return trimmed;
+  return `${trimmed}\n\n\`agent message\``;
+}
+
+/**
  * Helper to send a WhatsApp reply and track its message ID so we never self-loop.
  */
 async function sendReply(sock, jid, text, quotedMsg) {
-  const sent = await sock.sendMessage(jid, { text }, { quoted: quotedMsg });
-  if (sent?.key?.id) recordSentMessageId(sent.key.id);
+  const formattedText = formatAgentMessage(text);
+  const options = { text: formattedText };
+  const sendOpts = quotedMsg && typeof quotedMsg === 'object' && quotedMsg.key ? { quoted: quotedMsg } : undefined;
+  const sent = await sock.sendMessage(jid, options, sendOpts);
+  if (sent?.key?.id) {
+    recordSentMessageId(sent.key.id);
+    if (sent.message) recordRawMessage(sent.key.id, sent.message);
+  }
   return sent;
 }
 
@@ -993,6 +1269,9 @@ async function sendWhatsAppFile(sock, targetJid, filePath, caption, quotedMsg) {
 
   console.log(`[sendWhatsAppFile] Sending "${fileName}" (${mimetype}) to ${resolvedJid} (original: ${targetJid})`);
   const shouldQuote = quotedMsg && resolvedJid === targetJid;
+  const rawCaption = caption || (mimetype.startsWith('image/') ? `📸 ${fileName}` : `📎 ${fileName}`);
+  const formattedCaption = formatAgentMessage(rawCaption);
+
   let sent;
   try {
     if (mimetype.startsWith('image/')) {
@@ -1000,7 +1279,7 @@ async function sendWhatsAppFile(sock, targetJid, filePath, caption, quotedMsg) {
         resolvedJid,
         {
           image: buffer,
-          caption: caption || `📸 ${fileName}`,
+          caption: formattedCaption,
         },
         shouldQuote ? { quoted: quotedMsg } : undefined
       );
@@ -1011,7 +1290,7 @@ async function sendWhatsAppFile(sock, targetJid, filePath, caption, quotedMsg) {
           document: buffer,
           mimetype,
           fileName,
-          caption: caption || `📎 ${fileName}`,
+          caption: formattedCaption,
         },
         shouldQuote ? { quoted: quotedMsg } : undefined
       );
@@ -1422,6 +1701,7 @@ function resolveContactTarget(msg, targetInput, { exactOnly = false } = {}) {
  * Helper to react to a message with an emoji.
  */
 async function reactToMessage(sock, msg, emoji) {
+  if (!msg || !msg.key || !msg.key.remoteJid) return;
   try {
     await sock.sendMessage(msg.key.remoteJid, {
       react: { text: emoji, key: msg.key },
@@ -1573,7 +1853,8 @@ async function processQueueItem(sock, item) {
         const targetJid = resolveContactTarget(msg, targetRaw);
         if (targetJid) {
           try {
-            const sentDm = await sock.sendMessage(targetJid, { text: dmText });
+            const formattedDm = formatAgentMessage(dmText);
+            const sentDm = await sock.sendMessage(targetJid, { text: formattedDm });
             if (sentDm?.key?.id) recordSentMessageId(sentDm.key.id);
             const contacts = loadContactsMap();
             const displayTarget = contacts[targetJid] || targetRaw;
@@ -2728,7 +3009,8 @@ async function handleSlashCommand(sock, jid, msg, commandBody) {
     }
 
     try {
-      const sentDm = await sock.sendMessage(targetJid, { text: messageText });
+      const formattedMessage = formatAgentMessage(messageText);
+      const sentDm = await sock.sendMessage(targetJid, { text: formattedMessage });
       if (sentDm?.key?.id) recordSentMessageId(sentDm.key.id);
       const contacts = loadContactsMap();
       const displayTarget = contacts[targetJid] || targetStr;
@@ -3513,6 +3795,7 @@ export async function startWhatsAppBot() {
   isStartingBot = true;
 
   syncNetworkClock().catch(() => {});
+  purgeClosedSessions();
 
   if (activeSock) {
     try { activeSock.ev.removeAllListeners(); } catch {}
@@ -3524,20 +3807,27 @@ export async function startWhatsAppBot() {
   try {
     const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
     const { version } = await fetchLatestBaileysVersion();
-    const baileysLogger = pino({ level: 'silent' });
+    const baileysLogger = pino({ level: 'warn' });
+
     sock = makeWASocket({
       version,
       auth: {
         creds: state.creds,
-        keys: makeCacheableSignalKeyStore(state.keys, baileysLogger),
+        keys: makeCacheableSignalKeyStore(state.keys, baileysLogger, signalCacheStore),
       },
+      msgRetryCounterCache: retryCacheStore,
       logger: baileysLogger,
       printQRInTerminal: false,
       markOnlineOnConnect: true,
+      syncFullHistory: false,
       shouldSyncHistoryMessage: () => false,
       connectTimeoutMs: 60000,
       keepAliveIntervalMs: 25000,
       defaultQueryTimeoutMs: 60000,
+      getMessage: async (key) => {
+        if (!key?.id) return undefined;
+        return getRawMessage(key.id) || undefined;
+      },
     });
     activeSock = sock;
 
@@ -3566,7 +3856,7 @@ export async function startWhatsAppBot() {
 
     let acceptMessagesAfter = Date.now() + 3000;
 
-    sock.ev.on('connection.update', (update) => {
+    sock.ev.on('connection.update', async (update) => {
       const { connection, lastDisconnect, qr } = update;
 
       if (qr) {
@@ -3635,22 +3925,69 @@ export async function startWhatsAppBot() {
           `💡 Go to any project group and send "${CONFIG.triggerPrefix} /bind <project-name>" to lock that group to its project!\n`
         );
 
+        // Fetch group names for bound & initialized groups
+        setTimeout(async () => {
+          try {
+            const allBound = Object.keys(projState.groupBindings || {});
+            const allInit = Object.keys(projState.initializedGroups || {});
+            const groupJids = Array.from(new Set([...allBound, ...allInit]));
+            for (const gjid of groupJids) {
+              try {
+                const meta = await sock.groupMetadata(gjid);
+                if (meta?.subject) {
+                  setGroupName(gjid, meta.subject);
+                  console.log(`🏷️ Discovered group name for ${gjid}: "${meta.subject}"`);
+                }
+              } catch {}
+            }
+          } catch {}
+        }, 2000);
+
         // Ensure server has fresh pre-keys so incoming messages from all group members decrypt cleanly
-        sock.uploadPreKeysToServerIfRequired().catch(() => {});
+        try {
+          await sock.uploadPreKeys(30);
+          console.log('🔑 Successfully refreshed & uploaded 30 pre-keys to WhatsApp server');
+        } catch (err) {
+          sock.uploadPreKeysToServerIfRequired(true).catch(() => {});
+        }
         prewarmAllBoundProjects();
       }
     });
 
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
+      console.log(`📡 [RAW UPSERT] received ${messages?.length || 0} message(s), type=${type}`);
       if (type !== 'notify' && type !== 'append') return;
 
       const nowSec = Math.floor(Date.now() / 1000);
 
       for (const msg of messages) {
         try {
+          // If Baileys could not decrypt this message (CIPHERTEXT / Bad MAC), automatically trigger session healing
+          if (!msg.message && (msg.messageStubType || msg.messageStubParameters)) {
+            const errParam = (msg.messageStubParameters || []).join(' ');
+            const author = msg.key?.participant || msg.key?.remoteJid;
+            console.warn(`⚠️ [Decryption Failure Intercepted] stubType=${msg.messageStubType} err="${errParam}" from ${author}`);
+            if (author) {
+              healCorruptedSession(msg.key?.remoteJid, author);
+            }
+          }
+
           await handleIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfter);
         } catch (err) {
           console.error('⚠️ Error handling WhatsApp message:', err?.message || err);
+        }
+      }
+    });
+
+    sock.ev.on('messages.update', async (updates) => {
+      for (const item of updates) {
+        try {
+          const pollVote = await handlePollVote(sock, item);
+          if (pollVote?.resolved) {
+            await handleVoteResolution(sock, pollVote);
+          }
+        } catch (err) {
+          console.error('⚠️ Error handling message update:', err?.message || err);
         }
       }
     });
@@ -3659,19 +3996,109 @@ export async function startWhatsAppBot() {
   }
 }
 
+async function handleVoteResolution(sock, voteRes) {
+  const { chosenOption, pending, voterJid, groupJid } = voteRes;
+  console.log(`🗳️ Handling vote resolution: option="${chosenOption}" context="${pending.context}" group="${groupJid}"`);
+
+  if (pending.context === 'switch_project') {
+    try {
+      const res = switchGroupProject(chosenOption, groupJid);
+      await sendReply(sock, groupJid, TEMPLATES.switch_project({ projectName: res.alias }));
+    } catch (err) {
+      await sendReply(sock, groupJid, `⚠️ Couldn't switch project: ${err.message}`);
+    }
+    return;
+  }
+
+  // Choice resolution: check if the choice or context is activating/switching a project
+  const state = loadProjectsState();
+  let activeAlias = getGroupActiveProject(groupJid) || state.activeProject;
+  
+  // If no project is bound to this group or the context/option is a known project, activate it!
+  const isProjectChoice =
+    pending.context === 'activate_project_for_task' ||
+    pending.context === 'switch_project' ||
+    (pending.context && pending.context.toLowerCase().includes('project')) ||
+    (!activeAlias && (state.projects?.[chosenOption] || fs.existsSync(path.join(state.masterDir || '', chosenOption))));
+
+  if (isProjectChoice) {
+    try {
+      const res = switchGroupProject(chosenOption, groupJid);
+      activeAlias = res.alias;
+      console.log(`🚀 Switched/activated group ${groupJid} to project "${activeAlias}" via vote resolution.`);
+      await sendReply(sock, groupJid, `activated "${activeAlias}". on it 🫡`);
+      
+      const updatedState = loadProjectsState();
+      const projectDir = updatedState.projects[activeAlias] || res.path;
+      const syntheticMsg = {
+        key: {
+          remoteJid: groupJid,
+          fromMe: false,
+          id: `vote_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        },
+        message: {
+          conversation: pending.originalTask || `Work on ${activeAlias}`,
+        },
+        messageTimestamp: Math.floor(Date.now() / 1000),
+      };
+      taskQueue.push({
+        jid: groupJid,
+        msg: syntheticMsg,
+        projectAlias: activeAlias,
+        projectDir,
+        taskPrompt: pending.originalTask || `Work on ${activeAlias}`,
+        continueSession: true,
+      });
+      processQueue(sock).catch((err) => {
+        console.error('⚠️ processQueue failed:', err?.message || err);
+      });
+      return;
+    } catch (err) {
+      console.warn(`⚠️ switchGroupProject inside vote resolution failed (${err.message}). Falling back to generic task.`);
+    }
+  }
+
+  const projectDir = (activeAlias && state.projects[activeAlias]) || CONFIG.defaultProjectDir;
+
+  await sendReply(sock, groupJid, `got it: "${chosenOption}". on it 🫡`);
+  const syntheticMsg = {
+    key: {
+      remoteJid: groupJid,
+      fromMe: false,
+      id: `vote_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    },
+    message: {
+      conversation: `${pending.originalTask}\n(User selected choice: ${chosenOption})`,
+    },
+    messageTimestamp: Math.floor(Date.now() / 1000),
+  };
+  taskQueue.push({
+    jid: groupJid,
+    msg: syntheticMsg,
+    projectAlias: activeAlias,
+    projectDir,
+    taskPrompt: `${pending.originalTask}\n(User selected choice: ${chosenOption})`,
+    continueSession: true,
+  });
+  processQueue(sock).catch((err) => {
+    console.error('⚠️ processQueue failed:', err?.message || err);
+  });
+}
+
 async function handleIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfter = 0) {
-      if (process.env.DEBUG_MSGS === 'true') {
-        try {
-          const dbg = unwrapMessage(msg);
-          console.log(
-            `🔍 [MSG] type=${type} jid=${msg.key?.remoteJid} fromMe=${msg.key?.fromMe} id=${msg.key?.id} keys=${dbg ? Object.keys(dbg).join(',') : 'null'}`
-          );
-        } catch {
-          // Ignore debug errors
-        }
-      }
+      try {
+        const dbg = unwrapMessage(msg);
+        console.log(
+          `🔍 [MSG] type=${type} jid=${msg.key?.remoteJid} fromMe=${msg.key?.fromMe} id=${msg.key?.id} hasMessage=${!!msg.message} stubType=${msg.messageStubType || 'none'}`
+        );
+      } catch {}
+
       if (!msg.message || !msg.key?.remoteJid) return;
       if (msg.key.remoteJid === 'status@broadcast') return;
+
+      if (msg.key?.id && msg.message) {
+        recordRawMessage(msg.key.id, msg.message);
+      }
 
       // Record sender's pushName so we can message them by name later
       if (msg.pushName && !msg.key.fromMe) {
@@ -3681,29 +4108,66 @@ async function handleIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfte
         }
       }
 
-      // Only ignore stale backlog messages from before this bot process was started (with 60s grace window)
+      // If group message, cache group subject if not cached
+      if (msg.key.remoteJid.endsWith('@g.us')) {
+        const groupJid = msg.key.remoteJid;
+        if (!getGroupName(groupJid)) {
+          sock.groupMetadata(groupJid).then((meta) => {
+            if (meta?.subject) setGroupName(groupJid, meta.subject);
+          }).catch(() => {});
+        }
+      }
+
+      // Only ignore stale backlog messages from before this bot process was started (with 10-minute grace window)
       // Account for PC clock skew (e.g. dual-boot or RTC drift) by comparing against calibrated server time.
       const msgTime = Number(msg.messageTimestamp || 0);
       if (msgTime > 0) {
-        // Fallback: If not calibrated yet and clock discrepancy is large (>300s), calibrate from incoming message
-        const rawDiff = Math.floor(Date.now() / 1000) - msgTime;
-        if (!hasCalibratedClock && Math.abs(rawDiff) > 300) {
+        if (!hasCalibratedClock) {
+          const rawDiff = Math.floor(Date.now() / 1000) - msgTime;
           serverTimeOffsetSec = rawDiff;
           hasCalibratedClock = true;
-          console.log(
-            `⏱️ Clock sync (dynamic): Calibrated ${serverTimeOffsetSec}s skew from incoming message.`
-          );
+          console.log(`⏱️ Calibrated clock offset against incoming message: ${rawDiff}s`);
         }
 
         const effectiveBotStartSec = BOT_START_TIME_SEC - serverTimeOffsetSec;
-        if (effectiveBotStartSec > 0 && msgTime < effectiveBotStartSec - 60) {
+        if (effectiveBotStartSec > 0 && msgTime < effectiveBotStartSec - 600) {
+          console.log(`⏱️ [Stale Backlog Skipped] msgTime=${msgTime} effectiveBotStart=${effectiveBotStartSec}`);
           return;
         }
       }
 
-      // Never process messages sent by the bot itself or already processed
-      if (!msg.key.id) return;
-      if (sentMessageIds.has(msg.key.id) || processedMessageIds.has(msg.key.id)) return;
+      // Never process messages sent by the bot itself or already processed / currently processing
+      if (!msg.key?.id) return;
+      if (sentMessageIds.has(msg.key.id) || processedMessageIds.has(msg.key.id) || inFlightMessageIds.has(msg.key.id)) return;
+      inFlightMessageIds.add(msg.key.id);
+      recordProcessedMessageId(msg.key.id);
+
+      try {
+        await _processIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfter);
+      } finally {
+        inFlightMessageIds.delete(msg.key.id);
+      }
+}
+
+async function _processIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfter = 0) {
+      // 1. Check for incoming Poll Vote or Reaction Vote
+      try {
+        const pollVote = await handlePollVote(sock, msg);
+        if (pollVote?.resolved) {
+          recordProcessedMessageId(msg.key.id);
+          await handleVoteResolution(sock, pollVote);
+          return;
+        }
+
+        const reactionVote = await handleReactionVote(sock, msg);
+        if (reactionVote?.resolved) {
+          recordProcessedMessageId(msg.key.id);
+          await handleVoteResolution(sock, reactionVote);
+          return;
+        }
+      } catch (voteErr) {
+        console.warn('⚠️ Vote processing error:', voteErr?.message || voteErr);
+      }
 
       // Skip text-less messages (stickers, reactions, location-only pings
       // without captions are handled via their captions/attachment download).
@@ -3714,6 +4178,112 @@ async function handleIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfte
         !!extractImageMessage(msg) ||
         !!extractVideoMessage(msg) ||
         !!audioMsg;
+
+      const jid = msg.key?.remoteJid;
+      const isGroup = jid && jid.endsWith('@g.us');
+
+      // 2. SECTION 3 INITIALIZATION GATE
+      // "Until someone sends @agent initialize in a group, the agent must never interact there,
+      // even if pinged or mentioned. After initialization it responds normally. Initialization is saved per group."
+      if (isGroup) {
+        const isInit = isGroupInitialized(jid);
+        const cleanText = (text || '').trim().toLowerCase();
+        const callsign = (CONFIG.triggerPrefix || '').toLowerCase().trim();
+        const callsignNoAt = callsign.replace(/^@/, '');
+
+        const isInitCmd =
+          cleanText === '@agent initialize' ||
+          cleanText === '@agent init' ||
+          cleanText === 'agent initialize' ||
+          cleanText === 'agent init' ||
+          cleanText === `${callsign} initialize` ||
+          cleanText === `${callsign} init` ||
+          cleanText === `@${callsignNoAt} initialize` ||
+          cleanText === `@${callsignNoAt} init` ||
+          cleanText === `${callsignNoAt} initialize` ||
+          cleanText === `${callsignNoAt} init` ||
+          cleanText === 'initialize' ||
+          cleanText === 'init' ||
+          cleanText === '/init' ||
+          cleanText === '/initialize';
+
+        const isDeinitCmd =
+          cleanText === '@agent deinitialize' ||
+          cleanText === '@agent deinit' ||
+          cleanText === 'agent deinitialize' ||
+          cleanText === 'agent deinit' ||
+          cleanText === `${callsign} deinitialize` ||
+          cleanText === `${callsign} deinit` ||
+          cleanText === `@${callsignNoAt} deinitialize` ||
+          cleanText === `@${callsignNoAt} deinit` ||
+          cleanText === `${callsignNoAt} deinitialize` ||
+          cleanText === `${callsignNoAt} deinit` ||
+          cleanText === 'deinitialize' ||
+          cleanText === 'deinit' ||
+          cleanText === '/deinit' ||
+          cleanText === '/deinitialize';
+
+        if (!isInit) {
+          if (isInitCmd) {
+            recordProcessedMessageId(msg.key.id);
+            const sender = msg.key.participant || jid;
+            markGroupInitialized(jid, sender);
+
+            let masterDir = '';
+            let bound = null;
+            let projects = [];
+            try {
+              masterDir = getValidatedMasterDir();
+              const listInfo = listProjectsForGroup(jid);
+              bound = listInfo.boundAlias;
+              projects = listInfo.projects || [];
+            } catch {}
+
+            const initReply = TEMPLATES.welcome_init({
+              masterDir,
+              activeProject: bound,
+              projects,
+            });
+            await sendReply(sock, jid, initReply, msg);
+            return;
+          }
+
+          // Silent gate: Group not initialized. Never interact.
+          console.log(`🔇 Group ${jid} not initialized. Dropping message.`);
+          return;
+        } else {
+          if (isDeinitCmd) {
+            recordProcessedMessageId(msg.key.id);
+            markGroupDeinitialized(jid);
+            await sendReply(
+              sock,
+              jid,
+              `💤 *Agent Deinitialized for this group.*\nI will now stay silent and ignore all messages in this group until initialized again via \`${callsign || '@agent'} init\`.`,
+              msg
+            );
+            return;
+          } else if (isInitCmd) {
+            recordProcessedMessageId(msg.key.id);
+            let masterDir = '';
+            let bound = null;
+            let projects = [];
+            try {
+              masterDir = getValidatedMasterDir();
+              const listInfo = listProjectsForGroup(jid);
+              bound = listInfo.boundAlias;
+              projects = listInfo.projects || [];
+            } catch {}
+
+            const initReply = TEMPLATES.welcome_init({
+              masterDir,
+              activeProject: bound,
+              projects,
+            });
+            await sendReply(sock, jid, initReply, msg);
+            return;
+          }
+        }
+      }
 
       console.log(`🔍 [Incoming Msg] JID=${msg.key?.remoteJid} fromMe=${msg.key?.fromMe} text="${text}" hasAudio=${!!audioMsg} hasAttach=${hasAttachment}`);
 
@@ -3746,8 +4316,6 @@ async function handleIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfte
         return;
       }
 
-      const jid = msg.key.remoteJid;
-      const isGroup = jid.endsWith('@g.us');
       const owner = isOwner(msg);
       const currentState = loadProjectsState();
       let rawBody = rawTriggeredBody;
@@ -3781,7 +4349,7 @@ async function handleIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfte
             const isDirectAudio = !!unwrapMessage(msg)?.audioMessage;
             if (isDirectAudio) {
               // Audio is attached to the current message
-              if (rawBody && rawBody !== transcribedText) {
+              if (rawBody && rawBody !== '[voice note]' && rawBody !== transcribedText) {
                 rawBody = `${rawBody} (Voice Note: "${transcribedText}")`;
               } else {
                 rawBody = transcribedText;
@@ -3828,15 +4396,9 @@ async function handleIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfte
         }
       }
 
-      // Never allow non-owners to trigger the agent in private 1-on-1 DMs!
-      if (!isGroup && !owner) {
+      // Only restrict DMs if ADMIN_NUMBERS is explicitly configured and sender is not an owner
+      if (!isGroup && CONFIG.adminNumbers.length > 0 && !owner) {
         console.log(`🔒 Ignored non-owner DM trigger from: ${jid}`);
-        return;
-      }
-
-      // If this is an unbound group and a non-owner tries to message @agent, stay completely silent!
-      if (isGroup && !currentState.groupBindings?.[jid] && !owner) {
-        console.log(`🔒 Ignored non-owner trigger in unbound group: ${jid}`);
         return;
       }
 
@@ -3847,7 +4409,7 @@ async function handleIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfte
       }
 
       const quotedText = extractQuotedText(msg);
-      const replyingToBot = isReplyingToBot(msg);
+      const replyingToBot = isReplyingToBot(msg, sock);
 
       // If user sent just "@agent" while quoting a message, use the quoted message as the task!
       if (!rawBody && quotedText && !replyingToBot) {
@@ -3872,6 +4434,71 @@ async function handleIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfte
       ) {
         const lowerCmd = rawBody.toLowerCase().trim();
         rawBody = lowerCmd === 'cancel' || lowerCmd === 'discard' ? '/cancel' : '/confirm';
+      }
+
+      // Handle owner response to a pending project deletion in Send-to-Self DM
+      if (owner && isSendToSelf(msg, sock) && currentState.pendingProjectDeletions?.[jid]) {
+        const pending = currentState.pendingProjectDeletions[jid];
+        const lowerResp = rawBody.toLowerCase().trim();
+
+        if (['cancel', 'discard', 'no', 'stop', 'nevermind', 'abort'].includes(lowerResp)) {
+          delete currentState.pendingProjectDeletions[jid];
+          saveProjectsState(currentState);
+          await reactToMessage(sock, msg, '🛡️');
+          await sendReply(sock, jid, `🛡️ *Cancelled project deletion.* "${pending.targetAlias}" is safe.`, msg);
+          return;
+        }
+
+        const isYes = ['yes', 'confirm', 'proceed', 'sure', 'do it', 'delete', 'yep', 'yeah'].includes(lowerResp);
+        if (isYes) {
+          delete currentState.pendingProjectDeletions[jid];
+          const targetAlias = pending.targetAlias;
+          const targetPath = pending.targetPath;
+
+          // Delete folder if within masterDir
+          try {
+            if (targetPath && fs.existsSync(targetPath)) {
+              fs.rmSync(targetPath, { recursive: true, force: true });
+            }
+          } catch (err) {
+            console.error('Failed to rm project directory:', err);
+          }
+
+          if (currentState.projects?.[targetAlias]) {
+            delete currentState.projects[targetAlias];
+          }
+          if (currentState.activeProject === targetAlias) {
+            currentState.activeProject = Object.keys(currentState.projects)[0] || '';
+          }
+          // Remove from group bindings
+          for (const [gj, al] of Object.entries(currentState.groupBindings || {})) {
+            if (al === targetAlias) delete currentState.groupBindings[gj];
+          }
+          // Remove from projectAccess
+          for (const gj of Object.keys(currentState.projectAccess || {})) {
+            if (currentState.projectAccess[gj]?.[targetAlias]) {
+              delete currentState.projectAccess[gj][targetAlias];
+            }
+          }
+          saveProjectsState(currentState);
+
+          await reactToMessage(sock, msg, '🗑️');
+          await sendReply(
+            sock,
+            jid,
+            `🗑️ *Deleted project "${targetAlias}".*\nFolder and all associations have been removed.`,
+            msg
+          );
+          return;
+        } else {
+          await sendReply(
+            sock,
+            jid,
+            `⚠️ Please reply *yes* to permanently delete "${pending.targetAlias}" or *cancel* to abort.`,
+            msg
+          );
+          return;
+        }
       }
 
       // Handle owner response to a pending project confirmation
@@ -3955,7 +4582,6 @@ async function handleIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfte
       // =============================================================
       // AUTOPILOT MODE & OPERATING AGENT STATE MACHINE
       // =============================================================
-      const isAutopilot = Boolean(currentState.autopilot);
       const isFullAutoGroup = Boolean(currentState.fullAutoGroups?.[jid]);
 
       // 1. Resolve Pending Collaborator Verification (if user was asked about an unknown friend)
@@ -3999,13 +4625,55 @@ async function handleIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfte
         }
       }
 
-      // 3. Administrative Triggers (@agent initialize, @agent full auto)
+      // 3. Administrative Triggers (@agent initialize, @agent deinitialize, @agent full auto)
       const lowerRaw = rawBody.toLowerCase().trim();
+      const callsign = (CONFIG.triggerPrefix || '').toLowerCase().trim();
+      const callsignNoAt = callsign.replace(/^@/, '');
+
+      const isDeinitBody =
+        lowerRaw === 'deinitialize' ||
+        lowerRaw === 'deinit' ||
+        lowerRaw === '@agent deinitialize' ||
+        lowerRaw === '@agent deinit' ||
+        lowerRaw === `${callsign} deinitialize` ||
+        lowerRaw === `${callsign} deinit` ||
+        lowerRaw === `@${callsignNoAt} deinitialize` ||
+        lowerRaw === `@${callsignNoAt} deinit` ||
+        lowerRaw === `${callsignNoAt} deinitialize` ||
+        lowerRaw === `${callsignNoAt} deinit`;
+
+      if (isDeinitBody) {
+        if (isGroup) {
+          markGroupDeinitialized(jid);
+          await sendReply(
+            sock,
+            jid,
+            `💤 *Agent Deinitialized for this group.*\nI will now stay silent and ignore all messages in this group until initialized again via \`${callsign || '@agent'} init\`.`,
+            msg
+          );
+          return;
+        } else {
+          await sendReply(
+            sock,
+            jid,
+            `ℹ️ *Deinitialize is for group chats.* In your Send-to-Self personal DM, I remain available directly.`,
+            msg
+          );
+          return;
+        }
+      }
+
       if (
         lowerRaw === 'initialize' ||
+        lowerRaw === 'init' ||
         lowerRaw === '@agent initialize' ||
-        lowerRaw === '@ap initialize' ||
-        lowerRaw.endsWith(' initialize')
+        lowerRaw === '@agent init' ||
+        lowerRaw === `${callsign} initialize` ||
+        lowerRaw === `${callsign} init` ||
+        lowerRaw === `@${callsignNoAt} initialize` ||
+        lowerRaw === `@${callsignNoAt} init` ||
+        lowerRaw === `${callsignNoAt} initialize` ||
+        lowerRaw === `${callsignNoAt} init`
       ) {
         let masterDir = '';
         try {
@@ -4041,6 +4709,368 @@ async function handleIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfte
         return;
       }
 
+      // Helper: Calculate Levenshtein distance for fuzzy matching typos
+      function getLevenshteinDistance(a, b) {
+        const s1 = String(a || '').toLowerCase();
+        const s2 = String(b || '').toLowerCase();
+        const m = s1.length;
+        const n = s2.length;
+        const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+        for (let i = 0; i <= m; i++) dp[i][0] = i;
+        for (let j = 0; j <= n; j++) dp[0][j] = j;
+        for (let i = 1; i <= m; i++) {
+          for (let j = 1; j <= n; j++) {
+            if (s1[i - 1] === s2[j - 1]) {
+              dp[i][j] = dp[i - 1][j - 1];
+            } else {
+              dp[i][j] = 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+            }
+          }
+        }
+        return dp[m][n];
+      }
+
+      // Helper: View access permissions
+      async function handleViewAccessCommand(sock, jid, msg, isGroup) {
+        const stateNow = loadProjectsState();
+        const activeAlias = (isGroup ? stateNow.groupBindings?.[jid] : stateNow.activeProject) || stateNow.activeProject;
+        const groupAllowed = (activeAlias && stateNow.projectAccess?.[jid]?.[activeAlias.toLowerCase()]) || [];
+        const contacts = loadContactsMap();
+
+        if (isGroup) {
+          let groupMeta = null;
+          try {
+            groupMeta = await sock.groupMetadata(jid);
+          } catch (err) {
+            console.warn(`⚠️ Failed to fetch group metadata for ${jid}:`, err?.message || err);
+          }
+
+          const botUserId = (sock?.user?.id || '').split(':')[0].split('@')[0].replace(/[^0-9]/g, '');
+          const botLid = (sock?.user?.lid || '').split(':')[0].split('@')[0];
+
+          const participants = groupMeta?.participants || [];
+          const memberLines = [];
+          const accountedAllowed = new Set();
+
+          for (const p of participants) {
+            const rawPId = p.id || '';
+            const pNum = rawPId.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+            const pBase = rawPId.split('@')[0].split(':')[0];
+
+            // Identify Bot itself
+            const isBotSelf = (botUserId && pNum === botUserId) || (botLid && pBase === botLid);
+
+            // Identify Owner
+            const isParticipantOwner =
+              (botUserId && pNum === botUserId) ||
+              (CONFIG.adminNumbers.length > 0 && pNum && CONFIG.adminNumbers.some(a => pNum.endsWith(a) || a.endsWith(pNum)));
+
+            // Identifier with phone number prioritized
+            const contactName = contacts[rawPId] || contacts[pNum] || contacts[pBase] || '';
+            const phoneDisplay = pNum ? `+${pNum}` : pBase;
+            const label = contactName ? `${phoneDisplay} (${contactName})` : phoneDisplay;
+
+            if (isBotSelf) {
+              memberLines.push(`🤖 *${label}* (Weave Agent): Active`);
+            } else if (isParticipantOwner) {
+              memberLines.push(`👑 *${label}* (Owner): Full Access (All commands, DM project deletion, access grants)`);
+            } else {
+              // Check if participant has granted project access
+              const isGranted = groupAllowed.some((entry) => {
+                const cleanEntry = entry.trim().toLowerCase();
+                const matched = (
+                  (pNum && (cleanEntry === pNum || cleanEntry === `+${pNum}` || pNum.endsWith(cleanEntry) || cleanEntry.endsWith(pNum))) ||
+                  (pBase && cleanEntry === pBase.toLowerCase()) ||
+                  (contactName && (cleanEntry === contactName.toLowerCase() || contactName.toLowerCase().includes(cleanEntry)))
+                );
+                if (matched) accountedAllowed.add(cleanEntry);
+                return matched;
+              });
+
+              if (isGranted) {
+                memberLines.push(`🟢 *${label}*: Granted Access (Can interact with \`${activeAlias || 'project'}\`)`);
+              } else {
+                memberLines.push(`⚪ *${label}*: No Access (Owner only by default)`);
+              }
+            }
+          }
+
+          // If there are collaborators granted who aren't in participants list (e.g. by display alias)
+          for (const extra of groupAllowed) {
+            if (!accountedAllowed.has(extra.toLowerCase())) {
+              memberLines.push(`🟢 *${extra}*: Granted Access (Can interact with \`${activeAlias || 'project'}\`)`);
+            }
+          }
+
+          const groupTitle = groupMeta?.subject || 'this Group';
+          const memberListText = memberLines.length > 0 ? memberLines.join('\n') : `_Could not fetch member list._`;
+
+          const permsReply = [
+            `🔒 *Permissions & Member Access for "${groupTitle}"*`,
+            activeAlias ? `📁 *Active Project:* \`${activeAlias}\`` : `📁 *Active Project:* _(None bound)_`,
+            `👥 *Total Members:* ${participants.length}`,
+            '',
+            `📋 *Member Permissions:*`,
+            memberListText,
+            '',
+            `💡 *Owner Tip:* To grant a member access, say *"allow <number or name> from now"*. To revoke, say *"revoke <number or name> access"*.`,
+          ].join('\n');
+
+          await sendReply(sock, jid, permsReply, msg);
+        } else {
+          // Send-to-Self DM or direct chat
+          const permsReply = [
+            `🔒 *Access Permissions for Personal DM*`,
+            activeAlias ? `📁 *Active Project:* \`${activeAlias}\`` : `📁 *Active Project:* _(None bound)_`,
+            '',
+            `👑 *Owner:* Full Access (All commands, project creation/deletion, settings)`,
+            `ℹ️ In personal DM, you have exclusive full access to all projects and admin commands.`,
+          ].join('\n');
+
+          await sendReply(sock, jid, permsReply, msg);
+        }
+      }
+
+      // Helper: Grant or revoke access
+      async function handleManageAccessCommand(sock, jid, msg, action, rawUser, specifiedProject, isGroup, isOwnerSender) {
+        if (!isOwnerSender) {
+          await reactToMessage(sock, msg, '🔒');
+          await sendReply(sock, jid, `🔒 *Only the owner can configure project permissions.*`, msg);
+          return;
+        }
+
+        const stateNow = loadProjectsState();
+        const activeAlias = specifiedProject || (isGroup ? stateNow.groupBindings?.[jid] : stateNow.activeProject) || stateNow.activeProject;
+        if (!activeAlias) {
+          await sendReply(sock, jid, `⚠️ No active project to configure access for.`, msg);
+          return;
+        }
+
+        // Clean user candidate string: handle possessives like "tinchus" -> "tinchu", "tinchu's" -> "tinchu", strip suffixes
+        let userCandidate = String(rawUser || '').replace(/^@/, '').trim();
+        userCandidate = userCandidate
+          .replace(/['’]s$/i, '')
+          .replace(/\s+(access|perms|permission|permissions|from|now|babys|baby)$/i, '')
+          .replace(/\s+(access|perms|permission|permissions|from|now)$/i, '')
+          .replace(/s$/i, (m, offset, str) => {
+            const withS = findFriend(str);
+            if (withS) return 's';
+            return '';
+          })
+          .replace(/\s+(access|perms|permission|permissions|from|now|babys|baby)$/i, '')
+          .trim();
+
+        if (!userCandidate) {
+          await sendReply(sock, jid, `❓ Please specify the group member's phone number or name to ${action} access for.`, msg);
+          return;
+        }
+
+        let verifiedTarget = null;
+        let memberListForHint = [];
+
+        if (isGroup) {
+          let groupMeta = null;
+          try {
+            groupMeta = await sock.groupMetadata(jid);
+          } catch (err) {
+            console.warn(`⚠️ Failed to fetch group metadata for ${jid} during manage_access:`, err?.message || err);
+          }
+
+          const contacts = loadContactsMap();
+          const participants = groupMeta?.participants || [];
+          const candidateDigits = userCandidate.replace(/[^0-9]/g, '');
+          const candidateLower = userCandidate.toLowerCase();
+
+          // Collect group candidate info
+          const memberCandidates = [];
+          for (const p of participants) {
+            const rawPId = p.id || '';
+            const pNum = rawPId.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+            const pBase = rawPId.split('@')[0].split(':')[0];
+            const contactName = contacts[rawPId] || contacts[pNum] || contacts[pBase] || '';
+            const displayName = contactName ? `+${pNum} (${contactName})` : (pNum ? `+${pNum}` : pBase);
+            memberCandidates.push({
+              rawPId,
+              pNum,
+              pBase,
+              contactName,
+              displayName,
+            });
+            memberListForHint.push(`• *${displayName}*`);
+          }
+
+          // 1. Exact or suffix match on phone number
+          if (candidateDigits.length >= 4) {
+            const phoneMatch = memberCandidates.find(
+              m => m.pNum && (m.pNum === candidateDigits || m.pNum.endsWith(candidateDigits) || candidateDigits.endsWith(m.pNum))
+            );
+            if (phoneMatch) {
+              verifiedTarget = {
+                identifier: phoneMatch.pNum ? `+${phoneMatch.pNum}` : phoneMatch.pBase,
+                displayName: phoneMatch.displayName,
+              };
+            }
+          }
+
+          // 2. Exact match on contact name or pushName
+          if (!verifiedTarget) {
+            const exactNameMatch = memberCandidates.find(
+              m => m.contactName && m.contactName.toLowerCase() === candidateLower
+            );
+            if (exactNameMatch) {
+              verifiedTarget = {
+                identifier: exactNameMatch.pNum ? `+${exactNameMatch.pNum}` : exactNameMatch.pBase,
+                displayName: exactNameMatch.displayName,
+              };
+            }
+          }
+
+          // 3. Substring / partial match on contact name (e.g. "Tinchu" matching "Tinchu Kumar")
+          if (!verifiedTarget && candidateLower.length >= 3) {
+            const partialNameMatch = memberCandidates.find(
+              m => m.contactName && (
+                m.contactName.toLowerCase().includes(candidateLower) ||
+                candidateLower.includes(m.contactName.toLowerCase())
+              )
+            );
+            if (partialNameMatch) {
+              verifiedTarget = {
+                identifier: partialNameMatch.pNum ? `+${partialNameMatch.pNum}` : partialNameMatch.pBase,
+                displayName: partialNameMatch.displayName,
+              };
+            }
+          }
+
+          // 4. Fuzzy typo matching (Levenshtein distance <= 2) on contact names
+          if (!verifiedTarget && candidateLower.length >= 3) {
+            let bestMatch = null;
+            let bestDistance = Infinity;
+            for (const m of memberCandidates) {
+              if (!m.contactName) continue;
+              const dist = getLevenshteinDistance(candidateLower, m.contactName);
+              const maxAllowedDist = candidateLower.length <= 4 ? 1 : 2;
+              if (dist <= maxAllowedDist && dist < bestDistance) {
+                bestDistance = dist;
+                bestMatch = m;
+              }
+            }
+            if (bestMatch) {
+              verifiedTarget = {
+                identifier: bestMatch.pNum ? `+${bestMatch.pNum}` : bestMatch.pBase,
+                displayName: bestMatch.displayName,
+              };
+            }
+          }
+
+          // 5. Check registered friends directory
+          if (!verifiedTarget) {
+            const friend = findFriend(userCandidate);
+            if (friend) {
+              // Check if any group member matches this friend's name or github
+              const friendMember = memberCandidates.find(
+                m => m.contactName && (
+                  m.contactName.toLowerCase() === friend.name.toLowerCase() ||
+                  m.contactName.toLowerCase() === friend.github.toLowerCase()
+                )
+              );
+              if (friendMember) {
+                verifiedTarget = {
+                  identifier: friendMember.pNum ? `+${friendMember.pNum}` : friendMember.pBase,
+                  displayName: friendMember.displayName,
+                };
+              } else {
+                verifiedTarget = {
+                  identifier: friend.name,
+                  displayName: `${friend.name} (@${friend.github})`,
+                };
+              }
+            }
+          }
+
+          // 6. Check existing granted list for revoke (so owner can revoke an existing granted entry even if non-member)
+          if (!verifiedTarget && action === 'revoke') {
+            const existingGranted = groupAllowed.find(entry => {
+              const eLow = entry.toLowerCase();
+              return eLow === candidateLower || eLow.includes(candidateLower) || candidateLower.includes(eLow);
+            });
+            if (existingGranted) {
+              verifiedTarget = {
+                identifier: existingGranted,
+                displayName: existingGranted,
+              };
+            }
+          }
+
+          // If STILL not verified, REJECT! Do NOT create phantom access for random names!
+          if (!verifiedTarget) {
+            const hintText = memberListForHint.length > 0
+              ? `\n\n👥 *Group Members:*\n${memberListForHint.join('\n')}`
+              : '';
+            await reactToMessage(sock, msg, '❓');
+            await sendReply(
+              sock,
+              jid,
+              `❓ *Could not find "${userCandidate}" in this group.* No permissions were changed.\n\nPlease verify their phone number or exact contact name from the member list below.${hintText}`,
+              msg
+            );
+            return;
+          }
+        } else {
+          // Direct chat / DM: Check registered friends or numeric phone number
+          const friend = findFriend(userCandidate);
+          verifiedTarget = {
+            identifier: friend ? friend.name : userCandidate,
+            displayName: friend ? `${friend.name} (@${friend.github})` : userCandidate,
+          };
+        }
+
+        const userIdentifier = verifiedTarget.identifier;
+        const displayLabel = verifiedTarget.displayName || userIdentifier;
+
+        if (action === 'grant') {
+          grantProjectAccess(activeAlias, jid, userIdentifier);
+          await reactToMessage(sock, msg, '🔑');
+          await sendReply(
+            sock,
+            jid,
+            `🔑 *Access Granted:* Allowed *${displayLabel}* to interact with project \`${activeAlias}\` in this chat.`,
+            msg
+          );
+        } else {
+          revokeProjectAccess(activeAlias, jid, userIdentifier);
+          await reactToMessage(sock, msg, '🔒');
+          await sendReply(
+            sock,
+            jid,
+            `🔒 *Access Revoked:* Revoked *${displayLabel}*'s access to project \`${activeAlias}\` in this chat.`,
+            msg
+          );
+        }
+      }
+
+      // 3a. Who Has Perms / Permissions Query
+      const isPermsQuery =
+        lowerRaw === 'who has perms' ||
+        lowerRaw === 'who has perms?' ||
+        lowerRaw === 'who has permissions' ||
+        lowerRaw === 'who has permissions?' ||
+        lowerRaw === 'list perms' ||
+        lowerRaw === 'list perms?' ||
+        lowerRaw === 'list access perms' ||
+        lowerRaw === 'list access permissions' ||
+        lowerRaw === 'show perms' ||
+        lowerRaw === 'show permissions' ||
+        lowerRaw === 'perms' ||
+        lowerRaw === 'permissions' ||
+        lowerRaw.includes('who has perms') ||
+        lowerRaw.includes('who has permissions') ||
+        lowerRaw.includes('list access perms');
+
+      if (isPermsQuery && !rawBody.startsWith('/')) {
+        await handleViewAccessCommand(sock, jid, msg, isGroup);
+        return;
+      }
+
       if (
         lowerRaw === 'fullauto' ||
         lowerRaw === 'full auto' ||
@@ -4060,13 +5090,286 @@ async function handleIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfte
           sock,
           jid,
           nextState
-            ? `🚀 *Full Auto ENGAGED for this group!*\nI am now actively listening to all messages here. You don't need to mention @ap anymore.\n_(Say "@ap fullauto" again anytime to revert to mention mode)._`
+            ? `🚀 *Full Auto ENGAGED!*\nI am now actively listening to all messages in this chat without needing you to tag @ap.\n_(Say "@ap fullauto" again anytime to revert to mention mode)._`
             : `⏸️ *Full Auto DISENGAGED.*\nReverted to mention mode (tag @ap to talk to me).`,
           msg
         );
         return;
       }
 
+      // 3b. Risky Project Deletion Guard:
+      // Project deletions can ONLY be done through personal DM (1-to-1 Send-to-Self / text to self), with explicit confirmation!
+      const deleteProjMatch = rawBody.match(/\b(?:delete|remove|erase|destroy|nuke|rm)\s+(?:the\s+)?(?:project\s+)?([a-zA-Z0-9_-]+)/i);
+      if (deleteProjMatch && !rawBody.startsWith('/')) {
+        const candidateAlias = deleteProjMatch[1].toLowerCase();
+        const stateNow = loadProjectsState();
+        const masterDir = stateNow.masterDir;
+        let matchedAlias = null;
+        let matchedPath = null;
+
+        // Check configured projects
+        for (const [k, p] of Object.entries(stateNow.projects || {})) {
+          if (k.toLowerCase() === candidateAlias) {
+            matchedAlias = k;
+            matchedPath = p;
+            break;
+          }
+        }
+
+        // Also check actual subdirectories in masterDir
+        if (!matchedAlias && masterDir && fs.existsSync(masterDir)) {
+          try {
+            const dirs = fs.readdirSync(masterDir, { withFileTypes: true })
+              .filter(d => d.isDirectory() && !d.name.startsWith('.'));
+            const found = dirs.find(d => d.name.toLowerCase() === candidateAlias);
+            if (found) {
+              matchedAlias = found.name;
+              matchedPath = path.join(masterDir, found.name);
+            }
+          } catch {}
+        }
+
+        // Also check if user said "delete this project" or "delete current project"
+        if (!matchedAlias && ['this', 'current', 'it'].includes(candidateAlias)) {
+          const bound = isGroup ? stateNow.groupBindings?.[jid] : stateNow.activeProject;
+          if (bound) {
+            matchedAlias = bound;
+            matchedPath = stateNow.projects?.[bound] || (masterDir ? path.join(masterDir, bound) : null);
+          }
+        }
+
+        if (matchedAlias) {
+          const isSelfChat = isSendToSelf(msg, sock);
+          // Deleting a project can NEVER happen from a group. It can only happen from the owner's self DM.
+          if (isGroup || !owner || !isSelfChat) {
+            await reactToMessage(sock, msg, '🔒');
+            await sendReply(
+              sock,
+              jid,
+              `🔒 *Project deletions can never be performed from a group chat.* To delete \`${matchedAlias}\`, please do it directly from the owner's personal Send-to-Self DM chat.`,
+              msg
+            );
+            return;
+          } else {
+            // In Send-to-Self DM: send explicit confirmation
+            stateNow.pendingProjectDeletions = stateNow.pendingProjectDeletions || {};
+            stateNow.pendingProjectDeletions[jid] = {
+              targetAlias: matchedAlias,
+              targetPath: matchedPath,
+              timestamp: Date.now(),
+            };
+            saveProjectsState(stateNow);
+            await reactToMessage(sock, msg, '⚠️');
+            await sendReply(
+              sock,
+              jid,
+              `⚠️ *Are you sure you want to delete project \`${matchedAlias}\`?*\nThis will permanently delete the project folder and its associations.\n\nReply *yes* to proceed or *cancel* to abort.`,
+              msg
+            );
+            return;
+          }
+        }
+      }
+
+
+
+      // 3c. Granular Project Access Commands: "allow XYZ from now", "give XYZ access", "revoke XYZ access"
+      const manageAccessMatch =
+        rawBody.match(/\b(?:allow|grant|give)\s+([a-zA-Z0-9_+@.'’-]+(?:\s+[a-zA-Z0-9_+@.'’-]+)?)\s+(?:access|permission|perms|from\s+now|to\s+use)/i) ||
+        rawBody.match(/\b(?:allow|grant|give)\s+(?:agent\s+)?(?:perms|permissions|access)\s+(?:to|for)\s+([a-zA-Z0-9_+@.'’-]+(?:\s+[a-zA-Z0-9_+@.'’-]+)?)/i) ||
+        rawBody.match(/\b(?:revoke|remove|disallow)\s+([a-zA-Z0-9_+@.'’-]+(?:\s+[a-zA-Z0-9_+@.'’-]+)?)\s+(?:access|permission|perms)/i) ||
+        rawBody.match(/\b(?:revoke|remove|disallow)\s+(?:agent\s+)?(?:perms|permissions|access)\s+(?:from|for|to)\s+([a-zA-Z0-9_+@.'’-]+(?:\s+[a-zA-Z0-9_+@.'’-]+)?)/i);
+
+      if (manageAccessMatch && !rawBody.startsWith('/') && owner) {
+        const isRevoke = rawBody.toLowerCase().includes('revoke') || rawBody.toLowerCase().includes('remove') || rawBody.toLowerCase().includes('disallow');
+        const userTarget = manageAccessMatch[1].trim();
+        await handleManageAccessCommand(sock, jid, msg, isRevoke ? 'revoke' : 'grant', userTarget, null, isGroup, owner);
+        return;
+      }
+
+      // 3d. Add / Remove Friends Directly From WhatsApp Chat:
+      // e.g. "add friend Alice github: alice-dev", "save friend Bob bob_gh", "remove friend Alice"
+      const addFriendMatch = rawBody.match(/^(?:please\s+)?(?:add|save)\s+friend\s+([A-Za-z0-9_.-]+)(?:\s+(?:github[:=]?\s*|@)?([A-Za-z0-9_.-]+))?$/i);
+      const removeFriendMatch = rawBody.match(/^(?:please\s+)?(?:remove|delete)\s+friend\s+([A-Za-z0-9_.-]+)$/i);
+
+      if (owner && !rawBody.startsWith('/')) {
+        if (addFriendMatch) {
+          const friendName = addFriendMatch[1];
+          const githubUser = addFriendMatch[2] || friendName;
+          try {
+            const savedFriend = addFriend(friendName, githubUser);
+            await reactToMessage(sock, msg, '👥');
+            await sendReply(
+              sock,
+              jid,
+              `👥 *Saved Friend:* "${savedFriend.name}" → GitHub \`@${savedFriend.github}\`.`,
+              msg
+            );
+            return;
+          } catch (err) {
+            await sendReply(sock, jid, `⚠️ ${err.message}`, msg);
+            return;
+          }
+        }
+        if (removeFriendMatch) {
+          const friendTarget = removeFriendMatch[1];
+          const removed = removeFriend(friendTarget);
+          await reactToMessage(sock, msg, removed ? '🗑️' : '❓');
+          await sendReply(
+            sock,
+            jid,
+            removed
+              ? `🗑️ *Removed Friend:* "${friendTarget}" has been removed from your directory.`
+              : `❓ Friend "${friendTarget}" was not found in your directory.`,
+            msg
+          );
+          return;
+        }
+      }
+
+      // Fast-path: natural language GitHub collaborator requests from the owner
+      // (e.g. "add @octocat as collaborator to wisewallets", "invite https://github.com/user as a collaborator", "remove octocat from collaborators")
+      if (owner && !rawBody.startsWith('/')) {
+        const normalizedCollabText = rawBody
+          .replace(/\[([^\]]+)\]\((https?:\/\/github\.com\/[^)]+)\)/gi, '$2')
+          .replace(/https?:\/\/github\.com\/([A-Za-z0-9_.-]+)/gi, '$1')
+          .trim();
+
+        const emailInTextMatch = normalizedCollabText.match(
+          /([A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,})/
+        );
+        const extractedEmail = emailInTextMatch ? emailInTextMatch[1] : '';
+
+        const addCollabMatch =
+          normalizedCollabText.match(
+            /^(?:please\s+)?(?:can\s+you\s+)?(?:add|invite)\s+@?([A-Za-z0-9_.-]+)(?:\s*\([^)]*\))?\s+(?:as\s+(?:a\s+)?)?(?:github\s+)?collaborator(?:\s+(?:on|to|in|for)\s+(?:the\s+)?(?:repo(?:sitory)?\s+|project\s+)?([A-Za-z0-9_./-]+))?/i
+          ) ||
+          normalizedCollabText.match(
+            /^(?:please\s+)?(?:can\s+you\s+)?(?:add|invite)\s+(?:github\s+)?collaborator\s+@?([A-Za-z0-9_.-]+)(?:\s*\([^)]*\))?(?:\s+(?:on|to|in|for)\s+(?:the\s+)?(?:repo(?:sitory)?\s+|project\s+)?([A-Za-z0-9_./-]+))?/i
+          );
+        const removeCollabMatch = normalizedCollabText.match(
+          /^(?:please\s+)?(?:can\s+you\s+)?(?:remove|delete|revoke|uninvite)\s+@?([A-Za-z0-9_.-]+)\s+(?:as\s+(?:a\s+)?)?(?:collaborator|from\s+collaborators)(?:\s+(?:on|from|in)\s+(?:the\s+)?(?:repo(?:sitory)?\s+|project\s+)?([A-Za-z0-9_./-]+))?/i
+        );
+        const listCollabMatch = normalizedCollabText.match(
+          /^(?:please\s+)?(?:list|show|get)\s+(?:all\s+)?(?:github\s+)?collaborators(?:\s+(?:on|for|in|of)\s+(?:the\s+)?(?:repo(?:sitory)?\s+|project\s+)?([A-Za-z0-9_./-]+))?$/i
+        );
+
+        const stopWords = new Set(['this', 'that', 'the', 'my', 'our', 'current', 'repo', 'repository', 'project', 'here']);
+        if (addCollabMatch) {
+          const user = addCollabMatch[1];
+          const repoCandidate = (addCollabMatch[2] || '').replace(/[,.!?]+$/, '');
+          const repoPart = repoCandidate && !stopWords.has(repoCandidate.toLowerCase()) ? ` ${repoCandidate}` : '';
+          const emailPart = extractedEmail ? ` ${extractedEmail}` : '';
+          rawBody = `/collab ${user}${repoPart}${emailPart}`;
+        } else if (removeCollabMatch) {
+          const user = removeCollabMatch[1];
+          const repoCandidate = (removeCollabMatch[2] || '').replace(/[,.!?]+$/, '');
+          const repoPart = repoCandidate && !stopWords.has(repoCandidate.toLowerCase()) ? ` ${repoCandidate}` : '';
+          rawBody = `/removecollab ${user}${repoPart}`;
+        } else if (listCollabMatch) {
+          const repoCandidate = (listCollabMatch[1] || '').replace(/[,.!?]+$/, '');
+          const repoPart = repoCandidate && !stopWords.has(repoCandidate.toLowerCase()) ? ` ${repoCandidate}` : '';
+          rawBody = `/collabs${repoPart}`;
+        }
+      }
+
+      // Fast-path: deployment / vercel URL query
+      // (e.g. "pull out the vercel link", "what is the deployment link", "where is it deployed")
+      if (!rawBody.startsWith('/')) {
+        const lowerBody = rawBody.toLowerCase();
+        if (
+          lowerBody.includes('vercel link') ||
+          lowerBody.includes('vercel url') ||
+          lowerBody.includes('deployment link') ||
+          lowerBody.includes('deployment url') ||
+          lowerBody.includes('deployed link') ||
+          lowerBody.includes('live link') ||
+          lowerBody.includes('live url')
+        ) {
+          let projectDir = CONFIG.defaultProjectDir;
+          let detectedAlias = null;
+          try {
+            const resolved = resolveProjectAndTask(rawBody, jid);
+            if (resolved.projectDir) {
+              projectDir = resolved.projectDir;
+              detectedAlias = resolved.projectAlias;
+            }
+          } catch {
+            const boundProject = isGroup ? currentState.groupBindings?.[jid] : currentState.activeProject;
+            projectDir = (boundProject && currentState.projects?.[boundProject]) || CONFIG.defaultProjectDir;
+            detectedAlias = boundProject;
+          }
+
+          const liveUrl = await getProjectDeploymentUrl(projectDir, detectedAlias);
+          if (liveUrl) {
+            await sendReply(
+              sock,
+              jid,
+              `🌐 *Live Deployment for \`${detectedAlias || 'project'}\`:*\n${liveUrl}`,
+              msg
+            );
+            return;
+          }
+        }
+      }
+
+      // Fast-path: natural language screenshot / visual inspection requests
+      // (e.g. "take a screenshot of the current page", "send me a screenshot of localhost 3000", "screenshot https://example.com mobile")
+      if (!rawBody.startsWith('/')) {
+        const lowerBody = rawBody.toLowerCase();
+        if (
+          lowerBody.includes('screenshot') ||
+          lowerBody.includes('screen shot') ||
+          /\bss\b/i.test(lowerBody) ||
+          lowerBody.includes('capture the page') ||
+          lowerBody.includes('capture page') ||
+          lowerBody.includes('visual test') ||
+          lowerBody.includes('qa test') ||
+          lowerBody.includes('landing page screenshot')
+        ) {
+          // Check if there is an explicit URL or port
+          const urlMatch = rawBody.match(/(?:https?:\/\/[^\s]+|localhost:[0-9]+|:[0-9]{2,5}|\b[0-9]{4,5}\b)/i);
+          const isMobile = lowerBody.includes('mobile') || lowerBody.includes('phone');
+          let target = urlMatch ? urlMatch[0] : '';
+
+          // If no specific URL was given, check if project has a live Vercel/GitHub deployment URL!
+          if (!target) {
+            let projectDir = CONFIG.defaultProjectDir;
+            let detectedAlias = null;
+            let resolved = null;
+            try {
+              resolved = resolveProjectAndTask(rawBody, jid);
+              if (resolved.projectDir) {
+                projectDir = resolved.projectDir;
+                detectedAlias = resolved.projectAlias;
+              }
+            } catch {
+              const boundProject = isGroup ? currentState.groupBindings?.[jid] : currentState.activeProject;
+              projectDir = (boundProject && currentState.projects?.[boundProject]) || CONFIG.defaultProjectDir;
+              detectedAlias = boundProject;
+            }
+
+
+            // 1. Try to discover live Vercel / GitHub Pages / deployment URL
+            const liveUrl = await getProjectDeploymentUrl(projectDir, detectedAlias);
+            if (liveUrl) {
+              target = liveUrl;
+            } else {
+              // 2. Fall back to local project index.html or dev server
+              const indexPath = path.join(projectDir, 'index.html');
+              if (fs.existsSync(indexPath)) {
+                target = `file://${indexPath}`;
+              } else {
+                target = 'http://localhost:3000';
+              }
+            }
+          }
+
+          rawBody = `/screenshot ${target}${isMobile ? ' mobile' : ''}`;
+        }
+      }
+
+      // Check if it's a slash command or control command
       // Legacy slash commands or single control command keywords
       const lowerRawTrim = rawBody.toLowerCase().trim();
       const isControlCmd = [

@@ -1,8 +1,11 @@
 import dotenv from 'dotenv';
+import { EventEmitter } from 'events';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
+
+export const configEvents = new EventEmitter();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -285,48 +288,43 @@ export const CONFIG = {
 
 /**
  * Automatically scans the user's Master Directory (if set) for project folders.
- * Avoids blindly indexing random user directories like ~/Applications, ~/Desktop, etc.
+ * Projects are strictly the folders inside the master directory.
  */
-function discoverLocalProjects(customMasterDir = null) {
+export function discoverLocalProjects(customMasterDir = null) {
   const discovered = {};
 
-  const searchRoots = [];
-
-  if (customMasterDir && typeof customMasterDir === 'string') {
-    const resolvedMaster = customMasterDir.startsWith('~')
-      ? path.join(os.homedir(), customMasterDir.slice(1))
-      : path.resolve(customMasterDir);
-    if (!searchRoots.includes(resolvedMaster)) {
-      searchRoots.push(resolvedMaster);
-    }
+  if (!customMasterDir || typeof customMasterDir !== 'string') {
+    return discovered;
   }
 
-  for (const root of searchRoots) {
-    if (!fs.existsSync(root)) continue;
-    try {
-      const entries = fs.readdirSync(root, { withFileTypes: true });
-      for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
-        if (entry.name.startsWith('.')) continue;
-        if (IGNORED_DIRS.has(entry.name)) continue;
+  const resolvedMaster = customMasterDir.startsWith('~')
+    ? path.join(os.homedir(), customMasterDir.slice(1))
+    : path.resolve(customMasterDir);
 
-        const fullPath = path.join(root, entry.name);
-        const alias = entry.name.toLowerCase();
-        if (!discovered[alias]) {
-          discovered[alias] = fullPath;
-        }
+  if (!fs.existsSync(resolvedMaster)) return discovered;
+
+  try {
+    const entries = fs.readdirSync(resolvedMaster, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      if (entry.name.startsWith('.')) continue;
+      if (IGNORED_DIRS.has(entry.name)) continue;
+
+      const fullPath = path.join(resolvedMaster, entry.name);
+      const alias = entry.name.toLowerCase();
+      if (!discovered[alias]) {
+        discovered[alias] = fullPath;
       }
-    } catch {
-      // Ignore permission errors
     }
+  } catch {
+    // Ignore permission errors
   }
 
   return discovered;
 }
 
 /**
- * Load or initialize projects.json, merging in auto-discovered projects on disk.
- * Includes `groupBindings` which maps a WhatsApp group JID -> locked projectAlias.
+ * Load or initialize projects.json, strictly reflecting folders inside masterDir.
  */
 export function loadProjectsState() {
   let existingMasterDir = null;
@@ -342,77 +340,54 @@ export function loadProjectsState() {
   if (!fs.existsSync(PROJECTS_FILE)) {
     const firstAlias = Object.keys(discovered)[0] || '';
     const initial = {
+      masterDir: existingMasterDir || '',
       activeProject: firstAlias,
-      masterDir: '',
       projects: discovered,
+      initializedGroups: {},
       groupBindings: {},
+      pendingPolls: {},
       conversations: {},
-      pendingEmailDrafts: {},
-      autoPush: {},
-      disabledGroups: {},
+      autopilot: true,
+      friends: [],
+      projectAccess: {},
+      groupNames: {},
     };
     atomicWriteJson(PROJECTS_FILE, initial);
     return initial;
   }
   try {
     const saved = JSON.parse(fs.readFileSync(PROJECTS_FILE, 'utf8'));
-    saved.projects = { ...discovered, ...(saved.projects || {}) };
-    let healed = false;
-    for (const [alias, dir] of Object.entries(saved.projects)) {
-      if (typeof dir === 'string' && dir.includes('app.asar')) {
-        delete saved.projects[alias];
-        healed = true;
-      }
-    }
+    // Projects are strictly folders in master directory
+    saved.projects = discovered;
     saved.masterDir = typeof saved.masterDir === 'string' ? saved.masterDir : '';
+    saved.initializedGroups = saved.initializedGroups || {};
     saved.groupBindings = saved.groupBindings || {};
+    saved.pendingPolls = saved.pendingPolls || {};
     saved.conversations = saved.conversations || {};
-    saved.pendingEmailDrafts = saved.pendingEmailDrafts || {};
-    saved.autoPush = saved.autoPush || {};
-    saved.disabledGroups = saved.disabledGroups || {};
-    saved.deploymentUrls = saved.deploymentUrls || {};
-    saved.pendingProjectConfirmations = saved.pendingProjectConfirmations || {};
-    saved.autopilot = saved.autopilot ?? false;
+    saved.autopilot = saved.autopilot ?? true;
     saved.friends = Array.isArray(saved.friends) ? saved.friends : [];
-    saved.fullAutoGroups = saved.fullAutoGroups || {};
-    saved.pendingClarifications = saved.pendingClarifications || {};
-    saved.pendingCollaborators = saved.pendingCollaborators || {};
+    saved.projectAccess = saved.projectAccess || {};
+    saved.groupNames = saved.groupNames || {};
+    
     // Validate activeProject still exists; fall back to first available project
     const availableAliases = Object.keys(saved.projects);
-    if (!saved.projects[saved.activeProject] || !fs.existsSync(saved.projects[saved.activeProject])) {
+    if (!saved.projects[saved.activeProject]) {
       saved.activeProject = availableAliases[0] || '';
-      healed = true;
-    }
-    if (healed) {
-      try {
-        atomicWriteJson(PROJECTS_FILE, saved);
-      } catch {}
     }
     return saved;
   } catch {
-    // Preserve the corrupt file for forensics instead of silently discarding it.
-    try {
-      const backup = `${PROJECTS_FILE}.corrupt-${Date.now()}`;
-      fs.copyFileSync(PROJECTS_FILE, backup);
-    } catch {
-      // Ignore backup errors
-    }
     return {
-      activeProject: 'demo',
-      masterDir: '',
+      masterDir: existingMasterDir || '',
+      activeProject: '',
       projects: discovered,
+      initializedGroups: {},
       groupBindings: {},
+      pendingPolls: {},
       conversations: {},
-      pendingEmailDrafts: {},
-      autoPush: {},
-      disabledGroups: {},
-      deploymentUrls: {},
-      pendingProjectConfirmations: {},
-      autopilot: false,
+      autopilot: true,
       friends: [],
-      fullAutoGroups: {},
-      pendingClarifications: {},
-      pendingCollaborators: {},
+      projectAccess: {},
+      groupNames: {},
     };
   }
 }
@@ -482,6 +457,114 @@ export function removeFriend(nameOrId) {
 }
 
 /**
+ * Access Control for Projects per Group:
+ * Maintains which users (by phone number, name, or pushName) are granted access to interact
+ * with a project in a WhatsApp group.
+ */
+export function getProjectAccess(projectAlias, groupJid) {
+  if (!projectAlias || !groupJid) return [];
+  const state = loadProjectsState();
+  const alias = projectAlias.toLowerCase();
+  const group = groupJid.toLowerCase();
+  return state.projectAccess?.[group]?.[alias] || [];
+}
+
+export function grantProjectAccess(projectAlias, groupJid, userIdentifier) {
+  if (!projectAlias || !groupJid || !userIdentifier) return false;
+  const state = loadProjectsState();
+  const alias = projectAlias.toLowerCase();
+  const group = groupJid.toLowerCase();
+  state.projectAccess = state.projectAccess || {};
+  state.projectAccess[group] = state.projectAccess[group] || {};
+  state.projectAccess[group][alias] = state.projectAccess[group][alias] || [];
+
+  const cleanUser = String(userIdentifier).trim();
+  const existing = state.projectAccess[group][alias].find(
+    u => u.toLowerCase() === cleanUser.toLowerCase()
+  );
+  if (!existing) {
+    state.projectAccess[group][alias].push(cleanUser);
+    saveProjectsState(state);
+    return true;
+  }
+  return false;
+}
+
+export function revokeProjectAccess(projectAlias, groupJid, userIdentifier) {
+  if (!groupJid || !userIdentifier) return false;
+  const state = loadProjectsState();
+  const group = groupJid.toLowerCase();
+  if (!state.projectAccess?.[group]) return false;
+
+  const rawClean = String(userIdentifier).replace(/^@/, '').trim().toLowerCase();
+  if (!rawClean) return false;
+
+  // Also check if this identifier corresponds to a registered friend
+  const friends = Array.isArray(state.friends) ? state.friends : [];
+  const matchedFriend = friends.find(
+    f => f.name.toLowerCase() === rawClean || f.github.toLowerCase() === rawClean
+  );
+  const friendName = matchedFriend ? matchedFriend.name.toLowerCase() : null;
+  const friendGithub = matchedFriend ? matchedFriend.github.toLowerCase() : null;
+
+  function matchesUser(u) {
+    const uLow = String(u).trim().toLowerCase();
+    if (uLow === rawClean) return true;
+    if (friendName && uLow === friendName) return true;
+    if (friendGithub && uLow === friendGithub) return true;
+    // Handle cases where "permission" or "access" got accidentally saved into the name
+    if (uLow.startsWith(rawClean) || rawClean.startsWith(uLow)) return true;
+    return false;
+  }
+
+  let anyRemoved = false;
+  const alias = projectAlias ? projectAlias.toLowerCase() : null;
+
+  // If alias provided and exists in group
+  if (alias && state.projectAccess[group][alias]) {
+    const initialLen = state.projectAccess[group][alias].length;
+    state.projectAccess[group][alias] = state.projectAccess[group][alias].filter(u => !matchesUser(u));
+    if (state.projectAccess[group][alias].length !== initialLen) {
+      anyRemoved = true;
+    }
+  } else {
+    // If alias not specified or not in group, sweep all projects in this group
+    for (const p of Object.keys(state.projectAccess[group])) {
+      const initialLen = state.projectAccess[group][p].length;
+      state.projectAccess[group][p] = state.projectAccess[group][p].filter(u => !matchesUser(u));
+      if (state.projectAccess[group][p].length !== initialLen) {
+        anyRemoved = true;
+      }
+    }
+  }
+
+  if (anyRemoved) {
+    saveProjectsState(state);
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Saves/caches group display names in projects state so UI and bot can render real names.
+ */
+export function setGroupName(groupJid, groupName) {
+  if (!groupJid || !groupName) return;
+  const state = loadProjectsState();
+  state.groupNames = state.groupNames || {};
+  if (state.groupNames[groupJid] !== groupName) {
+    state.groupNames[groupJid] = groupName;
+    saveProjectsState(state);
+  }
+}
+
+export function getGroupName(groupJid) {
+  if (!groupJid) return '';
+  const state = loadProjectsState();
+  return state.groupNames?.[groupJid] || '';
+}
+
+/**
  * Atomically writes JSON state (tmp file + rename) so a crash mid-write
  * can never leave a half-written projects.json behind.
  */
@@ -498,6 +581,9 @@ export function atomicWriteJson(filePath, value) {
 
 export function saveProjectsState(state) {
   atomicWriteJson(PROJECTS_FILE, state);
+  try {
+    configEvents.emit('projects-updated', state);
+  } catch {}
 }
 
 // Speech-to-text phonetic dictionary to handle voice-note transcription mishearings
@@ -764,6 +850,175 @@ export function getActiveProjectForJid(jid = null) {
   if (jid && jid.endsWith('@g.us')) {
     return state.groupBindings?.[jid] || null;
   }
-  return state.activeProject || 'demo';
+  return state.activeProject || '';
 }
+
+/**
+ * Checks if a WhatsApp group is initialized.
+ * Silent gate: agent must never interact unless initialized.
+ */
+export function isGroupInitialized(groupJid) {
+  if (!groupJid) return false;
+  const state = loadProjectsState();
+  return Boolean(state.initializedGroups?.[groupJid]);
+}
+
+/**
+ * Marks a WhatsApp group as initialized.
+ */
+export function markGroupInitialized(groupJid, userJid = null) {
+  if (!groupJid) return null;
+  const state = loadProjectsState();
+  state.initializedGroups = state.initializedGroups || {};
+  state.initializedGroups[groupJid] = {
+    initializedAt: Date.now(),
+    initializedBy: userJid || 'unknown',
+  };
+  saveProjectsState(state);
+  return state.initializedGroups[groupJid];
+}
+
+/**
+ * Deinitializes a WhatsApp group, placing it back behind the silent gate.
+ */
+export function markGroupDeinitialized(groupJid) {
+  if (!groupJid) return false;
+  const state = loadProjectsState();
+  if (state.initializedGroups?.[groupJid]) {
+    delete state.initializedGroups[groupJid];
+    saveProjectsState(state);
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Gets the active project for a specific group.
+ */
+export function getGroupActiveProject(groupJid) {
+  if (!groupJid) return null;
+  const state = loadProjectsState();
+  return state.groupBindings?.[groupJid] || (!groupJid.endsWith('@g.us') ? state.activeProject : null) || null;
+}
+
+/**
+ * Sets the active project for a specific group (1 project per group).
+ */
+export function setGroupActiveProject(groupJid, projectAlias) {
+  if (!groupJid || !projectAlias) return null;
+  return bindGroupToProject(groupJid, projectAlias);
+}
+
+/**
+ * Returns all initialized groups with their active project.
+ */
+export function getAllInitializedGroups() {
+  const state = loadProjectsState();
+  const list = [];
+  for (const [jid, info] of Object.entries(state.initializedGroups || {})) {
+    list.push({
+      jid,
+      activeProject: state.groupBindings?.[jid] || null,
+      initializedAt: info.initializedAt,
+      initializedBy: info.initializedBy,
+    });
+  }
+  return list;
+}
+
+/**
+ * Saves a pending WhatsApp poll or reaction prompt to state.
+ */
+export function savePendingPoll(pollMsgId, pollData) {
+  if (!pollMsgId || !pollData) return;
+  const state = loadProjectsState();
+  state.pendingPolls = state.pendingPolls || {};
+  state.pendingPolls[pollMsgId] = {
+    ...pollData,
+    createdAt: Date.now(),
+  };
+  saveProjectsState(state);
+}
+
+/**
+ * Retrieves a pending poll by message ID.
+ */
+export function getPendingPoll(pollMsgId) {
+  if (!pollMsgId) return null;
+  const state = loadProjectsState();
+  return state.pendingPolls?.[pollMsgId] || null;
+}
+
+/**
+ * Deletes a pending poll after voting or expiration.
+ */
+export function deletePendingPoll(pollMsgId) {
+  if (!pollMsgId) return;
+  const state = loadProjectsState();
+  if (state.pendingPolls?.[pollMsgId]) {
+    delete state.pendingPolls[pollMsgId];
+    saveProjectsState(state);
+  }
+}
+
+const messageMemoryStore = new Map();
+
+/**
+ * Stores raw Baileys messages in an LRU memory cache for retries and poll vote decryption.
+ */
+export function recordRawMessage(id, msg) {
+  if (!id || !msg) return;
+  messageMemoryStore.set(id, msg);
+  if (messageMemoryStore.size > 2000) {
+    const oldestKey = messageMemoryStore.keys().next().value;
+    messageMemoryStore.delete(oldestKey);
+  }
+}
+
+/**
+ * Retrieves raw Baileys message by ID from the LRU memory cache.
+ */
+export function getRawMessage(id) {
+  if (!id) return undefined;
+  return messageMemoryStore.get(id) || undefined;
+}
+
+
+/**
+ * Completely resets state (wiping bindings, initialized groups, polls, and caches).
+ * Optionally preserves the masterDir path so user doesn't have to re-select it.
+ */
+export function resetAllState({ preserveMasterDir = true } = {}) {
+  const currentState = loadProjectsState();
+  const masterDir = preserveMasterDir ? (currentState.masterDir || '') : '';
+  const discovered = discoverLocalProjects(masterDir);
+  const firstAlias = Object.keys(discovered)[0] || '';
+
+  const newState = {
+    masterDir,
+    activeProject: firstAlias,
+    projects: discovered,
+    initializedGroups: {},
+    groupBindings: {},
+    pendingPolls: {},
+    conversations: {},
+    autopilot: true,
+    friends: [],
+  };
+
+  saveProjectsState(newState);
+
+  // Clear tracking files in DATA_DIR
+  const processedMsgsPath = path.join(DATA_DIR, '.processed-msgs.json');
+  const sentMsgsPath = path.join(DATA_DIR, '.sent-msgs.json');
+  try {
+    if (fs.existsSync(processedMsgsPath)) fs.unlinkSync(processedMsgsPath);
+  } catch {}
+  try {
+    if (fs.existsSync(sentMsgsPath)) fs.unlinkSync(sentMsgsPath);
+  } catch {}
+
+  return newState;
+}
+
 

@@ -39,6 +39,12 @@ contextBridge.exposeInMainWorld('weaveAPI', {
   addFriend: (name, github) => ipcRenderer.invoke('weave:add-friend', { name, github }),
   removeFriend: (nameOrId) => ipcRenderer.invoke('weave:remove-friend', nameOrId),
 
+  // Granular Project Access per Group
+  grantProjectAccess: (projectAlias, groupJid, userIdentifier) =>
+    ipcRenderer.invoke('weave:grant-project-access', { projectAlias, groupJid, userIdentifier }),
+  revokeProjectAccess: (projectAlias, groupJid, userIdentifier) =>
+    ipcRenderer.invoke('weave:revoke-project-access', { projectAlias, groupJid, userIdentifier }),
+
   // Logs stream
   onLog: (callback) => {
     ipcRenderer.on('weave:log', (_event, log) => callback(log));
@@ -53,5 +59,10 @@ contextBridge.exposeInMainWorld('weaveAPI', {
   checkOtaUpdate: (force = false) => ipcRenderer.invoke('weave:ota-update', force),
   onOtaUpdated: (callback) => {
     ipcRenderer.on('weave:ota-updated', (_event, data) => callback(data));
+  },
+
+  // Live State & Projects Update stream
+  onProjectsUpdate: (callback) => {
+    ipcRenderer.on('weave:projects-update', (_event, data) => callback(data));
   },
 });
