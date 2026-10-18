@@ -52,11 +52,17 @@ export async function sendEmailDirect({ to, subject, body, attachmentPaths = [] 
       path: p,
     }));
 
+  const emailSignature = 'Sent by Weave';
+  let formattedBody = (body || '').trim();
+  if (!formattedBody.endsWith(emailSignature)) {
+    formattedBody = formattedBody ? `${formattedBody}\n\n${emailSignature}` : emailSignature;
+  }
+
   const info = await transporter.sendMail({
     from: smtp.user,
     to,
     subject,
-    text: body,
+    text: formattedBody,
     attachments,
   });
 
@@ -191,6 +197,11 @@ Tone: Crisp, insightful, helpful, perfectly formatted with markdown bullet point
       summaryBody = `Summary of Recent Conversation:\n\n${formattedContext}`;
     }
 
+    const emailSignature = 'Sent by Weave';
+    if (!summaryBody.endsWith(emailSignature)) {
+      summaryBody = `${summaryBody}\n\n${emailSignature}`;
+    }
+
     const subject = `Weave Catch-Up: Conversation Summary (${isGroup ? 'Group Chat' : 'Chat'} - ${dateStr})`;
 
     // Save pending draft into state
@@ -315,8 +326,7 @@ Tone: Crisp, insightful, helpful, perfectly formatted with markdown bullet point
       ``,
       `Status: Successfully packaged and ready.`,
       ``,
-      `Best regards,`,
-      `Weave AI Assistant`,
+      `Sent by Weave`,
     ].filter(Boolean);
 
     const emailBody = bodyLines.join('\n');
@@ -377,9 +387,11 @@ Tone: Crisp, insightful, helpful, perfectly formatted with markdown bullet point
     return { handled: true };
   }
 
-  // 4. General Email Drafting
-  const subject = `Weave Update: ${new Date().toLocaleDateString()}`;
-  const body = rawBody;
+  const emailSignature = 'Sent by Weave';
+  let body = rawBody;
+  if (!body.endsWith(emailSignature)) {
+    body = body ? `${body}\n\n${emailSignature}` : emailSignature;
+  }
 
   const preState = loadProjectsState();
   preState.pendingEmailDrafts = preState.pendingEmailDrafts || {};
