@@ -609,6 +609,15 @@ export async function dispatchIntent({
         (boundProject && state?.projects?.[boundProject]) ||
         path.resolve(process.cwd(), 'demo-site');
 
+      // Send immediate progress indication to WhatsApp
+      if (reactToMessage) await reactToMessage(sock, msg, '🎨').catch(() => {});
+      await sendReply(
+        sock,
+        jid,
+        `🎨 *Researching & architecting your bespoke website via Google Stitch MCP...*\n_Analyzing industry design standards, color theory, and deploying live previews!_`,
+        msg
+      ).catch(() => {});
+
       const result = await executePortfolioCreation({
         prompt: rawBody,
         chatJid: jid,

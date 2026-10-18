@@ -16,15 +16,94 @@ import { captureWebScreenshot } from '../qa.js';
 import { loadProjectsState, saveProjectsState } from '../config.js';
 
 /**
- * Renders HTML files and captures headless screenshots for all 3 design philosophies.
- *
- * @param {object} portfolioData
- * @param {string} [outputDir]
- * @returns {Promise<Array<{ option: number, id: string, name: string, description: string, screenshotPath: string }>>}
+ * Builds an interactive preview switcher bar to inject at the top of generated HTML pages.
  */
-export async function renderAndCaptureVariants(portfolioData, outputDir = null) {
-  const targetDir = outputDir || path.join(os.tmpdir(), 'portfolio-stitch-variants', `${Date.now()}`);
-  fs.mkdirSync(targetDir, { recursive: true });
+function buildSwitcherBar(currentOpt, variants) {
+  const currentVariant = variants.find((v) => v.option === currentOpt) || variants[0] || {};
+  return `
+<div id="stitch-preview-bar" style="background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(8px); padding: 10px 16px; border-bottom: 1px solid rgba(255,255,255,0.12); display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 99999; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #fff; font-size: 13px;">
+  <div style="display: flex; align-items: center; gap: 8px;">
+    <span style="background: #10b981; color: #000; font-weight: 700; padding: 2px 8px; border-radius: 4px; font-size: 10px; letter-spacing: 0.05em;">DESIGN PREVIEW</span>
+    <span style="color: #cbd5e1;">Viewing: <strong style="color: #fff;">Option ${currentOpt}: ${currentVariant.name || 'Bespoke Design'}</strong></span>
+  </div>
+  <div style="display: flex; gap: 6px;">
+    ${variants
+      .map(
+        (v) => `
+      <a href="/option${v.option}.html" style="padding: 5px 12px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 12px; transition: all 0.2s; ${
+          v.option === currentOpt
+            ? 'background: #10b981; color: #000;'
+            : 'background: rgba(255,255,255,0.1); color: #fff;'
+        }">Option ${v.option}</a>`
+      )
+      .join('')}
+  </div>
+</div>`;
+}
+
+/**
+ * Injects the switcher bar into an HTML string immediately after <body...>.
+ */
+function injectSwitcherBar(html, currentOpt, variants) {
+  if (!html) return '';
+  const bar = buildSwitcherBar(currentOpt, variants);
+  if (html.includes('<body')) {
+    return html.replace(/<body[^>]*>/i, (match) => `${match}\n${bar}`);
+  }
+  return `${bar}\n${html}`;
+}
+
+const VALID_STITCH_FONTS = new Set([
+  'BE_VIETNAM_PRO', 'EPILOGUE', 'INTER', 'LEXEND', 'MANROPE', 'NEWSREADER',
+  'NOTO_SERIF', 'PLUS_JAKARTA_SANS', 'PUBLIC_SANS', 'SPACE_GROTESK', 'SPLINE_SANS',
+  'WORK_SANS', 'DOMINE', 'LIBRE_CASLON_TEXT', 'EB_GARAMOND', 'LITERATA',
+  'MONTSERRAT', 'NUNITO_SANS', 'ARIMO', 'HANKEN_GROTESK', 'RUBIK', 'GEIST',
+  'DM_SANS', 'IBM_PLEX_SANS', 'SORA', 'ANYBODY', 'ANTON', 'BARLOW_CONDENSED',
+  'BEBAS_NEUE', 'BODONI_MODA', 'BRICOLAGE_GROTESQUE', 'CHIVO', 'COMFORTAA',
+  'GOOGLE_SANS', 'IBM_PLEX_SERIF', 'JETBRAINS_MONO', 'KARLA', 'MERRIWEATHER',
+  'NOTO_SANS', 'OPEN_SANS', 'OSWALD', 'OUTFIT', 'PLAYFAIR_DISPLAY', 'QUICKSAND',
+  'RALEWAY', 'SPACE_MONO', 'SYNE', 'VOLLKORN',
+]);
+
+function normalizeStitchFont(font, fallback = 'PLUS_JAKARTA_SANS') {
+  if (!font) return fallback;
+  const upper = String(font).trim().toUpperCase().replace(/[^A-Z0-9_]/g, '_');
+  if (VALID_STITCH_FONTS.has(upper)) return upper;
+  if (upper.includes('SERIF') || upper.includes('CINZEL') || upper.includes('PLAYFAIR') || upper.includes('GARAMOND')) {
+    return 'PLAYFAIR_DISPLAY';
+  }
+  if (upper.includes('GROTESK') || upper.includes('MONO')) {
+    return 'SPACE_GROTESK';
+  }
+  return fallback;
+}
+
+/**
+ * Executes the complete Website Creation pipeline:
+ * 1. Deep Domain & Aesthetic Research via Gemini Client
+ * 2. Connects to Google Stitch MCP, creates project & design system, and awaits real screen generation
+ * 3. Downloads the bespoke Stitch HTML & high-res screenshot
+ * 4. Renders alternative researched design directions (Option 2, Option 3)
+ * 5. Injects the preview switcher bar into all variants
+ * 6. Deploys to Netlify Drop (instant URL and preview password)
+ * 7. Persists session state and formats WhatsApp message with screenshot directives
+ */
+export async function executePortfolioCreation({
+  prompt,
+  chatJid,
+  targetProjectDir,
+  projectAlias = 'portfolio-website',
+  senderName = 'Founder / Architect',
+  initialPhilosophy = '1',
+}) {
+  const projectDir = targetProjectDir || path.resolve(process.cwd(), 'demo-site');
+  fs.mkdirSync(projectDir, { recursive: true });
+
+  // 1. Deep Domain & Aesthetic Research
+  console.log(`[PortfolioOrchestrator] Starting deep domain research for: "${prompt}"`);
+  const portfolioData = await synthesizePortfolioData(prompt, {
+    organizer: senderName || 'Founder',
+  });
 
   const aesthetics =
     Array.isArray(portfolioData.aesthetics) && portfolioData.aesthetics.length >= 3
@@ -32,197 +111,218 @@ export async function renderAndCaptureVariants(portfolioData, outputDir = null) 
       : [
           {
             option: 1,
-            id: DESIGN_PHILOSOPHIES.BENTO,
-            name: 'Obsidian Bento Grid',
-            description: 'Dark mode, glowing neon cyan/purple accents, modular tech cards, and monospace badges.',
+            id: 'signature-atelier',
+            name: `${portfolioData.name || 'Bespoke'} Signature`,
+            archetype: 'Primary Domain Signature',
+            description: 'Custom aesthetic crafted specifically for this domain.',
           },
           {
             option: 2,
-            id: DESIGN_PHILOSOPHIES.SWISS,
+            id: 'swiss-editorial',
             name: 'Swiss Editorial Minimal',
-            description: 'Clean typography, serif headlines, generous whitespace, and high-contrast editorial layout.',
+            archetype: 'Editorial Monospace Serif',
+            description: 'Serif headlines, generous editorial whitespace, and high-contrast timeless layout.',
           },
           {
             option: 3,
-            id: DESIGN_PHILOSOPHIES.BRUTALIST,
-            name: 'Neo-Brutalist Dynamic',
-            description: 'Bold 2px dark outlines, high-energy highlighter badges, and tactile interactive elements.',
+            id: 'modern-tactile',
+            name: 'Tactile Energy & Bold Badges',
+            archetype: 'Neo-Tactile Badges',
+            description: 'High-energy borders, tactile drop shadows, and vibrant highlighter badges.',
           },
         ];
 
-  const variants = aesthetics.map((a, idx) => ({
-    option: a.option || idx + 1,
-    id: a.id || `option-${idx + 1}`,
-    name: a.name || `Design Option ${idx + 1}`,
-    description: a.description || 'Custom aesthetic layout',
-    html: generatePortfolioHtml(String(a.option || idx + 1), portfolioData),
-    filename: `option${idx + 1}_${(a.id || 'variant').replace(/[^a-z0-9]/gi, '_')}`,
-  }));
+  // 2. Google Stitch MCP Screen Generation
+  let stitchScreen = null;
+  let stitchProjectId = null;
+  let stitchSummary = '';
+  const isStitchActive = stitchClient.isConfigured();
 
-  const results = [];
-  for (const v of variants) {
-    const htmlPath = path.join(targetDir, `${v.filename}.html`);
-    const imgPath = path.join(targetDir, `${v.filename}.png`);
-    fs.writeFileSync(htmlPath, v.html, 'utf8');
-
+  if (isStitchActive) {
     try {
-      const shot = await captureWebScreenshot(htmlPath, {
-        outputPath: imgPath,
-        width: 1280,
-        height: 800,
+      console.log('[PortfolioOrchestrator] Creating Google Stitch MCP project container...');
+      const projectTitle = `${portfolioData.name || 'Site'} - ${prompt.slice(0, 25)}`;
+      const stitchProject = await stitchClient.createProject(projectTitle);
+      // Create Stitch Design System using Option 1 tokens
+      let designSystemAsset = null;
+      const opt1 = aesthetics[0];
+      if (opt1) {
+        try {
+          console.log('[PortfolioOrchestrator] Registering design system in Google Stitch MCP...');
+          const headlineFont = normalizeStitchFont(opt1.stitchHeadlineFont || opt1.fontHeading, 'PLAYFAIR_DISPLAY');
+          const bodyFont = normalizeStitchFont(opt1.stitchBodyFont || opt1.fontBody, 'DM_SANS');
+          const dsRes = await stitchClient.createDesignSystem({
+            projectId: stitchProjectId,
+            displayName: `${opt1.name} Design System`,
+            theme: {
+              headlineFont,
+              bodyFont,
+              colorMode: opt1.stitchColorMode || (opt1.colors?.bg?.startsWith('#0') || opt1.colors?.bg?.startsWith('#1') ? 'DARK' : 'LIGHT'),
+              customColor: opt1.colors?.accent || '#10B981',
+              roundness: opt1.stitchRoundness || 'ROUND_FOUR',
+              designMd: `# ${portfolioData.name} Design System\n- Theme: ${opt1.name}\n- Archetype: ${opt1.archetype}\n- Description: ${opt1.description}\n- Brand Accent: ${opt1.colors?.accent}`,
+            },
+          });
+          designSystemAsset = dsRes?.name || dsRes?.result?.structuredContent?.name || null;
+        } catch (dsErr) {
+          console.warn('[StitchMCP] Design system registration note:', dsErr.message);
+        }
+      }
+
+      // AWAIT screen generation from Google Stitch MCP
+      console.log('[PortfolioOrchestrator] Calling Google Stitch MCP generate_screen_from_text...');
+      const stitchPrompt =
+        portfolioData.stitchPrompt ||
+        `Modern responsive desktop landing page for "${portfolioData.name}": ${prompt}. Include hero, proof metrics, offerings matrix, craft pillars, and contact footer.`;
+
+      const genRes = await stitchClient.generateScreenFromText({
+        projectId: stitchProjectId,
+        prompt: stitchPrompt,
+        designSystem: designSystemAsset || undefined,
+        deviceType: 'DESKTOP',
       });
-      results.push({
-        option: v.option,
-        id: v.id,
-        name: v.name,
-        description: v.description,
-        html: v.html,
-        htmlPath,
-        screenshotPath: shot.filePath,
-      });
-    } catch (err) {
-      console.warn(`Failed to capture screenshot for ${v.name}:`, err.message);
-      results.push({
-        option: v.option,
-        id: v.id,
-        name: v.name,
-        description: v.description,
-        html: v.html,
-        htmlPath,
-        screenshotPath: null,
-      });
+
+      const extracted = stitchClient.extractScreens(genRes);
+      if (extracted.screens && extracted.screens.length > 0) {
+        stitchScreen = extracted.screens[0];
+        stitchSummary = extracted.summaryText || '';
+        console.log(`[StitchMCP] Screen successfully generated: "${stitchScreen.title}"`);
+      }
+    } catch (stitchErr) {
+      console.warn('[StitchMCP] Screen generation fallback notice:', stitchErr.message);
+    }
+  } else {
+    console.log('[PortfolioOrchestrator] Stitch API key not configured, using dynamic domain engine.');
+  }
+
+  // 3. Assemble all 3 design variants
+  const variants = [];
+
+  // --- OPTION 1: Google Stitch MCP Bespoke Generation (or domain fallback) ---
+  const opt1Meta = aesthetics[0];
+  let opt1Html = '';
+  let opt1ScreenshotPath = null;
+
+  if (stitchScreen?.htmlCode?.downloadUrl) {
+    try {
+      console.log('[PortfolioOrchestrator] Downloading bespoke HTML from Google Stitch MCP...');
+      const downloadedHtml = await (await fetch(stitchScreen.htmlCode.downloadUrl)).text();
+      if (downloadedHtml && downloadedHtml.length > 200) {
+        opt1Html = downloadedHtml;
+      }
+    } catch (dlErr) {
+      console.warn('[PortfolioOrchestrator] Failed to download Stitch HTML:', dlErr.message);
     }
   }
 
-  return results;
-}
+  if (stitchScreen?.screenshot?.downloadUrl) {
+    try {
+      console.log('[PortfolioOrchestrator] Downloading screenshot from Google Stitch MCP...');
+      const shotDest = path.join(projectDir, 'option1.png');
+      await stitchClient.downloadAsset(stitchScreen.screenshot.downloadUrl, shotDest);
+      if (fs.existsSync(shotDest) && fs.statSync(shotDest).size > 1000) {
+        opt1ScreenshotPath = shotDest;
+      }
+    } catch (shotDlErr) {
+      console.warn('[PortfolioOrchestrator] Failed to download Stitch screenshot:', shotDlErr.message);
+    }
+  }
 
-/**
- * Executes the complete Portfolio Website Creation pipeline:
- * 1. Initializes Google Stitch project & triggers generation
- * 2. Renders all 3 design philosophy variants & captures preview screenshots
- * 3. Builds the primary website into projectDir
- * 4. Deploys to Netlify Anonymous Drop (instant URL, password, claim link)
- * 5. Captures live preview screenshot
- * 6. Persists session state and formats WhatsApp message with directives
- */
-export async function executePortfolioCreation({
-  prompt,
-  chatJid,
-  targetProjectDir,
-  projectAlias = 'portfolio-website',
-  senderName = 'Founder / Engineer',
-  initialPhilosophy = DESIGN_PHILOSOPHIES.BENTO,
-}) {
-  const projectDir = targetProjectDir || path.resolve(process.cwd(), 'demo-site');
-  fs.mkdirSync(projectDir, { recursive: true });
+  // Fallback for Option 1 HTML if download was empty
+  if (!opt1Html) {
+    opt1Html = generatePortfolioHtml('1', portfolioData);
+  }
 
-  // 1. Dynamically synthesize custom domain copy using local AI (agy CLI)
-  const portfolioData = await synthesizePortfolioData(prompt, {
-    organizer: senderName || 'Founder',
+  variants.push({
+    option: 1,
+    id: opt1Meta.id || 'stitch-primary',
+    name: stitchScreen?.title || opt1Meta.name || 'Google Stitch Bespoke Design',
+    description: opt1Meta.description || 'Custom crafted with Google Stitch MCP & Gemini.',
+    html: opt1Html,
+    screenshotPath: opt1ScreenshotPath,
+    source: stitchScreen ? 'STITCH_MCP' : 'DOMAIN_ENGINE',
   });
 
-  // 2. Connect to Google Stitch MCP in background
-  let stitchProjectId = null;
-  try {
-    const stitchProject = await stitchClient.createProject(`Portfolio - ${prompt?.slice(0, 30) || 'Web'}`);
-    stitchProjectId = stitchProject?.name ? stitchProject.name.split('/').pop() : null;
-    if (stitchProjectId) {
-      // Trigger screen generation asynchronously without blocking
-      stitchClient
-        .generateScreenFromText({
-          projectId: stitchProjectId,
-          prompt: `Modern responsive portfolio website: ${prompt}`,
-          deviceType: 'DESKTOP',
-        })
-        .catch((err) => console.warn('[StitchMCP] Background screen generation note:', err.message));
-    }
-  } catch (stitchErr) {
-    console.warn('[StitchMCP] Notice:', stitchErr.message);
-  }
+  // --- OPTION 2: Researched Direction 2 (e.g. Swiss Editorial Minimal) ---
+  const opt2Meta = aesthetics[1];
+  const opt2Html = generatePortfolioHtml('2', portfolioData);
+  variants.push({
+    option: 2,
+    id: opt2Meta.id || 'editorial-minimal',
+    name: opt2Meta.name || 'Swiss Editorial Minimal',
+    description: opt2Meta.description || 'Serif headlines, generous whitespace, and editorial layout.',
+    html: opt2Html,
+    screenshotPath: null,
+    source: 'DOMAIN_ENGINE',
+  });
 
-  // 3. Render and capture all 3 design philosophy variants
-  const variants = await renderAndCaptureVariants(portfolioData);
+  // --- OPTION 3: Researched Direction 3 (e.g. Modern Tactile / High Energy) ---
+  const opt3Meta = aesthetics[2];
+  const opt3Html = generatePortfolioHtml('3', portfolioData);
+  variants.push({
+    option: 3,
+    id: opt3Meta.id || 'modern-tactile',
+    name: opt3Meta.name || 'Modern Tactile & Bold Badges',
+    description: opt3Meta.description || 'High-energy borders, tactile shadows, and vibrant badges.',
+    html: opt3Html,
+    screenshotPath: null,
+    source: 'DOMAIN_ENGINE',
+  });
 
-  // Helper to build preview switcher bar
-  const buildSwitcherBar = (currentOpt) => `
-<div style="background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(8px); padding: 10px 16px; border-bottom: 1px solid rgba(255,255,255,0.12); display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 9999; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #fff; font-size: 13px;">
-  <div style="display: flex; align-items: center; gap: 8px;">
-    <span style="background: #38bdf8; color: #000; font-weight: 700; padding: 2px 8px; border-radius: 4px; font-size: 10px; letter-spacing: 0.05em;">DESIGN PREVIEW</span>
-    <span style="color: #cbd5e1;">Viewing: <strong style="color: #fff;">Option ${currentOpt}: ${variants.find((v) => v.option === currentOpt)?.name || ''}</strong></span>
-  </div>
-  <div style="display: flex; gap: 6px;">
-    ${variants
-      .map(
-        (v) => `
-      <a href="/option${v.option}.html" style="padding: 5px 12px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 12px; transition: all 0.2s; ${
-        v.option === currentOpt
-          ? 'background: #38bdf8; color: #000;'
-          : 'background: rgba(255,255,255,0.1); color: #fff;'
-      }">Option ${v.option}</a>`
-      )
-      .join('')}
-  </div>
-</div>`;
-
-  // 4. Save each variant HTML and screenshot into projectDir for live hosting on Netlify
+  // 4. Save each variant HTML and capture screenshots for options that don't have one
   for (const v of variants) {
     const optNum = v.option;
-    const bar = buildSwitcherBar(optNum);
-    const htmlContent = v.html || generatePortfolioHtml(String(optNum), portfolioData);
-    const fullHtml = htmlContent.includes('<body')
-      ? htmlContent.replace(/<body[^>]*>/i, (match) => `${match}\n${bar}`)
-      : `${bar}\n${htmlContent}`;
+    const fullHtml = injectSwitcherBar(v.html, optNum, variants);
+    const htmlPath = path.join(projectDir, `option${optNum}.html`);
+    fs.writeFileSync(htmlPath, fullHtml, 'utf8');
 
-    fs.writeFileSync(path.join(projectDir, `option${optNum}.html`), fullHtml, 'utf8');
-
-    if (v.screenshotPath && fs.existsSync(v.screenshotPath) && v.screenshotPath.endsWith('.png')) {
+    if (!v.screenshotPath || !fs.existsSync(v.screenshotPath)) {
+      const shotPath = path.join(projectDir, `option${optNum}.png`);
       try {
-        fs.copyFileSync(v.screenshotPath, path.join(projectDir, `option${optNum}.png`));
-      } catch {}
+        const shot = await captureWebScreenshot(htmlPath, {
+          outputPath: shotPath,
+          width: 1280,
+          height: 800,
+        });
+        v.screenshotPath = shot.filePath;
+      } catch (shotErr) {
+        console.warn(`[PortfolioOrchestrator] Screenshot capture note for Option ${optNum}:`, shotErr.message);
+      }
     }
   }
 
   // 5. Assemble primary active design into index.html
-  const initialOptNum = parseInt(initialPhilosophy, 10) || 1;
-  const primaryHtml = generatePortfolioHtml(initialPhilosophy, portfolioData);
-  const primaryBar = buildSwitcherBar(initialOptNum);
-  const primaryIndexHtml = primaryHtml.includes('<body')
-    ? primaryHtml.replace(/<body[^>]*>/i, (match) => `${match}\n${primaryBar}`)
-    : `${primaryBar}\n${primaryHtml}`;
+  const activeOptNum = parseInt(initialPhilosophy, 10) || 1;
+  const primaryVariant = variants.find((v) => v.option === activeOptNum) || variants[0];
+  const primaryIndexHtml = injectSwitcherBar(primaryVariant.html, activeOptNum, variants);
   const indexPath = path.join(projectDir, 'index.html');
   fs.writeFileSync(indexPath, primaryIndexHtml, 'utf8');
 
-  // 6. Deploy to Netlify
-  const netlifyDeploy = await deployToNetlifyDrop(projectDir, { title: projectAlias || 'portfolio' });
-
-  // 7. Capture live preview screenshot directly from local HTML
-  let livePreviewScreenshot = null;
-  try {
-    const liveShot = await captureWebScreenshot(indexPath, {
-      outputPath: path.join(projectDir, 'screenshot-live.png'),
-      width: 1280,
-      height: 800,
-    });
-    livePreviewScreenshot = liveShot.filePath;
-  } catch (err) {
-    console.warn('Failed to capture live preview screenshot:', err.message);
-    livePreviewScreenshot = variants[0]?.screenshotPath || null;
+  // Copy Option 1 screenshot to live preview screenshot
+  const livePreviewScreenshot = path.join(projectDir, 'screenshot-live.png');
+  if (primaryVariant.screenshotPath && fs.existsSync(primaryVariant.screenshotPath)) {
+    try {
+      fs.copyFileSync(primaryVariant.screenshotPath, livePreviewScreenshot);
+    } catch {}
   }
 
-  // 8. Persist session state in projects.json
+  // 6. Deploy to Netlify Drop
+  const netlifyDeploy = await deployToNetlifyDrop(projectDir, { title: projectAlias || 'portfolio' });
+
+  // 7. Persist session state in projects.json
   try {
     const state = loadProjectsState();
     state.portfolioSessions = state.portfolioSessions || {};
     state.portfolioSessions[chatJid] = {
       projectDir,
       projectAlias,
-      activePhilosophy: initialPhilosophy,
+      activePhilosophy: String(activeOptNum),
       siteUrl: netlifyDeploy.siteUrl || null,
       siteId: netlifyDeploy.siteId || null,
       password: netlifyDeploy.password || null,
       claimUrl: netlifyDeploy.claimUrl || null,
       stitchProjectId,
+      stitchScreenId: stitchScreen?.name || null,
       portfolioData,
       variants: variants.map((v) => ({
         option: v.option,
@@ -230,22 +330,23 @@ export async function executePortfolioCreation({
         name: v.name,
         description: v.description,
         screenshotPath: v.screenshotPath,
+        source: v.source,
       })),
       updatedAt: new Date().toISOString(),
     };
     saveProjectsState(state);
   } catch (stateErr) {
-    console.warn('Failed to save portfolio state:', stateErr.message);
+    console.warn('[PortfolioOrchestrator] Failed to save portfolio state:', stateErr.message);
   }
 
-  // 9. Format WhatsApp response with [SEND_FILE] directives
+  // 8. Format WhatsApp response with [SEND_FILE] directives
   const directives = [];
   for (const v of variants) {
     if (v.screenshotPath && fs.existsSync(v.screenshotPath) && v.screenshotPath.endsWith('.png')) {
       directives.push(`[SEND_FILE: HERE | ${v.screenshotPath}]`);
     }
   }
-  if (directives.length === 0 && livePreviewScreenshot && fs.existsSync(livePreviewScreenshot)) {
+  if (directives.length === 0 && fs.existsSync(livePreviewScreenshot)) {
     directives.push(`[SEND_FILE: HERE | ${livePreviewScreenshot}]`);
   }
 
@@ -267,7 +368,10 @@ export async function executePortfolioCreation({
 
   const rawBase = netlifyDeploy.siteUrl ? netlifyDeploy.siteUrl.replace(/\/$/, '') : '';
   const variantLines = variants.map(
-    (v) => `• *Option ${v.option}*: *${v.name}*${rawBase ? `\n   🔗 _Live Preview:_ ${rawBase}/option${v.option}.html` : ''}\n   _${v.description}_`
+    (v) =>
+      `• *Option ${v.option}*: *${v.name}*${
+        v.source === 'STITCH_MCP' ? ' _(Google Stitch MCP)_' : ''
+      }${rawBase ? `\n   🔗 _Live Preview:_ ${rawBase}/option${v.option}.html` : ''}\n   _${v.description}_`
   );
 
   const messageText = [
@@ -290,6 +394,7 @@ export async function executePortfolioCreation({
     livePreviewScreenshot,
     variants,
     projectDir,
+    stitchProjectId,
   };
 }
 
@@ -314,57 +419,31 @@ export async function iteratePortfolioDesign({ chatJid, feedbackText }) {
     updatedPhilosophy = '2';
   } else if (lower.match(/\b(option\s*3|third\s*option|^3$)\b/i)) {
     updatedPhilosophy = '3';
-  } else if (Array.isArray(session.portfolioData?.aesthetics)) {
-    // Check if user mentioned words from aesthetic names or ids
-    for (const a of session.portfolioData.aesthetics) {
-      const nameWords = (a.name || '').toLowerCase().split(/\s+/).filter((w) => w.length > 3);
-      if (lower.includes(a.id?.toLowerCase()) || nameWords.some((w) => lower.includes(w))) {
-        updatedPhilosophy = String(a.option);
+  } else if (Array.isArray(session.variants)) {
+    for (const v of session.variants) {
+      const nameWords = (v.name || '').toLowerCase().split(/\s+/).filter((w) => w.length > 3);
+      if (lower.includes(v.id?.toLowerCase()) || nameWords.some((w) => lower.includes(w))) {
+        updatedPhilosophy = String(v.option);
         break;
       }
     }
-  } else if (lower.includes('swiss') || lower.includes('editorial')) {
-    updatedPhilosophy = '2';
-  } else if (lower.includes('brutalist') || lower.includes('yellow')) {
-    updatedPhilosophy = '3';
-  } else if (lower.includes('bento') || lower.includes('obsidian') || lower.includes('dark')) {
-    updatedPhilosophy = '1';
   }
 
-  // If user dictates custom content or adjustments
-  let portfolioData = session.portfolioData;
-  if (!portfolioData || !portfolioData.headline) {
-    portfolioData = await synthesizePortfolioData(
-      session.portfolioData?.prompt || session.prompt || feedbackText || '',
-      { organizer: session.portfolioData?.organizer || 'Founder' }
-    );
-    session.portfolioData = portfolioData;
-  }
-
-  if (lower.includes('accent') || lower.includes('color') || lower.includes('cyan') || lower.includes('purple')) {
-    portfolioData.tagline += ' // Styled with customized accent palette';
-  }
-
-  // Re-generate HTML
-  const updatedHtml = generatePortfolioHtml(updatedPhilosophy, portfolioData);
   const optNum = parseInt(updatedPhilosophy, 10) || 1;
-  const switcherBar = `
-<div style="background: rgba(15, 23, 42, 0.95); backdrop-filter: blur(8px); padding: 10px 16px; border-bottom: 1px solid rgba(255,255,255,0.12); display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 9999; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; color: #fff; font-size: 13px;">
-  <div style="display: flex; align-items: center; gap: 8px;">
-    <span style="background: #38bdf8; color: #000; font-weight: 700; padding: 2px 8px; border-radius: 4px; font-size: 10px; letter-spacing: 0.05em;">ACTIVE DESIGN</span>
-    <span style="color: #cbd5e1;">Selected: <strong style="color: #fff;">Option ${optNum}</strong></span>
-  </div>
-  <div style="display: flex; gap: 6px;">
-    <a href="/option1.html" style="padding: 5px 12px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 12px; ${optNum === 1 ? 'background: #38bdf8; color: #000;' : 'background: rgba(255,255,255,0.1); color: #fff;'}">Option 1</a>
-    <a href="/option2.html" style="padding: 5px 12px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 12px; ${optNum === 2 ? 'background: #38bdf8; color: #000;' : 'background: rgba(255,255,255,0.1); color: #fff;'}">Option 2</a>
-    <a href="/option3.html" style="padding: 5px 12px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 12px; ${optNum === 3 ? 'background: #38bdf8; color: #000;' : 'background: rgba(255,255,255,0.1); color: #fff;'}">Option 3</a>
-  </div>
-</div>`;
-  const primaryIndexHtml = updatedHtml.includes('<body')
-    ? updatedHtml.replace(/<body[^>]*>/i, (match) => `${match}\n${switcherBar}`)
-    : `${switcherBar}\n${updatedHtml}`;
+  const targetOptionFile = path.join(session.projectDir, `option${optNum}.html`);
   const indexPath = path.join(session.projectDir, 'index.html');
-  fs.writeFileSync(indexPath, primaryIndexHtml, 'utf8');
+
+  if (fs.existsSync(targetOptionFile)) {
+    // Copy selected option directly to index.html
+    fs.copyFileSync(targetOptionFile, indexPath);
+  } else {
+    // Re-generate HTML if option file was missing
+    const portfolioData = session.portfolioData || buildPortfolioData({});
+    const fallbackHtml = generatePortfolioHtml(updatedPhilosophy, portfolioData);
+    const variants = session.variants || [];
+    const fullHtml = injectSwitcherBar(fallbackHtml, optNum, variants);
+    fs.writeFileSync(indexPath, fullHtml, 'utf8');
+  }
 
   // Re-deploy to Netlify
   const netlifyDeploy = await deployToNetlifyDrop(session.projectDir, {
@@ -372,13 +451,15 @@ export async function iteratePortfolioDesign({ chatJid, feedbackText }) {
     siteId: session.siteId || null,
   });
 
-  // Capture updated screenshot directly from local HTML file!
-  let updatedShotPath = null;
-  try {
-    const shot = await captureWebScreenshot(indexPath, { width: 1280, height: 800 });
-    updatedShotPath = shot.filePath;
-  } catch (err) {
-    console.warn('Failed to capture updated screenshot:', err.message);
+  // Capture updated screenshot directly from index.html
+  let updatedShotPath = path.join(session.projectDir, `option${optNum}.png`);
+  if (!fs.existsSync(updatedShotPath)) {
+    try {
+      const shot = await captureWebScreenshot(indexPath, { width: 1280, height: 800 });
+      updatedShotPath = shot.filePath;
+    } catch (err) {
+      console.warn('Failed to capture updated screenshot:', err.message);
+    }
   }
 
   // Update session
@@ -411,19 +492,8 @@ export async function iteratePortfolioDesign({ chatJid, feedbackText }) {
     statusNotice = `Design updated locally in project directory.`;
   }
 
-  const currentAesthetic = session.portfolioData?.aesthetics?.find(
-    (a) => String(a.option) === String(updatedPhilosophy) || a.id === updatedPhilosophy
-  );
-
-  const philosophyLabels = {
-    [DESIGN_PHILOSOPHIES.BENTO]: 'Obsidian Bento Grid (Dark Modern Tech)',
-    [DESIGN_PHILOSOPHIES.SWISS]: 'Swiss Editorial Minimal (Clean Serif Typography)',
-    [DESIGN_PHILOSOPHIES.BRUTALIST]: 'Neo-Brutalist Dynamic (Bold High-Contrast & Tactile)',
-  };
-
-  const activeLabel = currentAesthetic
-    ? `Option ${currentAesthetic.option}: ${currentAesthetic.name}`
-    : philosophyLabels[updatedPhilosophy] || `Option ${updatedPhilosophy}`;
+  const currentVariant = session.variants?.find((v) => String(v.option) === String(updatedPhilosophy));
+  const activeLabel = currentVariant ? `Option ${currentVariant.option}: ${currentVariant.name}` : `Option ${updatedPhilosophy}`;
 
   const messageText = [
     `✅ *Website Design Updated!*`,
