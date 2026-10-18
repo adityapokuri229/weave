@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v2.4.1] - 2026-10-18
+
+### 🛡️ WhatsApp LID Resolution, Multi-Device Owner Authorization & Deduplication Reliability
+
+#### 1. WhatsApp LID (`@lid`) to Phone Number Resolution (`src/bot.js`)
+- **Resolved Group Participant LIDs**:
+  - In modern WhatsApp group chats, messages are delivered with LID identifiers (`@lid`) rather than standard phone numbers (`@s.whatsapp.net`).
+  - Added `resolveSenderPhoneNumber(rawJid, pushName)` to automatically map `@lid` JIDs to verified phone numbers using `contacts.json` and credentials.
+  - Updated `getSenderNumber(msg)` to return resolved phone numbers so group project access permissions accurately match configured contact numbers.
+
+#### 2. Bulletproof Owner & Admin Authorization (`src/bot.js`)
+- **Direct Auth State Matching**:
+  - `isOwner(msg)` now cross-checks sender participant digits directly against both `sock.user.id` / `creds.me.id` (phone number) and `sock.user.lid` / `creds.me.lid` (LID).
+  - Even when Baileys sets `msg.key.fromMe = false` for linked-device group sync or multi-device phone messages, the bot correctly recognizes the owner and immediately grants full administrative and project access.
+- **Owner Priority in `isSenderAuthorized`**:
+  - Owner messages bypass group project access gating, preventing the bot from incorrectly rejecting the owner with permission errors.
+
+#### 3. Deduplication & Retry Safety (`src/bot.js`)
+- **Deferred Processed Message ID Recording**:
+  - Removed premature `recordProcessedMessageId()` call at the socket ingress gate before message validation and trigger routing.
+  - Messages that are un-triggered or in-flight retries are no longer permanently discarded if an initial dispatch is interrupted.
+
+---
+
 ## [v2.4.0] - 2026-10-18
 
 ### 🩹 WhatsApp Baileys Reconnection, Session Ratchet Preservation & Clock Skew Calibration

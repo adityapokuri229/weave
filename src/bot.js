@@ -960,31 +960,124 @@ function extractTriggeredBody(sock, msg, text) {
 }
 
 /**
+ * Reads and returns the owner's phone number and LID from auth_info_baileys/creds.json or active sock.
+ */
+function getOwnerIdentifiers() {
+  const ids = {
+    phone: '',
+    lid: '',
+    adminNumbers: Array.isArray(CONFIG.adminNumbers) ? [...CONFIG.adminNumbers] : [],
+  };
+
+  // 1. From active sock user if online
+  if (activeSock?.user) {
+    if (activeSock.user.id) {
+      ids.phone = activeSock.user.id.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+    }
+    if (activeSock.user.lid) {
+      ids.lid = activeSock.user.lid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+    }
+  }
+
+  // 2. From creds.json on disk
+  if (!ids.phone || !ids.lid) {
+    try {
+      const credsPath = path.join(AUTH_DIR, 'creds.json');
+      if (fs.existsSync(credsPath)) {
+        const c = JSON.parse(fs.readFileSync(credsPath, 'utf8'));
+        if (!ids.phone && c?.me?.id) {
+          ids.phone = c.me.id.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+        }
+        if (!ids.lid && c?.me?.lid) {
+          ids.lid = c.me.lid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+        }
+      }
+    } catch {}
+  }
+
+  return ids;
+}
+
+/**
+ * Resolves a WhatsApp sender JID (whether @s.whatsapp.net or @lid) to their real phone number digits.
+ */
+function resolveSenderPhoneNumber(rawJid, pushName = '') {
+  if (!rawJid) return '';
+  const cleanJid = String(rawJid).trim();
+  const digits = cleanJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+
+  // 1. If it's already a regular phone number JID (@s.whatsapp.net)
+  if (cleanJid.endsWith('@s.whatsapp.net')) {
+    return digits;
+  }
+
+  // 2. Check if the JID matches the owner's LID
+  const owner = getOwnerIdentifiers();
+  if (owner.lid && (digits === owner.lid || cleanJid.includes(owner.lid))) {
+    return owner.phone || digits;
+  }
+
+  // 3. If it's a @lid JID, look up the contact mapping
+  const contacts = loadContactsMap();
+  const directName = contacts[cleanJid] || contacts[`${digits}@lid`];
+  const targetName = (directName || pushName || '').trim();
+
+  if (targetName) {
+    for (const [jid, name] of Object.entries(contacts)) {
+      if (jid.endsWith('@s.whatsapp.net') && name && name.trim().toLowerCase() === targetName.toLowerCase()) {
+        const phone = jid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+        if (phone) return phone;
+      }
+    }
+  }
+
+  return digits;
+}
+
+/**
  * Extracts numeric sender phone/ID from a message.
  */
 function getSenderNumber(msg) {
   if (!msg || !msg.key) return '';
   const rawJid = msg.key.participant || msg.key.remoteJid || '';
-  return rawJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+  return resolveSenderPhoneNumber(rawJid, msg.pushName || '');
 }
 
 /**
  * Checks if the message was sent by YOU (the Owner/Admin).
  * - If you scanned the QR code with your own WhatsApp, `msg.key.fromMe` is true for your messages.
- * - If you also listed your phone number in ADMIN_NUMBERS in .env, that matches too.
+ * - Matches the linked device's own phone number or LID from credentials.
+ * - Matches any phone number listed in ADMIN_NUMBERS in .env.
  */
 function isOwner(msg) {
   if (!msg || !msg.key) return true; // Safe default for internal/queued tasks triggered by owner vote
   if (msg.key.fromMe) return true;
-  if (CONFIG.adminNumbers.length > 0) {
-    const senderNum = getSenderNumber(msg);
-    // Guard: empty sender (e.g. @lid JIDs with no digits) must NEVER match,
-    // because admin.endsWith('') is true for every string (auth bypass).
-    if (!senderNum) return false;
-    return CONFIG.adminNumbers.some(
-      (admin) => senderNum.endsWith(admin) || admin.endsWith(senderNum)
-    );
+
+  const rawJid = msg.key.participant || msg.key.remoteJid || '';
+  const senderDigits = rawJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+  const owner = getOwnerIdentifiers();
+
+  // 1. Direct match with owner's LID or own phone number from auth state
+  if (owner.lid && senderDigits === owner.lid) return true;
+  if (owner.phone && senderDigits === owner.phone) return true;
+
+  // 2. Resolved phone number match with owner's phone
+  const resolvedPhone = resolveSenderPhoneNumber(rawJid, msg.pushName || '');
+  if (owner.phone && resolvedPhone === owner.phone) return true;
+
+  // 3. Match against configured admin numbers in .env
+  if (owner.adminNumbers.length > 0) {
+    if (!resolvedPhone && !senderDigits) return false;
+    return owner.adminNumbers.some((admin) => {
+      const adminDigits = admin.replace(/[^0-9]/g, '');
+      if (!adminDigits) return false;
+      return (
+        (resolvedPhone && (resolvedPhone.endsWith(adminDigits) || adminDigits.endsWith(resolvedPhone))) ||
+        (senderDigits && (senderDigits.endsWith(adminDigits) || adminDigits.endsWith(senderDigits)))
+      );
+    });
   }
+
   return false;
 }
 
@@ -995,14 +1088,14 @@ function isOwner(msg) {
 function isSenderAuthorized(msg, targetProjectAlias = null) {
   if (!msg || !msg.key) return true;
   // fromMe = the linked device itself (respects ALLOW_FROM_ME).
-  // Admin numbers from a *different* device are always authorized.
+  // Admin / Owner messages are ALWAYS authorized.
   if (msg.key.fromMe) return CONFIG.allowFromMe;
   if (isOwner(msg)) return true;
 
   const senderNum = getSenderNumber(msg);
-  const pushName = (msg.pushName || '').trim().toLowerCase();
   const jid = msg.key.remoteJid || '';
   const isGroup = Boolean(jid && jid.endsWith('@g.us'));
+
   // In group chats: Access is strictly based on the group's currently active project.
   // Each project has its own list of allowed contacts (phone numbers in E.164 format).
   // By default, only the owner has permission.
@@ -4103,7 +4196,6 @@ async function handleIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfte
         return;
       }
       inFlightMessageIds.add(msg.key.id);
-      recordProcessedMessageId(msg.key.id);
 
       try {
         await _processIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfter);
