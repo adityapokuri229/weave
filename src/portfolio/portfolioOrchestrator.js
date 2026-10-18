@@ -12,6 +12,8 @@ import {
   buildPortfolioData,
 } from './portfolioTemplates.js';
 import { synthesizePortfolioData } from './portfolioSynthesizer.js';
+import { researchDesignInspirations } from './designInspirationResearcher.js';
+import { generateBespokeHtml, redesignBespokeHtml } from './bespokeHtmlGenerator.js';
 import { captureWebScreenshot } from '../qa.js';
 import { loadProjectsState, saveProjectsState } from '../config.js';
 
@@ -99,38 +101,50 @@ export async function executePortfolioCreation({
   const projectDir = targetProjectDir || path.resolve(process.cwd(), 'demo-site');
   fs.mkdirSync(projectDir, { recursive: true });
 
-  // 1. Deep Domain & Aesthetic Research
-  console.log(`[PortfolioOrchestrator] Starting deep domain research for: "${prompt}"`);
-  const portfolioData = await synthesizePortfolioData(prompt, {
-    organizer: senderName || 'Founder',
-  });
+  // 1. Live Inspiration & Domain Research (Minimal Gallery, Dribbble, Top Web References)
+  console.log(`[PortfolioOrchestrator] Researching Dribbble & Minimal Gallery inspirations for: "${prompt}"`);
+  const research = await researchDesignInspirations(prompt);
+  const topicAnalysis = research.topicAnalysis || {};
+  const inspirations = research.inspirations || [];
 
-  const aesthetics =
-    Array.isArray(portfolioData.aesthetics) && portfolioData.aesthetics.length >= 3
-      ? portfolioData.aesthetics
-      : [
-          {
-            option: 1,
-            id: 'signature-atelier',
-            name: `${portfolioData.name || 'Bespoke'} Signature`,
-            archetype: 'Primary Domain Signature',
-            description: 'Custom aesthetic crafted specifically for this domain.',
-          },
-          {
-            option: 2,
-            id: 'swiss-editorial',
-            name: 'Swiss Editorial Minimal',
-            archetype: 'Editorial Monospace Serif',
-            description: 'Serif headlines, generous editorial whitespace, and high-contrast timeless layout.',
-          },
-          {
-            option: 3,
-            id: 'modern-tactile',
-            name: 'Tactile Energy & Bold Badges',
-            archetype: 'Neo-Tactile Badges',
-            description: 'High-energy borders, tactile drop shadows, and vibrant highlighter badges.',
-          },
-        ];
+  const opt1Meta = inspirations[0] || {
+    option: 1,
+    id: 'dribbble-showcase',
+    name: `${topicAnalysis.brandName || 'Product'} Dribbble Showcase`,
+    sourceInspiration: 'Inspired by Dribbble Top Product Design & Godly.website',
+    aestheticDescription: 'High-craft dark product layout with glowing accents, live interactive telemetry, and bento viewport.',
+    fontHeading: 'Space Grotesk',
+    fontBody: 'Plus Jakarta Sans',
+    colors: { bg: '#0B0F17', bgCard: '#131B2A', accent: '#10B981', border: 'rgba(255,255,255,0.1)' },
+    stitchHeadlineFont: 'SPACE_GROTESK',
+    stitchBodyFont: 'PLUS_JAKARTA_SANS',
+  };
+
+  const opt2Meta = inspirations[1] || {
+    option: 2,
+    id: 'minimal-gallery-editorial',
+    name: 'Minimal Gallery Precision Monograph',
+    sourceInspiration: 'Inspired by Minimal Gallery: Clean Functional Monograph',
+    aestheticDescription: 'Pure clean whitespace, high-contrast serif headlines, elegant hairline borders, and monograph catalog layout.',
+    fontHeading: 'Playfair Display',
+    fontBody: 'DM Sans',
+    colors: { bg: '#FAFAF9', bgCard: '#FFFFFF', accent: '#1C1917', border: '#E7E5E4' },
+    stitchHeadlineFont: 'PLAYFAIR_DISPLAY',
+    stitchBodyFont: 'DM_SANS',
+  };
+
+  const opt3Meta = inspirations[2] || {
+    option: 3,
+    id: 'godly-kinetic-craft',
+    name: 'Godly Kinetic Craft',
+    sourceInspiration: 'Inspired by Godly.website & Modern Studio Craft',
+    aestheticDescription: 'Tactile solid borders, high-energy drop shadows, vivid highlighter badges, and bold spatial hierarchy.',
+    fontHeading: 'Space Grotesk',
+    fontBody: 'Inter',
+    colors: { bg: '#0F172A', bgCard: '#1E293B', accent: '#06B6D4', border: '#334155' },
+    stitchHeadlineFont: 'SPACE_GROTESK',
+    stitchBodyFont: 'INTER',
+  };
 
   // 2. Google Stitch MCP Screen Generation
   let stitchScreen = null;
@@ -141,39 +155,38 @@ export async function executePortfolioCreation({
   if (isStitchActive) {
     try {
       console.log('[PortfolioOrchestrator] Creating Google Stitch MCP project container...');
-      const projectTitle = `${portfolioData.name || 'Site'} - ${prompt.slice(0, 25)}`;
+      const projectTitle = `${topicAnalysis.brandName || 'Site'} - ${prompt.slice(0, 25)}`;
       const stitchProject = await stitchClient.createProject(projectTitle);
-      // Create Stitch Design System using Option 1 tokens
+      stitchProjectId = stitchProject?.name ? stitchProject.name.split('/').pop() : null;
+
+      // Register Stitch Design System using Option 1 researched tokens
       let designSystemAsset = null;
-      const opt1 = aesthetics[0];
-      if (opt1) {
-        try {
-          console.log('[PortfolioOrchestrator] Registering design system in Google Stitch MCP...');
-          const headlineFont = normalizeStitchFont(opt1.stitchHeadlineFont || opt1.fontHeading, 'PLAYFAIR_DISPLAY');
-          const bodyFont = normalizeStitchFont(opt1.stitchBodyFont || opt1.fontBody, 'DM_SANS');
-          const dsRes = await stitchClient.createDesignSystem({
-            projectId: stitchProjectId,
-            displayName: `${opt1.name} Design System`,
-            theme: {
-              headlineFont,
-              bodyFont,
-              colorMode: opt1.stitchColorMode || (opt1.colors?.bg?.startsWith('#0') || opt1.colors?.bg?.startsWith('#1') ? 'DARK' : 'LIGHT'),
-              customColor: opt1.colors?.accent || '#10B981',
-              roundness: opt1.stitchRoundness || 'ROUND_FOUR',
-              designMd: `# ${portfolioData.name} Design System\n- Theme: ${opt1.name}\n- Archetype: ${opt1.archetype}\n- Description: ${opt1.description}\n- Brand Accent: ${opt1.colors?.accent}`,
-            },
-          });
-          designSystemAsset = dsRes?.name || dsRes?.result?.structuredContent?.name || null;
-        } catch (dsErr) {
-          console.warn('[StitchMCP] Design system registration note:', dsErr.message);
-        }
+      try {
+        console.log('[PortfolioOrchestrator] Registering design system in Google Stitch MCP...');
+        const headlineFont = normalizeStitchFont(opt1Meta.stitchHeadlineFont || opt1Meta.fontHeading, 'SPACE_GROTESK');
+        const bodyFont = normalizeStitchFont(opt1Meta.stitchBodyFont || opt1Meta.fontBody, 'PLUS_JAKARTA_SANS');
+        const dsRes = await stitchClient.createDesignSystem({
+          projectId: stitchProjectId,
+          displayName: `${opt1Meta.name} Design System`,
+          theme: {
+            headlineFont,
+            bodyFont,
+            colorMode: opt1Meta.colors?.bg?.startsWith('#0') || opt1Meta.colors?.bg?.startsWith('#1') ? 'DARK' : 'LIGHT',
+            customColor: opt1Meta.colors?.accent || '#10B981',
+            roundness: 'ROUND_FOUR',
+            designMd: `# ${topicAnalysis.brandName || 'Site'} Design System\n- Theme: ${opt1Meta.name}\n- Inspiration: ${opt1Meta.sourceInspiration}\n- Description: ${opt1Meta.aestheticDescription}\n- Accent: ${opt1Meta.colors?.accent}`,
+          },
+        });
+        designSystemAsset = dsRes?.name || dsRes?.result?.structuredContent?.name || null;
+      } catch (dsErr) {
+        console.warn('[StitchMCP] Design system registration note:', dsErr.message);
       }
 
       // AWAIT screen generation from Google Stitch MCP
-      console.log('[PortfolioOrchestrator] Calling Google Stitch MCP generate_screen_from_text...');
+      console.log('[PortfolioOrchestrator] Calling Google Stitch MCP generate_screen_from_text with researched prompt...');
       const stitchPrompt =
-        portfolioData.stitchPrompt ||
-        `Modern responsive desktop landing page for "${portfolioData.name}": ${prompt}. Include hero, proof metrics, offerings matrix, craft pillars, and contact footer.`;
+        opt1Meta.stitchPrompt ||
+        `Modern responsive desktop landing page for "${topicAnalysis.brandName || prompt}": ${prompt}. Inspired by ${opt1Meta.sourceInspiration}. Include hero viewport, proof metrics, offerings matrix, craft pillars, and contact footer.`;
 
       const genRes = await stitchClient.generateScreenFromText({
         projectId: stitchProjectId,
@@ -192,14 +205,13 @@ export async function executePortfolioCreation({
       console.warn('[StitchMCP] Screen generation fallback notice:', stitchErr.message);
     }
   } else {
-    console.log('[PortfolioOrchestrator] Stitch API key not configured, using dynamic domain engine.');
+    console.log('[PortfolioOrchestrator] Stitch API key not configured, using dynamic Gemini bespoke engine.');
   }
 
   // 3. Assemble all 3 design variants
   const variants = [];
 
-  // --- OPTION 1: Google Stitch MCP Bespoke Generation (or domain fallback) ---
-  const opt1Meta = aesthetics[0];
+  // --- OPTION 1: Google Stitch MCP Bespoke Generation (or Gemini bespoke HTML) ---
   let opt1Html = '';
   let opt1ScreenshotPath = null;
 
@@ -228,45 +240,49 @@ export async function executePortfolioCreation({
     }
   }
 
-  // Fallback for Option 1 HTML if download was empty
+  // If Stitch download was empty or not active, generate 100% custom bespoke HTML via Gemini
   if (!opt1Html) {
-    opt1Html = generatePortfolioHtml('1', portfolioData);
+    console.log('[PortfolioOrchestrator] Generating Option 1 bespoke HTML via Gemini...');
+    opt1Html = await generateBespokeHtml({ prompt, topicAnalysis, inspiration: opt1Meta });
   }
 
   variants.push({
     option: 1,
-    id: opt1Meta.id || 'stitch-primary',
-    name: stitchScreen?.title || opt1Meta.name || 'Google Stitch Bespoke Design',
-    description: opt1Meta.description || 'Custom crafted with Google Stitch MCP & Gemini.',
+    id: opt1Meta.id || 'dribbble-showcase',
+    name: stitchScreen?.title || opt1Meta.name || 'Dribbble High-Craft Product Showcase',
+    description: opt1Meta.aestheticDescription || 'Custom crafted with Google Stitch MCP & Gemini.',
+    sourceInspiration: opt1Meta.sourceInspiration || 'Dribbble & Curated Galleries',
     html: opt1Html,
     screenshotPath: opt1ScreenshotPath,
-    source: stitchScreen ? 'STITCH_MCP' : 'DOMAIN_ENGINE',
+    source: stitchScreen ? 'STITCH_MCP' : 'GEMINI_BESPOKE',
   });
 
-  // --- OPTION 2: Researched Direction 2 (e.g. Swiss Editorial Minimal) ---
-  const opt2Meta = aesthetics[1];
-  const opt2Html = generatePortfolioHtml('2', portfolioData);
+  // --- OPTION 2: Minimal Gallery Clean Whitespace / Swiss Editorial (100% Bespoke Gemini HTML) ---
+  console.log('[PortfolioOrchestrator] Generating Option 2 (Minimal Gallery Editorial) bespoke HTML...');
+  const opt2Html = await generateBespokeHtml({ prompt, topicAnalysis, inspiration: opt2Meta });
   variants.push({
     option: 2,
-    id: opt2Meta.id || 'editorial-minimal',
-    name: opt2Meta.name || 'Swiss Editorial Minimal',
-    description: opt2Meta.description || 'Serif headlines, generous whitespace, and editorial layout.',
+    id: opt2Meta.id || 'minimal-gallery-editorial',
+    name: opt2Meta.name || 'Minimal Gallery Precision Monograph',
+    description: opt2Meta.aestheticDescription || 'Serif headlines, generous whitespace, and editorial layout.',
+    sourceInspiration: opt2Meta.sourceInspiration || 'Minimal.gallery',
     html: opt2Html,
     screenshotPath: null,
-    source: 'DOMAIN_ENGINE',
+    source: 'GEMINI_BESPOKE',
   });
 
-  // --- OPTION 3: Researched Direction 3 (e.g. Modern Tactile / High Energy) ---
-  const opt3Meta = aesthetics[2];
-  const opt3Html = generatePortfolioHtml('3', portfolioData);
+  // --- OPTION 3: Godly.website Neo-Modern Kinetic Craft (100% Bespoke Gemini HTML) ---
+  console.log('[PortfolioOrchestrator] Generating Option 3 (Godly Kinetic Craft) bespoke HTML...');
+  const opt3Html = await generateBespokeHtml({ prompt, topicAnalysis, inspiration: opt3Meta });
   variants.push({
     option: 3,
-    id: opt3Meta.id || 'modern-tactile',
-    name: opt3Meta.name || 'Modern Tactile & Bold Badges',
-    description: opt3Meta.description || 'High-energy borders, tactile shadows, and vibrant badges.',
+    id: opt3Meta.id || 'godly-kinetic-craft',
+    name: opt3Meta.name || 'Godly Kinetic Craft',
+    description: opt3Meta.aestheticDescription || 'Tactile solid borders, high-energy badges, and interactive proof metrics.',
+    sourceInspiration: opt3Meta.sourceInspiration || 'Godly.website & Linear',
     html: opt3Html,
     screenshotPath: null,
-    source: 'DOMAIN_ENGINE',
+    source: 'GEMINI_BESPOKE',
   });
 
   // 4. Save each variant HTML and capture screenshots for options that don't have one
@@ -323,12 +339,19 @@ export async function executePortfolioCreation({
       claimUrl: netlifyDeploy.claimUrl || null,
       stitchProjectId,
       stitchScreenId: stitchScreen?.name || null,
-      portfolioData,
+      topicAnalysis,
+      inspirations,
+      portfolioData: {
+        name: topicAnalysis.brandName || 'Signature',
+        headline: topicAnalysis.headline || prompt,
+        tagline: topicAnalysis.tagline || '',
+      },
       variants: variants.map((v) => ({
         option: v.option,
         id: v.id,
         name: v.name,
         description: v.description,
+        sourceInspiration: v.sourceInspiration,
         screenshotPath: v.screenshotPath,
         source: v.source,
       })),
@@ -371,16 +394,18 @@ export async function executePortfolioCreation({
     (v) =>
       `• *Option ${v.option}*: *${v.name}*${
         v.source === 'STITCH_MCP' ? ' _(Google Stitch MCP)_' : ''
-      }${rawBase ? `\n   🔗 _Live Preview:_ ${rawBase}/option${v.option}.html` : ''}\n   _${v.description}_`
+      }\n   🎨 _Inspiration:_ ${v.sourceInspiration || 'Award-Winning Gallery'}${rawBase ? `\n   🔗 _Live Preview:_ ${rawBase}/option${v.option}.html` : ''}\n   _${v.description}_`
   );
 
   const messageText = [
     deployNotice,
     ``,
-    `🎨 *Bespoke Design Directions for "${portfolioData.name || 'Your Website'}":*`,
+    `🎨 *Researched Design Directions for "${topicAnalysis.brandName || 'Your Website'}":*`,
+    `_Curated from Dribbble, Minimal Gallery & award-winning web references:_`,
+    ``,
     ...variantLines,
     ``,
-    `_Reply right here in WhatsApp (e.g. "option 2", "option 3", or dictate styling) to update your primary live site!_`,
+    `_Reply right here in WhatsApp (e.g. "option 2", "make hero darker with bento grid", "rethink this like minimal.com") to iterate!_`,
     ``,
     ...directives,
   ].join('\n');
@@ -432,17 +457,75 @@ export async function iteratePortfolioDesign({ chatJid, feedbackText }) {
   const optNum = parseInt(updatedPhilosophy, 10) || 1;
   const targetOptionFile = path.join(session.projectDir, `option${optNum}.html`);
   const indexPath = path.join(session.projectDir, 'index.html');
+  let updatedShotPath = path.join(session.projectDir, `option${optNum}.png`);
 
-  if (fs.existsSync(targetOptionFile)) {
-    // Copy selected option directly to index.html
-    fs.copyFileSync(targetOptionFile, indexPath);
+  const isOptionSelectionOnly = Boolean(
+    lower.match(/^\s*(option\s*[1-3]|[1-3]|first\s*option|second\s*option|third\s*option|switch\s*to\s*(?:option\s*)?[1-3])\s*$/i)
+  );
+
+  if (!isOptionSelectionOnly) {
+    console.log(`[PortfolioOrchestrator] User requested design iteration/redesign: "${feedbackText}"`);
+    let redesignedHtml = null;
+
+    // 1. Try Google Stitch MCP edit_screens if active option is backed by Stitch
+    if (optNum === 1 && session.stitchProjectId && session.stitchScreenId && stitchClient.isConfigured()) {
+      try {
+        console.log('[PortfolioOrchestrator] Sending rethink/redesign prompt to Google Stitch MCP edit_screens...');
+        const editRes = await stitchClient.editScreens({
+          projectId: session.stitchProjectId,
+          screenIds: [session.stitchScreenId],
+          prompt: feedbackText,
+        });
+        const extracted = stitchClient.extractScreens(editRes);
+        if (extracted.screens && extracted.screens.length > 0) {
+          const editedScreen = extracted.screens[0];
+          if (editedScreen.htmlCode?.downloadUrl) {
+            const dlHtml = await (await fetch(editedScreen.htmlCode.downloadUrl)).text();
+            if (dlHtml && dlHtml.length > 200) {
+              redesignedHtml = dlHtml;
+            }
+          }
+          if (editedScreen.screenshot?.downloadUrl) {
+            await stitchClient.downloadAsset(editedScreen.screenshot.downloadUrl, updatedShotPath);
+          }
+        }
+      } catch (stitchEditErr) {
+        console.warn('[PortfolioOrchestrator] Stitch edit_screens fallback note:', stitchEditErr.message);
+      }
+    }
+
+    // 2. Fallback to Gemini bespoke code redesign
+    if (!redesignedHtml) {
+      const currentHtml = fs.existsSync(targetOptionFile)
+        ? fs.readFileSync(targetOptionFile, 'utf8')
+        : (fs.existsSync(indexPath) ? fs.readFileSync(indexPath, 'utf8') : '');
+
+      if (currentHtml) {
+        redesignedHtml = await redesignBespokeHtml({
+          currentHtml,
+          feedbackText,
+          brandName: session.topicAnalysis?.brandName || session.portfolioData?.name || 'Website',
+        });
+      }
+    }
+
+    if (redesignedHtml) {
+      const variants = session.variants || [];
+      const fullHtml = injectSwitcherBar(redesignedHtml, optNum, variants);
+      fs.writeFileSync(targetOptionFile, fullHtml, 'utf8');
+      fs.writeFileSync(indexPath, fullHtml, 'utf8');
+    }
   } else {
-    // Re-generate HTML if option file was missing
-    const portfolioData = session.portfolioData || buildPortfolioData({});
-    const fallbackHtml = generatePortfolioHtml(updatedPhilosophy, portfolioData);
-    const variants = session.variants || [];
-    const fullHtml = injectSwitcherBar(fallbackHtml, optNum, variants);
-    fs.writeFileSync(indexPath, fullHtml, 'utf8');
+    // Pure option switch
+    if (fs.existsSync(targetOptionFile)) {
+      fs.copyFileSync(targetOptionFile, indexPath);
+    } else {
+      const portfolioData = session.portfolioData || buildPortfolioData({});
+      const fallbackHtml = generatePortfolioHtml(updatedPhilosophy, portfolioData);
+      const variants = session.variants || [];
+      const fullHtml = injectSwitcherBar(fallbackHtml, optNum, variants);
+      fs.writeFileSync(indexPath, fullHtml, 'utf8');
+    }
   }
 
   // Re-deploy to Netlify
@@ -451,9 +534,8 @@ export async function iteratePortfolioDesign({ chatJid, feedbackText }) {
     siteId: session.siteId || null,
   });
 
-  // Capture updated screenshot directly from index.html
-  let updatedShotPath = path.join(session.projectDir, `option${optNum}.png`);
-  if (!fs.existsSync(updatedShotPath)) {
+  // Capture updated screenshot if not already downloaded from Stitch
+  if (!fs.existsSync(updatedShotPath) || fs.statSync(updatedShotPath).size < 1000) {
     try {
       const shot = await captureWebScreenshot(indexPath, { width: 1280, height: 800 });
       updatedShotPath = shot.filePath;
