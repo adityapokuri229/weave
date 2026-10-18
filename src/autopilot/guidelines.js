@@ -18,7 +18,7 @@ Your role is to read every incoming message, understand its intent from natural 
      - "inspect src/index.js and tell me what ports are used" -> laptop_task
 
 2. "system_command"
-   - Triggered for workspace, project, or group lifecycle commands.
+   - Triggered for workspace, project, or group lifecycle commands, and PERMISSION / ACCESS MANAGEMENT.
    - The user may express this in natural language. Do NOT look for hardcoded keywords.
      "list the projects", "what projects do I have", "show my projects", "projects available" all trigger "list_projects".
    - Supported system commands:
@@ -27,12 +27,19 @@ Your role is to read every incoming message, understand its intent from natural 
      - "switch_project": switch this group's active project to an existing project. (Requires projectName).
      - "current_project": check what project is active in this group right now.
      - "unbind_project": unbind / turn off the active project in this group.
+     - "view_access": view or list who has access/permissions to the active project or in this chat ("who has perms", "list perms", "check permissions", "access list", "who can use the agent", "show access").
+     - "manage_access": grant, allow, revoke, or remove a member's access/permissions ("allow Alice from now", "give agent permissions to tinchu", "give Bob access", "revoke Charlie access", "remove tinchu perms", "revoke tinchus perms"). (Requires accessAction: "grant" | "revoke", and targetUser: string).
    - Examples:
      - "show my projects" -> system_command (command: "list_projects")
      - "create a new project called web-store" -> system_command (command: "create_project", projectName: "web-store")
      - "switch to blog-app" -> system_command (command: "switch_project", projectName: "blog-app")
      - "what project are we on?" -> system_command (command: "current_project")
      - "turn off project" / "unbind project" -> system_command (command: "unbind_project")
+     - "who has perms" / "list access perms" -> system_command (command: "view_access")
+     - "give agent permissions to tinchu" -> system_command (command: "manage_access", accessAction: "grant", targetUser: "tinchu")
+     - "revoke tinchus perms" -> system_command (command: "manage_access", accessAction: "revoke", targetUser: "tinchu")
+     - "allow alice access" -> system_command (command: "manage_access", accessAction: "grant", targetUser: "alice")
+     - "revoke access from bob" -> system_command (command: "manage_access", accessAction: "revoke", targetUser: "bob")
 
 3. "chat"
    - Triggered for conceptual questions, general advice, explanations, greetings, or banter that DO NOT modify project files or run commands.
@@ -87,16 +94,25 @@ export const ROUTER_TOOL_DECLARATIONS = [
         intent: {
           type: 'STRING',
           enum: ['laptop_task', 'system_command', 'chat', 'choice_needed'],
-          description: 'The execution lane: laptop_task (Antigravity code/build/run), system_command (project/workspace command), chat (direct casual reply), choice_needed (send a poll).'
+          description: 'The execution lane: laptop_task (Antigravity code/build/run), system_command (project/workspace/permissions command), chat (direct casual reply), choice_needed (send a poll).'
         },
         systemCommand: {
           type: 'STRING',
-          enum: ['list_projects', 'create_project', 'switch_project', 'current_project', 'unbind_project'],
+          enum: ['list_projects', 'create_project', 'switch_project', 'current_project', 'unbind_project', 'view_access', 'manage_access'],
           description: 'The specific command to run if intent is system_command.'
         },
         projectName: {
           type: 'STRING',
-          description: 'The target project name/alias for create_project or switch_project.'
+          description: 'The target project name/alias for create_project, switch_project, or manage_access.'
+        },
+        accessAction: {
+          type: 'STRING',
+          enum: ['grant', 'revoke'],
+          description: 'For manage_access: whether to grant or revoke access.'
+        },
+        targetUser: {
+          type: 'STRING',
+          description: 'For manage_access: the target user name or phone number whose access is being granted or revoked.'
         },
         laptopTaskInstructions: {
           type: 'STRING',

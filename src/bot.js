@@ -156,18 +156,107 @@ function recordProcessedMessageId(id) {
   }
 }
 
+// In-memory retry counter cache for Baileys to coordinate key exchanges across message retries
+const msgRetryCounterCache = new Map();
+const retryCacheStore = {
+  get(key) {
+    return msgRetryCounterCache.get(key);
+  },
+  set(key, value) {
+    msgRetryCounterCache.set(key, value);
+  },
+  del(key) {
+    msgRetryCounterCache.delete(key);
+  },
+  flushAll() {
+    msgRetryCounterCache.clear();
+  },
+};
+
+// In-memory Signal key cache for Baileys
+const signalCacheMap = new Map();
+const signalCacheStore = {
+  get(k) { return signalCacheMap.get(k); },
+  set(k, v) { signalCacheMap.set(k, v); },
+  del(k) { signalCacheMap.delete(k); },
+  flushAll() { signalCacheMap.clear(); },
+};
+
 /**
- * Purges corrupted session and sender-key files for a specific peer/group
- * when a "Bad MAC" / CIPHERTEXT error occurs, forcing Signal to cleanly renegotiate.
+ * Cleans up dead closed sessions or bloated session records on startup.
+ */
+function purgeClosedSessions() {
+  if (!fs.existsSync(AUTH_DIR)) return 0;
+  let purged = 0;
+  try {
+    const files = fs.readdirSync(AUTH_DIR);
+    for (const file of files) {
+      if (!file.startsWith('session-') || !file.endsWith('.json')) continue;
+      const filePath = path.join(AUTH_DIR, file);
+      try {
+        const stat = fs.statSync(filePath);
+        // If a session file has accumulated many dead sessions (> 15KB)
+        if (stat.size > 15000) {
+          fs.unlinkSync(filePath);
+          purged++;
+          console.log(`🛡️ [Session-Guard] Purged bloated/corrupted session file: ${file} (${stat.size} bytes)`);
+        }
+      } catch {}
+    }
+  } catch (err) {
+    console.warn('⚠️ Error purging closed sessions:', err?.message || err);
+  }
+  return purged;
+}
+
+const recentBadMacPurges = new Map();
+
+/**
+ * Handles corrupted session / Bad MAC.
+ * Resolves both phone number and LID so linked device sessions are healed,
+ * purges corrupted files, and flushes in-memory cache so stale ratchets are evicted.
  */
 function healCorruptedSession(jid, participant = null) {
   try {
+    const targetKey = participant || jid || 'unknown';
+    const count = (recentBadMacPurges.get(targetKey) || 0) + 1;
+    recentBadMacPurges.set(targetKey, count);
+    setTimeout(() => {
+      recentBadMacPurges.delete(targetKey);
+    }, 60000);
+
+    if (activeSock) {
+      activeSock.uploadPreKeysToServerIfRequired(true).catch(() => {});
+    }
+
+    // Only delete session files if Baileys retries failed multiple times (>= 2)
+    if (count < 2) {
+      return;
+    }
+
     if (!fs.existsSync(AUTH_DIR)) return;
     const allFiles = fs.readdirSync(AUTH_DIR);
-    const targetDigits = [
-      (jid || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, ''),
-      (participant || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, ''),
-    ].filter(Boolean);
+
+    // Read creds.json to know both our phone number and LID
+    let myPn = '';
+    let myLid = '';
+    try {
+      if (fs.existsSync(path.join(AUTH_DIR, 'creds.json'))) {
+        const c = JSON.parse(fs.readFileSync(path.join(AUTH_DIR, 'creds.json'), 'utf8'));
+        myPn = (c?.me?.id || '').split(':')[0].split('@')[0].replace(/[^0-9]/g, '');
+        myLid = (c?.me?.lid || '').split(':')[0].split('@')[0].replace(/[^0-9]/g, '');
+      }
+    } catch {}
+
+    const rawJidDigits = (jid || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+    const rawPartDigits = (participant || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+    const targetDigits = [rawJidDigits, rawPartDigits].filter(Boolean);
+
+    // If target matches either our own phone number or our LID, include BOTH so all device sessions heal
+    if ((myPn && targetDigits.includes(myPn)) || (myLid && targetDigits.includes(myLid))) {
+      if (myPn && !targetDigits.includes(myPn)) targetDigits.push(myPn);
+      if (myLid && !targetDigits.includes(myLid)) targetDigits.push(myLid);
+    }
 
     let purgedCount = 0;
     for (const file of allFiles) {
@@ -189,11 +278,13 @@ function healCorruptedSession(jid, participant = null) {
       }
     }
 
+    // Crucial: flush the in-memory cache so stale sessions are never re-saved or served
+    if (signalCacheStore) {
+      signalCacheStore.flushAll();
+    }
+
     if (purgedCount > 0) {
-      console.log(`🛡️ [Self-Heal] Purged ${purgedCount} desynced session/sender-key files for ${jid} (Bad MAC recovery)`);
-      if (activeSock) {
-        activeSock.uploadPreKeysToServerIfRequired(true).catch(() => {});
-      }
+      console.log(`🛡️ [Self-Heal] Purged ${purgedCount} desynced session/sender-key files & flushed signal cache for ${jid}.`);
     }
   } catch (err) {
     console.warn(`⚠️ Error in healCorruptedSession:`, err?.message || err);
@@ -821,10 +912,9 @@ function extractTriggeredBody(sock, msg, text) {
   }
 
   // 2b. Personal Send-to-Self DM ("Message Yourself" personal chat with the bot)
-  // ONLY the user's chat with themselves auto-triggers without an explicit prefix.
-  // 1-on-1 chats with friends/contacts MUST NOT auto-trigger!
+  // Requires explicit prefix (@ap or trigger) UNLESS full auto is explicitly turned ON for this DM!
   const isSelf = isSendToSelf(msg, sock);
-  if (isSelf) {
+  if (isSelf && state.fullAutoGroups?.[jid]) {
     if (isStopWord(lowerText)) return '/stop';
     return trimmedText || '[voice note]';
   }
@@ -939,6 +1029,7 @@ function isSenderAuthorized(msg, targetProjectAlias = null) {
   const senderNum = getSenderNumber(msg);
   const pushName = (msg.pushName || '').trim().toLowerCase();
   const jid = msg.key.remoteJid || '';
+  const isGroup = Boolean(jid && jid.endsWith('@g.us'));
   // In group chats: By default, ONLY the owner has permissions!
   // Collaborators/friends only have permissions if explicitly granted for this project/group.
   if (isGroup) {
@@ -3650,6 +3741,7 @@ export async function startWhatsAppBot() {
   isStartingBot = true;
 
   syncNetworkClock().catch(() => {});
+  purgeClosedSessions();
 
   if (activeSock) {
     try { activeSock.ev.removeAllListeners(); } catch {}
@@ -3662,12 +3754,14 @@ export async function startWhatsAppBot() {
     const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
     const { version } = await fetchLatestBaileysVersion();
     const baileysLogger = pino({ level: 'warn' });
+
     sock = makeWASocket({
       version,
       auth: {
         creds: state.creds,
-        keys: makeCacheableSignalKeyStore(state.keys, baileysLogger),
+        keys: makeCacheableSignalKeyStore(state.keys, baileysLogger, signalCacheStore),
       },
+      msgRetryCounterCache: retryCacheStore,
       logger: baileysLogger,
       printQRInTerminal: false,
       markOnlineOnConnect: true,
@@ -3708,7 +3802,7 @@ export async function startWhatsAppBot() {
 
     let acceptMessagesAfter = Date.now() + 3000;
 
-    sock.ev.on('connection.update', (update) => {
+    sock.ev.on('connection.update', async (update) => {
       const { connection, lastDisconnect, qr } = update;
 
       if (qr) {
@@ -3796,7 +3890,12 @@ export async function startWhatsAppBot() {
         }, 2000);
 
         // Ensure server has fresh pre-keys so incoming messages from all group members decrypt cleanly
-        sock.uploadPreKeysToServerIfRequired().catch(() => {});
+        try {
+          await sock.uploadPreKeys(30);
+          console.log('🔑 Successfully refreshed & uploaded 30 pre-keys to WhatsApp server');
+        } catch (err) {
+          sock.uploadPreKeysToServerIfRequired(true).catch(() => {});
+        }
         prewarmAllBoundProjects();
       }
     });
@@ -3809,6 +3908,16 @@ export async function startWhatsAppBot() {
 
       for (const msg of messages) {
         try {
+          // If Baileys could not decrypt this message (CIPHERTEXT / Bad MAC), automatically trigger session healing
+          if (!msg.message && (msg.messageStubType || msg.messageStubParameters)) {
+            const errParam = (msg.messageStubParameters || []).join(' ');
+            const author = msg.key?.participant || msg.key?.remoteJid;
+            console.warn(`⚠️ [Decryption Failure Intercepted] stubType=${msg.messageStubType} err="${errParam}" from ${author}`);
+            if (author) {
+              healCorruptedSession(msg.key?.remoteJid, author);
+            }
+          }
+
           await handleIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfter);
         } catch (err) {
           console.error('⚠️ Error handling WhatsApp message:', err?.message || err);
@@ -3923,16 +4032,12 @@ async function handleVoteResolution(sock, voteRes) {
 }
 
 async function handleIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfter = 0) {
-      if (process.env.DEBUG_MSGS === 'true') {
-        try {
-          const dbg = unwrapMessage(msg);
-          console.log(
-            `🔍 [MSG] type=${type} jid=${msg.key?.remoteJid} fromMe=${msg.key?.fromMe} id=${msg.key?.id} keys=${dbg ? Object.keys(dbg).join(',') : 'null'}`
-          );
-        } catch {
-          // Ignore debug errors
-        }
-      }
+      try {
+        const dbg = unwrapMessage(msg);
+        console.log(
+          `🔍 [MSG] type=${type} jid=${msg.key?.remoteJid} fromMe=${msg.key?.fromMe} id=${msg.key?.id} hasMessage=${!!msg.message} stubType=${msg.messageStubType || 'none'}`
+        );
+      } catch {}
 
       if (!msg.message || !msg.key?.remoteJid) return;
       if (msg.key.remoteJid === 'status@broadcast') return;
@@ -4550,37 +4655,177 @@ async function _processIncomingMessage(sock, msg, type, nowSec, acceptMessagesAf
         return;
       }
 
+      // Helper: View access permissions
+      async function handleViewAccessCommand(sock, jid, msg, isGroup) {
+        const stateNow = loadProjectsState();
+        const activeAlias = (isGroup ? stateNow.groupBindings?.[jid] : stateNow.activeProject) || stateNow.activeProject;
+        const groupAllowed = (activeAlias && stateNow.projectAccess?.[jid]?.[activeAlias.toLowerCase()]) || [];
+        const contacts = loadContactsMap();
+
+        if (isGroup) {
+          let groupMeta = null;
+          try {
+            groupMeta = await sock.groupMetadata(jid);
+          } catch (err) {
+            console.warn(`⚠️ Failed to fetch group metadata for ${jid}:`, err?.message || err);
+          }
+
+          const botUserId = (sock?.user?.id || '').split(':')[0].split('@')[0].replace(/[^0-9]/g, '');
+          const botLid = (sock?.user?.lid || '').split(':')[0].split('@')[0];
+
+          const participants = groupMeta?.participants || [];
+          const memberLines = [];
+          const accountedAllowed = new Set();
+
+          for (const p of participants) {
+            const rawPId = p.id || '';
+            const pNum = rawPId.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+            const pBase = rawPId.split('@')[0].split(':')[0];
+
+            // Identify Bot itself
+            const isBotSelf = (botUserId && pNum === botUserId) || (botLid && pBase === botLid);
+
+            // Identify Owner
+            const isParticipantOwner =
+              (botUserId && pNum === botUserId) ||
+              (CONFIG.adminNumbers.length > 0 && pNum && CONFIG.adminNumbers.some(a => pNum.endsWith(a) || a.endsWith(pNum)));
+
+            // Contact / display name
+            const knownName = contacts[rawPId] || (pNum ? `+${pNum}` : rawPId);
+
+            if (isBotSelf) {
+              memberLines.push(`🤖 *${knownName}* (Weave Agent): Active`);
+            } else if (isParticipantOwner) {
+              memberLines.push(`👑 *${knownName}* (Owner): Full Access (All commands, DM project deletion, access grants)`);
+            } else {
+              // Check if participant has granted project access
+              const isGranted = groupAllowed.some((entry) => {
+                const cleanEntry = entry.trim().toLowerCase();
+                const matched = (
+                  (pNum && (cleanEntry === pNum || pNum.endsWith(cleanEntry) || cleanEntry.endsWith(pNum))) ||
+                  (knownName && (cleanEntry === knownName.toLowerCase() || knownName.toLowerCase().includes(cleanEntry)))
+                );
+                if (matched) accountedAllowed.add(cleanEntry);
+                return matched;
+              });
+
+              if (isGranted) {
+                memberLines.push(`🟢 *${knownName}*: Granted Access (Can interact with \`${activeAlias || 'project'}\`)`);
+              } else {
+                memberLines.push(`⚪ *${knownName}*: No Access (Owner only by default)`);
+              }
+            }
+          }
+
+          // If there are collaborators granted who aren't in participants list (e.g. by display alias)
+          for (const extra of groupAllowed) {
+            if (!accountedAllowed.has(extra.toLowerCase())) {
+              memberLines.push(`🟢 *${extra}*: Granted Access (Can interact with \`${activeAlias || 'project'}\`)`);
+            }
+          }
+
+          const groupTitle = groupMeta?.subject || 'this Group';
+          const memberListText = memberLines.length > 0 ? memberLines.join('\n') : `_Could not fetch member list._`;
+
+          const permsReply = [
+            `🔒 *Permissions & Member Access for "${groupTitle}"*`,
+            activeAlias ? `📁 *Active Project:* \`${activeAlias}\`` : `📁 *Active Project:* _(None bound)_`,
+            `👥 *Total Members:* ${participants.length}`,
+            '',
+            `📋 *Member Permissions:*`,
+            memberListText,
+            '',
+            `💡 *Owner Tip:* To grant a member access, say *"allow <name> from now"*. To revoke, say *"revoke <name> access"*.`,
+          ].join('\n');
+
+          await sendReply(sock, jid, permsReply, msg);
+        } else {
+          // Send-to-Self DM or direct chat
+          const permsReply = [
+            `🔒 *Access Permissions for Personal DM*`,
+            activeAlias ? `📁 *Active Project:* \`${activeAlias}\`` : `📁 *Active Project:* _(None bound)_`,
+            '',
+            `👑 *Owner:* Full Access (All commands, project creation/deletion, settings)`,
+            `ℹ️ In personal DM, you have exclusive full access to all projects and admin commands.`,
+          ].join('\n');
+
+          await sendReply(sock, jid, permsReply, msg);
+        }
+      }
+
+      // Helper: Grant or revoke access
+      async function handleManageAccessCommand(sock, jid, msg, action, rawUser, specifiedProject, isGroup, isOwnerSender) {
+        if (!isOwnerSender) {
+          await reactToMessage(sock, msg, '🔒');
+          await sendReply(sock, jid, `🔒 *Only the owner can configure project permissions.*`, msg);
+          return;
+        }
+
+        const stateNow = loadProjectsState();
+        const activeAlias = specifiedProject || (isGroup ? stateNow.groupBindings?.[jid] : stateNow.activeProject) || stateNow.activeProject;
+        if (!activeAlias) {
+          await sendReply(sock, jid, `⚠️ No active project to configure access for.`, msg);
+          return;
+        }
+
+        // Clean user candidate string: handle possessives like "tinchus" -> "tinchu", "tinchu's" -> "tinchu", strip suffixes
+        let userCandidate = String(rawUser || '').replace(/^@/, '').trim();
+        userCandidate = userCandidate
+          .replace(/['’]s$/i, '')
+          .replace(/\s+(access|perms|permission|permissions|from|now|babys|baby)$/i, '')
+          .replace(/\s+(access|perms|permission|permissions|from|now)$/i, '')
+          .replace(/s$/i, (m, offset, str) => {
+            const withS = findFriend(str);
+            if (withS) return 's';
+            return '';
+          })
+          .replace(/\s+(access|perms|permission|permissions|from|now|babys|baby)$/i, '')
+          .trim();
+
+        const friend = findFriend(userCandidate);
+        const userIdentifier = friend ? friend.name : userCandidate;
+
+        if (action === 'grant') {
+          grantProjectAccess(activeAlias, jid, userIdentifier);
+          await reactToMessage(sock, msg, '🔑');
+          await sendReply(
+            sock,
+            jid,
+            `🔑 *Access Granted:* Allowed *${userIdentifier}* to interact with project \`${activeAlias}\` in this chat.`,
+            msg
+          );
+        } else {
+          revokeProjectAccess(activeAlias, jid, userIdentifier);
+          await reactToMessage(sock, msg, '🔒');
+          await sendReply(
+            sock,
+            jid,
+            `🔒 *Access Revoked:* Revoked *${userIdentifier}*'s access to project \`${activeAlias}\` in this chat.`,
+            msg
+          );
+        }
+      }
+
       // 3a. Who Has Perms / Permissions Query
       const isPermsQuery =
         lowerRaw === 'who has perms' ||
         lowerRaw === 'who has perms?' ||
         lowerRaw === 'who has permissions' ||
         lowerRaw === 'who has permissions?' ||
+        lowerRaw === 'list perms' ||
+        lowerRaw === 'list perms?' ||
+        lowerRaw === 'list access perms' ||
+        lowerRaw === 'list access permissions' ||
+        lowerRaw === 'show perms' ||
+        lowerRaw === 'show permissions' ||
         lowerRaw === 'perms' ||
         lowerRaw === 'permissions' ||
-        lowerRaw === 'show perms' ||
-        lowerRaw === 'list perms' ||
         lowerRaw.includes('who has perms') ||
-        lowerRaw.includes('who has permissions');
+        lowerRaw.includes('who has permissions') ||
+        lowerRaw.includes('list access perms');
 
       if (isPermsQuery && !rawBody.startsWith('/')) {
-        const stateNow = loadProjectsState();
-        const activeAlias = (isGroup ? stateNow.groupBindings?.[jid] : stateNow.activeProject) || stateNow.activeProject;
-        const groupAllowed = (activeAlias && stateNow.projectAccess?.[jid]?.[activeAlias.toLowerCase()]) || [];
-
-        const permsReply = [
-          `🔒 *Access Permissions for ${isGroup ? 'this Group' : 'this Chat'}*`,
-          activeAlias ? `📁 *Active Project:* \`${activeAlias}\`` : `📁 *Active Project:* _(None bound)_`,
-          '',
-          `👑 *Owner:* Full Access (all commands, project deletion in DM, access grants)`,
-          groupAllowed.length > 0
-            ? `👥 *Granted Collaborators:* ${groupAllowed.map(u => `*${u}*`).join(', ')}`
-            : `👥 *Collaborators:* _None granted yet (Owner only by default)_`,
-          '',
-          `💡 *Owner Tip:* To grant access, say *"allow <name> from now"*. To revoke, say *"revoke <name> access"*.`,
-        ].join('\n');
-
-        await sendReply(sock, jid, permsReply, msg);
+        await handleViewAccessCommand(sock, jid, msg, isGroup);
         return;
       }
 
@@ -4594,16 +4839,6 @@ async function _processIncomingMessage(sock, msg, type, nowSec, acceptMessagesAf
         lowerRaw.endsWith(' fullauto') ||
         lowerRaw.endsWith(' full auto')
       ) {
-        if (!isGroup) {
-          await sendReply(
-            sock,
-            jid,
-            `⚠️ *Full Auto is only supported in WhatsApp group chats.* In your Send-to-Self DM, I already listen to your messages directly.`,
-            msg
-          );
-          return;
-        }
-
         const nextState = !isFullAutoGroup;
         currentState.fullAutoGroups = currentState.fullAutoGroups || {};
         currentState.fullAutoGroups[jid] = nextState;
@@ -4613,7 +4848,7 @@ async function _processIncomingMessage(sock, msg, type, nowSec, acceptMessagesAf
           sock,
           jid,
           nextState
-            ? `🚀 *Full Auto ENGAGED for this group!*\nI am now actively listening to all messages here. You don't need to mention @ap anymore.\n_(Say "@ap fullauto" again anytime to revert to mention mode)._`
+            ? `🚀 *Full Auto ENGAGED!*\nI am now actively listening to all messages in this chat without needing you to tag @ap.\n_(Say "@ap fullauto" again anytime to revert to mention mode)._`
             : `⏸️ *Full Auto DISENGAGED.*\nReverted to mention mode (tag @ap to talk to me).`,
           msg
         );
@@ -4622,23 +4857,54 @@ async function _processIncomingMessage(sock, msg, type, nowSec, acceptMessagesAf
 
       // 3b. Risky Project Deletion Guard:
       // Project deletions can ONLY be done through personal DM (1-to-1 Send-to-Self / text to self), with explicit confirmation!
-      const deleteProjMatch = rawBody.match(/\b(?:delete|remove|erase|destroy|nuke|rm)\s+(?:the\s+)?project\s+([a-zA-Z0-9_-]+)/i) ||
-                              rawBody.match(/\b(?:delete|remove|erase|destroy|nuke|rm)\s+([a-zA-Z0-9_-]+)\s+project\b/i);
+      const deleteProjMatch = rawBody.match(/\b(?:delete|remove|erase|destroy|nuke|rm)\s+(?:the\s+)?(?:project\s+)?([a-zA-Z0-9_-]+)/i);
       if (deleteProjMatch && !rawBody.startsWith('/')) {
         const candidateAlias = deleteProjMatch[1].toLowerCase();
         const stateNow = loadProjectsState();
-        const matchedAlias = Object.keys(stateNow.projects || {}).find(
-          k => k.toLowerCase() === candidateAlias
-        );
+        const masterDir = stateNow.masterDir;
+        let matchedAlias = null;
+        let matchedPath = null;
+
+        // Check configured projects
+        for (const [k, p] of Object.entries(stateNow.projects || {})) {
+          if (k.toLowerCase() === candidateAlias) {
+            matchedAlias = k;
+            matchedPath = p;
+            break;
+          }
+        }
+
+        // Also check actual subdirectories in masterDir
+        if (!matchedAlias && masterDir && fs.existsSync(masterDir)) {
+          try {
+            const dirs = fs.readdirSync(masterDir, { withFileTypes: true })
+              .filter(d => d.isDirectory() && !d.name.startsWith('.'));
+            const found = dirs.find(d => d.name.toLowerCase() === candidateAlias);
+            if (found) {
+              matchedAlias = found.name;
+              matchedPath = path.join(masterDir, found.name);
+            }
+          } catch {}
+        }
+
+        // Also check if user said "delete this project" or "delete current project"
+        if (!matchedAlias && ['this', 'current', 'it'].includes(candidateAlias)) {
+          const bound = isGroup ? stateNow.groupBindings?.[jid] : stateNow.activeProject;
+          if (bound) {
+            matchedAlias = bound;
+            matchedPath = stateNow.projects?.[bound] || (masterDir ? path.join(masterDir, bound) : null);
+          }
+        }
 
         if (matchedAlias) {
           const isSelfChat = isSendToSelf(msg, sock);
-          if (!owner || !isSelfChat) {
+          // Deleting a project can NEVER happen from a group. It can only happen from the owner's self DM.
+          if (isGroup || !owner || !isSelfChat) {
             await reactToMessage(sock, msg, '🔒');
             await sendReply(
               sock,
               jid,
-              `🔒 *Project deletions can only be performed by the owner in your personal Send-to-Self DM chat.* Please message yourself directly to delete \`${matchedAlias}\`.`,
+              `🔒 *Project deletions can never be performed from a group chat.* To delete \`${matchedAlias}\`, please do it directly from the owner's personal Send-to-Self DM chat.`,
               msg
             );
             return;
@@ -4647,7 +4913,7 @@ async function _processIncomingMessage(sock, msg, type, nowSec, acceptMessagesAf
             stateNow.pendingProjectDeletions = stateNow.pendingProjectDeletions || {};
             stateNow.pendingProjectDeletions[jid] = {
               targetAlias: matchedAlias,
-              targetPath: stateNow.projects[matchedAlias],
+              targetPath: matchedPath,
               timestamp: Date.now(),
             };
             saveProjectsState(stateNow);
@@ -4663,48 +4929,7 @@ async function _processIncomingMessage(sock, msg, type, nowSec, acceptMessagesAf
         }
       }
 
-      // 3c. Granular Project Access Commands: "allow XYZ from now", "give XYZ access", "revoke XYZ access"
-      const allowAccessMatch = rawBody.match(/\b(?:allow|grant|give)\s+([a-zA-Z0-9_+@.-]+(?:\s+[a-zA-Z0-9_+@.-]+)?)\s+(?:access\s+(?:to\s+(?:project\s+)?([a-zA-Z0-9_-]+))?|from\s+now|to\s+use|permission)/i) ||
-                               rawBody.match(/\b(?:allow|grant)\s+([a-zA-Z0-9_+@.-]+)\s+from\s+now\b/i);
-      const revokeAccessMatch = rawBody.match(/\b(?:revoke|remove|disallow)\s+([a-zA-Z0-9_+@.-]+(?:\s+[a-zA-Z0-9_+@.-]+)?)\s+(?:access|permission)(?:\s+(?:from|to)\s+(?:project\s+)?([a-zA-Z0-9_-]+))?/i);
 
-      if ((allowAccessMatch || revokeAccessMatch) && !rawBody.startsWith('/') && owner) {
-        const stateNow = loadProjectsState();
-        const activeAlias = (isGroup ? stateNow.groupBindings?.[jid] : stateNow.activeProject) || stateNow.activeProject;
-        if (!activeAlias) {
-          await sendReply(sock, jid, `⚠️ No active project to configure access for.`, msg);
-          return;
-        }
-
-        if (allowAccessMatch) {
-          let userCandidate = allowAccessMatch[1].trim();
-          // Check if user is referencing a registered friend
-          const friend = findFriend(userCandidate);
-          const userIdentifier = friend ? friend.name : userCandidate;
-          grantProjectAccess(activeAlias, jid, userIdentifier);
-          await reactToMessage(sock, msg, '🔑');
-          await sendReply(
-            sock,
-            jid,
-            `🔑 *Access Granted:* Allowed *${userIdentifier}* to interact with project \`${activeAlias}\` in this chat.`,
-            msg
-          );
-          return;
-        } else if (revokeAccessMatch) {
-          let userCandidate = revokeAccessMatch[1].trim();
-          const friend = findFriend(userCandidate);
-          const userIdentifier = friend ? friend.name : userCandidate;
-          revokeProjectAccess(activeAlias, jid, userIdentifier);
-          await reactToMessage(sock, msg, '🔒');
-          await sendReply(
-            sock,
-            jid,
-            `🔒 *Access Revoked:* Revoked *${userIdentifier}*'s access to project \`${activeAlias}\` in this chat.`,
-            msg
-          );
-          return;
-        }
-      }
 
       // 3d. Add / Remove Friends Directly From WhatsApp Chat:
       // e.g. "add friend Alice github: alice-dev", "save friend Bob bob_gh", "remove friend Alice"
@@ -4866,6 +5091,28 @@ async function _processIncomingMessage(sock, msg, type, nowSec, acceptMessagesAf
               msg
             );
             return;
+          }
+
+          if (cmd === 'view_access') {
+            await handleViewAccessCommand(sock, jid, msg, isGroup);
+            return;
+          }
+
+          if (cmd === 'manage_access') {
+            const action = routeResult.accessAction || (rawBody.toLowerCase().includes('revoke') || rawBody.toLowerCase().includes('remove') ? 'revoke' : 'grant');
+            let userTarget = routeResult.targetUser;
+            if (!userTarget || ['agent', 'bot', 'perms', 'permissions', 'access'].includes(userTarget.toLowerCase())) {
+              const matchedTo = rawBody.match(/(?:for|to|from)\s+([a-zA-Z0-9_+@.'’-]+)/i);
+              userTarget = matchedTo ? matchedTo[1] : null;
+            }
+            if (!userTarget) {
+              const matchedGeneral = rawBody.match(/(?:revoke|remove|disallow|allow|grant|give)\s+([a-zA-Z0-9_+@.'’-]+)/i);
+              userTarget = matchedGeneral ? matchedGeneral[1] : null;
+            }
+            if (userTarget) {
+              await handleManageAccessCommand(sock, jid, msg, action, userTarget, routeResult.projectName, isGroup, owner);
+              return;
+            }
           }
         }
 

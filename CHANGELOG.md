@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v2.2.0] - 2026-10-18
+
+### 🧠 Pure Natural Language Architecture, DM Gating & Session Self-Healing
+
+#### 1. Pure Natural Language Permission Management (`src/autopilot/`, `src/bot.js`, `src/config.js`)
+- **Eliminated Brittle Regex Pattern Matching**:
+  - Deprecated legacy regex parsing for access commands. All permission queries and access grants/revocations now flow through the Gemini 2.5 Flash Intent Router as first-class `system_command` lanes (`manage_access` and `view_access`).
+  - Native understanding of natural conversational phrasing, possessives, and developer slang (e.g., *"give agent permissions to tinchu"*, *"allow tinchu to use agent"*, *"revoke tinchus perms lol"*, *"revoke access for tinchu"*, *"who has perms"*, *"list access perms"*).
+  - Tolerant and friend-aware identifier resolution: automatically cleans slang suffixes (`babys`, `baby`, `lol`, `'s`), normalizes handles, and resolves against registered friends directory.
+  - Cascade unbinding & cleanup: when an active project is deleted or unmounted, associated group bindings and permissions clean up automatically.
+
+#### 2. Private DM Trigger Gating & Full Auto Mode (`src/bot.js`)
+- **Strict Prefix Requirement in Personal Send-to-Self DM**:
+  - The personal Send-to-Self chat ("Message Yourself") now strictly requires tagging the agent (`@ap`) by default, preventing unwanted responses to personal notes and draft messages.
+  - Added support for toggling Full Auto in personal DM (`@ap fullauto`), allowing hands-free interaction without tagging when explicitly desired.
+
+#### 3. Real-Time Dynamic Dashboard Revocation (`electron/renderer/app.js`, `src/config.js`)
+- **Interactive Collaborator Revocation Badges**:
+  - Collaborators granted directly from WhatsApp are rendered as interactive badges in the Desktop UI even if they have not yet been added to the friends directory.
+  - Clicking any collaborator pill dynamically revokes their access in real-time, instantly pushes updates through `api.onProjectsUpdate`, and re-renders the dashboard UI without requiring a reload.
+  - Broadened `revokeProjectAccess` to sweep across project scopes if a project is unmounted or alias is omitted.
+
+#### 4. WhatsApp Baileys Multi-Hour Session Self-Healing (`src/bot.js`)
+- **Resilient Offline Session Ratchet Recovery**:
+  - Automatic upload of 30 fresh one-time pre-keys (`sock.uploadPreKeys(30)`) on every bot connection, preventing `Bad MAC` and `Key used already or never filled` errors when waking up after hours offline.
+  - `healCorruptedSession` automatically detects decryption failure stubs, purges desynced session files, and flushes in-memory Signal ratchet stores for linked devices.
+  - Added time window server-drift calibration to prevent dropping backlogged messages due to system clock drift.
+
+#### 5. Deep Process Tree Termination & Instant Stop (`src/agent.js`, `electron/main.js`)
+- **Guaranteed Child Process Tree Teardown**:
+  - Robust process cancellation (`stopActiveTask`) with two-stage SIGTERM -> SIGKILL escalation on Unix (`pkill -P`) and `taskkill /T /F` on Windows.
+  - Immediate retirement and termination of warm Antigravity CLI workers to halt running subcommands or compilers instantly upon `/stop`.
+
+---
+
 ## [v2.1.0] - 2026-10-18
 
 ### 🛡️ Permissions Hardening, Poll Reliability & UX Polish

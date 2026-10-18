@@ -486,18 +486,54 @@ export function grantProjectAccess(projectAlias, groupJid, userIdentifier) {
 }
 
 export function revokeProjectAccess(projectAlias, groupJid, userIdentifier) {
-  if (!projectAlias || !groupJid || !userIdentifier) return false;
+  if (!groupJid || !userIdentifier) return false;
   const state = loadProjectsState();
-  const alias = projectAlias.toLowerCase();
   const group = groupJid.toLowerCase();
-  if (!state.projectAccess?.[group]?.[alias]) return false;
+  if (!state.projectAccess?.[group]) return false;
 
-  const cleanUser = String(userIdentifier).trim().toLowerCase();
-  const initialLen = state.projectAccess[group][alias].length;
-  state.projectAccess[group][alias] = state.projectAccess[group][alias].filter(
-    u => u.toLowerCase() !== cleanUser
+  const rawClean = String(userIdentifier).replace(/^@/, '').trim().toLowerCase();
+  if (!rawClean) return false;
+
+  // Also check if this identifier corresponds to a registered friend
+  const friends = Array.isArray(state.friends) ? state.friends : [];
+  const matchedFriend = friends.find(
+    f => f.name.toLowerCase() === rawClean || f.github.toLowerCase() === rawClean
   );
-  if (state.projectAccess[group][alias].length !== initialLen) {
+  const friendName = matchedFriend ? matchedFriend.name.toLowerCase() : null;
+  const friendGithub = matchedFriend ? matchedFriend.github.toLowerCase() : null;
+
+  function matchesUser(u) {
+    const uLow = String(u).trim().toLowerCase();
+    if (uLow === rawClean) return true;
+    if (friendName && uLow === friendName) return true;
+    if (friendGithub && uLow === friendGithub) return true;
+    // Handle cases where "permission" or "access" got accidentally saved into the name
+    if (uLow.startsWith(rawClean) || rawClean.startsWith(uLow)) return true;
+    return false;
+  }
+
+  let anyRemoved = false;
+  const alias = projectAlias ? projectAlias.toLowerCase() : null;
+
+  // If alias provided and exists in group
+  if (alias && state.projectAccess[group][alias]) {
+    const initialLen = state.projectAccess[group][alias].length;
+    state.projectAccess[group][alias] = state.projectAccess[group][alias].filter(u => !matchesUser(u));
+    if (state.projectAccess[group][alias].length !== initialLen) {
+      anyRemoved = true;
+    }
+  } else {
+    // If alias not specified or not in group, sweep all projects in this group
+    for (const p of Object.keys(state.projectAccess[group])) {
+      const initialLen = state.projectAccess[group][p].length;
+      state.projectAccess[group][p] = state.projectAccess[group][p].filter(u => !matchesUser(u));
+      if (state.projectAccess[group][p].length !== initialLen) {
+        anyRemoved = true;
+      }
+    }
+  }
+
+  if (anyRemoved) {
     saveProjectsState(state);
     return true;
   }

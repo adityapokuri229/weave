@@ -140,8 +140,23 @@ export function getGroupProjectStatus(groupJid) {
     };
   }
 
-  const projPath = state.projects?.[boundAlias] || null;
+  const projPath = state.projects?.[boundAlias] || (masterDir ? path.join(masterDir, boundAlias) : null);
   const exists = projPath ? fs.existsSync(projPath) : false;
+
+  // Auto-healing: If bound project was deleted, unbind it immediately!
+  if (!exists) {
+    state.groupBindings = state.groupBindings || {};
+    delete state.groupBindings[groupJid];
+    if (state.activeProject === boundAlias) {
+      state.activeProject = '';
+    }
+    saveProjectsState(state);
+    return {
+      bound: false,
+      masterDir,
+      message: `Previously bound project "${boundAlias}" was deleted and has been unbound.`,
+    };
+  }
 
   return {
     bound: true,
@@ -158,7 +173,7 @@ export function getGroupProjectStatus(groupJid) {
 export function listProjectsForGroup(groupJid) {
   const masterDir = getValidatedMasterDir();
   const state = loadProjectsState();
-  const boundAlias = state.groupBindings?.[groupJid] || (!groupJid?.endsWith('@g.us') ? state.activeProject : null) || null;
+  let boundAlias = state.groupBindings?.[groupJid] || (!groupJid?.endsWith('@g.us') ? state.activeProject : null) || null;
 
   // Scan masterDir subdirectories
   let dirEntries = [];
@@ -179,6 +194,18 @@ export function listProjectsForGroup(groupJid) {
   }
 
   const allProjects = Array.from(projectSet).sort();
+
+  // If the bound project was deleted from masterDir, unbind it!
+  if (boundAlias && !allProjects.includes(boundAlias)) {
+    state.groupBindings = state.groupBindings || {};
+    delete state.groupBindings[groupJid];
+    if (state.activeProject === boundAlias) {
+      state.activeProject = '';
+    }
+    saveProjectsState(state);
+    boundAlias = null;
+  }
+
   return {
     masterDir,
     boundAlias,

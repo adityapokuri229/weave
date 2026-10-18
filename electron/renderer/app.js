@@ -241,39 +241,67 @@ document.addEventListener('DOMContentLoaded', async () => {
                       <span class="w-1.5 h-1.5 rounded-full bg-amber-400"></span>
                       <span>👑 Owner (Full Access)</span>
                     </span>
-                    ${
-                      friends.length > 0
-                        ? friends.map(f => {
-                            const safeFriendName = escapeHtml(f.name);
-                            const isGranted = currentAllowed.some(u => u.toLowerCase() === f.name.toLowerCase() || (f.github && u.toLowerCase() === f.github.toLowerCase()));
-                            return `
-                              <button
-                                class="btn-toggle-access text-[9px] font-mono px-1.5 py-0.5 rounded border transition cursor-pointer flex items-center gap-1 ${
-                                  isGranted
-                                    ? 'bg-emerald-950/80 text-emerald-400 border-emerald-600/70 hover:bg-red-950/60 hover:text-red-300 hover:border-red-600/50'
-                                    : 'bg-zinc-800/80 text-zinc-400 border-zinc-700 hover:text-white hover:border-zinc-500'
-                                }"
-                                data-alias="${escapeHtml(alias)}"
-                                data-jid="${cleanJid}"
-                                data-name="${safeFriendName}"
-                                data-granted="${isGranted ? 'true' : 'false'}"
-                                title="${isGranted ? 'Click to revoke access' : 'Click to grant access'}"
-                              >
-                                <span class="w-1.5 h-1.5 rounded-full ${isGranted ? 'bg-emerald-400' : 'bg-zinc-600'}"></span>
-                                <span>${safeFriendName}</span>
-                                <span class="text-[8px] opacity-70">${isGranted ? '✓' : '+'}</span>
-                              </button>
-                            `;
-                          }).join('')
-                        : currentAllowed.length > 0
-                          ? currentAllowed.map(name => `
-                              <span class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-950/80 text-emerald-400 border border-emerald-600/70 flex items-center gap-1">
-                                <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
-                                <span>${escapeHtml(name)}</span>
-                              </span>
-                            `).join('')
-                          : `<span class="text-[8px] font-mono text-zinc-500 italic py-0.5">Owner only (No collaborators granted)</span>`
-                    }
+                    ${(() => {
+                      const renderedButtons = [];
+                      const handledNames = new Set();
+
+                      // 1. Registered friends
+                      friends.forEach(f => {
+                        const safeFriendName = escapeHtml(f.name);
+                        const isGranted = currentAllowed.some(u => 
+                          u.toLowerCase() === f.name.toLowerCase() || 
+                          (f.github && u.toLowerCase() === f.github.toLowerCase())
+                        );
+                        if (isGranted) {
+                          handledNames.add(f.name.toLowerCase());
+                          if (f.github) handledNames.add(f.github.toLowerCase());
+                        }
+                        renderedButtons.push(`
+                          <button
+                            class="btn-toggle-access text-[9px] font-mono px-1.5 py-0.5 rounded border transition cursor-pointer flex items-center gap-1 ${
+                              isGranted
+                                ? 'bg-emerald-950/80 text-emerald-400 border-emerald-600/70 hover:bg-red-950/60 hover:text-red-300 hover:border-red-600/50'
+                                : 'bg-zinc-800/80 text-zinc-400 border-zinc-700 hover:text-white hover:border-zinc-500'
+                            }"
+                            data-alias="${escapeHtml(alias)}"
+                            data-jid="${cleanJid}"
+                            data-name="${safeFriendName}"
+                            data-granted="${isGranted ? 'true' : 'false'}"
+                            title="${isGranted ? 'Click to revoke access' : 'Click to grant access'}"
+                          >
+                            <span class="w-1.5 h-1.5 rounded-full ${isGranted ? 'bg-emerald-400' : 'bg-zinc-600'}"></span>
+                            <span>${safeFriendName}</span>
+                            <span class="text-[8px] opacity-70">${isGranted ? '✓' : '+'}</span>
+                          </button>
+                        `);
+                      });
+
+                      // 2. Extra collaborators in currentAllowed that aren't registered friends
+                      currentAllowed.forEach(name => {
+                        if (!handledNames.has(name.toLowerCase())) {
+                          const safeName = escapeHtml(name);
+                          renderedButtons.push(`
+                            <button
+                              class="btn-toggle-access text-[9px] font-mono px-1.5 py-0.5 rounded border transition cursor-pointer flex items-center gap-1 bg-emerald-950/80 text-emerald-400 border-emerald-600/70 hover:bg-red-950/60 hover:text-red-300 hover:border-red-600/50"
+                              data-alias="${escapeHtml(alias)}"
+                              data-jid="${cleanJid}"
+                              data-name="${safeName}"
+                              data-granted="true"
+                              title="Click to revoke access"
+                            >
+                              <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                              <span>${safeName}</span>
+                              <span class="text-[8px] opacity-70">✕</span>
+                            </button>
+                          `);
+                        }
+                      });
+
+                      if (renderedButtons.length > 0) {
+                        return renderedButtons.join('');
+                      }
+                      return `<span class="text-[8px] font-mono text-zinc-500 italic py-0.5">Owner only (No collaborators granted)</span>`;
+                    })()}
                   </div>
                 </div>
               `;

@@ -77,24 +77,13 @@ function createWindow(runtimeDir) {
   });
 
   mainWindow.webContents.on('did-finish-load', () => {
+    const botStatus = botMod?.getBotStatus?.();
+    if (botStatus?.connected || botStatus?.registered) {
+      currentQrData = null;
+      return;
+    }
     if (currentQrData) {
       mainWindow.webContents.send('weave:qr-update', currentQrData);
-    } else if (configMod) {
-      const qrPath = path.join(configMod.DATA_DIR, 'whatsapp-qr.png');
-      const fallbackPath = path.join(configMod.ROOT_DIR, 'whatsapp-qr.png');
-      const targetPath = fs.existsSync(qrPath)
-        ? qrPath
-        : fs.existsSync(fallbackPath)
-        ? fallbackPath
-        : null;
-      if (targetPath) {
-        try {
-          const imgBuffer = fs.readFileSync(targetPath);
-          const dataUrl = `data:image/png;base64,${imgBuffer.toString('base64')}`;
-          currentQrData = { dataUrl, qrPath: targetPath };
-          mainWindow.webContents.send('weave:qr-update', currentQrData);
-        } catch {}
-      }
     }
   });
 
@@ -188,26 +177,7 @@ ipcMain.handle('weave:get-status', async () => {
   const botStatus = botMod.getBotStatus();
   const state = configMod.loadProjectsState();
 
-  let qrToSend = currentQrData;
-  if (!qrToSend && !botStatus.connected) {
-    const qrPath = path.join(configMod.DATA_DIR, 'whatsapp-qr.png');
-    const fallbackPath = path.join(configMod.ROOT_DIR, 'whatsapp-qr.png');
-    const targetPath = fs.existsSync(qrPath)
-      ? qrPath
-      : fs.existsSync(fallbackPath)
-      ? fallbackPath
-      : null;
-    if (targetPath) {
-      try {
-        const imgBuffer = fs.readFileSync(targetPath);
-        qrToSend = {
-          dataUrl: `data:image/png;base64,${imgBuffer.toString('base64')}`,
-          qrPath: targetPath,
-        };
-        currentQrData = qrToSend;
-      } catch {}
-    }
-  }
+  const qrToSend = (botStatus.connected || botStatus.registered) ? null : currentQrData;
 
   return {
     bot: {

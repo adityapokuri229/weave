@@ -1080,10 +1080,11 @@ function createWarmWorker(projectDir, conversationId = null) {
           continue;
         }
 
-        if (worker.conversationId) {
+        if (worker.conversationId && turn.projectAlias) {
           try {
             const updatedState = loadProjectsState();
             updatedState.conversations = updatedState.conversations || {};
+            // Single persistent Antigravity session bound directly to this project
             updatedState.conversations[turn.projectAlias] = worker.conversationId;
             saveProjectsState(updatedState);
           } catch {
@@ -1093,10 +1094,12 @@ function createWarmWorker(projectDir, conversationId = null) {
 
         const gitSummary = getGitChangesSummary(projectDir);
 
-        // Rotate worker after MAX_TURNS_PER_WORKER so context never gets bloated
+        // Keep worker alive with its persistent conversation session; rotate if turn count is exceeded
+        // but preserve conversationId so next worker immediately resumes the exact same Antigravity session
         if (worker.turnsCompleted >= MAX_TURNS_PER_WORKER) {
+          const preservedConvId = worker.conversationId;
           retireWarmWorker(worker);
-          prewarmAgentSession(projectDir, turn.projectAlias);
+          createWarmWorker(projectDir, preservedConvId);
         }
 
         turn.resolve({
@@ -1235,18 +1238,6 @@ async function runWithWarmWorker({
 }) {
   let worker = warmPool.get(projectDir);
   const wasPreexisting = Boolean(worker && !worker.dead);
-
-  // Never share conversation history between owner and non-owner
-  if (
-    worker &&
-    !worker.dead &&
-    !worker.currentTurn &&
-    worker.lastOwnerMode !== null &&
-    worker.lastOwnerMode !== ownerAllowedToMessage
-  ) {
-    retireWarmWorker(worker);
-    worker = null;
-  }
 
   if (!worker || worker.dead || worker.currentTurn) {
     let savedConvId = null;
