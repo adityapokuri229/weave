@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [v2.4.2] - 2026-10-18
+
+### 🔒 Single-Instance Process Lock, Safe 401 Session Archiving & Rapid Self-Healing
+
+#### 1. Electron Single-Instance Lock (`electron/main.js`)
+- **Prevented Competing Socket Instances**:
+  - Implemented `app.requestSingleInstanceLock()`.
+  - When opening the desktop app while a background or tray process is still active, secondary instances immediately terminate with a warning instead of fighting for the same WhatsApp session over status `440 (connectionReplaced)`.
+
+#### 2. Safe Session Archiving on 401 (`src/bot.js`)
+- **Non-Destructive 401 Disconnects**:
+  - Replaced immediate `fs.rmSync(AUTH_DIR)` upon 401 logout with timestamped folder archiving (`auth_info_baileys.backup-<timestamp>`), ensuring credentials and ratchet state are never permanently destroyed by transient server disconnects.
+
+#### 3. Instant Decryption Self-Healing (`src/bot.js`)
+- **Zero-Wait Healing**:
+  - Lowered `healCorruptedSession` threshold from 2 consecutive failures down to 1 so desynced or corrupted Signal sessions/sender-keys are purged and regenerated immediately on first detection.
+
+---
+
 ## [v2.4.1] - 2026-10-18
 
 ### 🛡️ WhatsApp LID Resolution, Multi-Device Owner Authorization & Deduplication Reliability

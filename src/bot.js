@@ -212,8 +212,8 @@ function healCorruptedSession(jid, participant = null) {
       activeSock.uploadPreKeysToServerIfRequired(true).catch(() => {});
     }
 
-    // Only delete session files if Baileys retries failed multiple times (>= 2)
-    if (count < 2) {
+    // Delete session and sender-key files immediately on decryption failure so WhatsApp re-initiates a fresh ratchet
+    if (count < 1) {
       return;
     }
 
@@ -3945,10 +3945,14 @@ export async function startWhatsAppBot() {
           }, 3500);
         } else {
           console.log(
-            `🔄 Session logged out (401). Auto-clearing '${AUTH_DIR}' and generating a fresh QR code...`
+            `🔄 Session logged out (401). Backing up '${AUTH_DIR}' and generating a fresh QR code...`
           );
           try {
-            fs.rmSync(AUTH_DIR, { recursive: true, force: true });
+            if (fs.existsSync(AUTH_DIR)) {
+              const backupDir = `${AUTH_DIR}.backup-${Date.now()}`;
+              fs.renameSync(AUTH_DIR, backupDir);
+              console.log(`📦 Archived logged out session to ${backupDir}`);
+            }
           } catch {}
           reconnectTimer = setTimeout(() => {
             reconnectTimer = null;

@@ -13,6 +13,21 @@ if (process.platform === 'linux') {
   app.disableHardwareAcceleration();
 }
 
+// Ensure single instance lock: prevent two Electron / Weave instances from fighting over the same WhatsApp session
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  console.warn('⚠️ Another instance of Weave is already running. Quitting secondary instance.');
+  app.quit();
+  process.exit(0);
+}
+
+app.on('second-instance', () => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.focus();
+  }
+});
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
