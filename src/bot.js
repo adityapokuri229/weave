@@ -189,30 +189,13 @@ const signalCacheStore = {
 };
 
 /**
- * Cleans up dead closed sessions or bloated session records on startup.
+ * Session integrity guard:
+ * WhatsApp Signal ratchet chains grow over time. We never delete active session files
+ * arbitrarily by file size on startup, as that corrupts the Signal ratchet state
+ * and prevents decrypting incoming messages.
  */
 function purgeClosedSessions() {
-  if (!fs.existsSync(AUTH_DIR)) return 0;
-  let purged = 0;
-  try {
-    const files = fs.readdirSync(AUTH_DIR);
-    for (const file of files) {
-      if (!file.startsWith('session-') || !file.endsWith('.json')) continue;
-      const filePath = path.join(AUTH_DIR, file);
-      try {
-        const stat = fs.statSync(filePath);
-        // If a session file has accumulated many dead sessions (> 15KB)
-        if (stat.size > 15000) {
-          fs.unlinkSync(filePath);
-          purged++;
-          console.log(`🛡️ [Session-Guard] Purged bloated/corrupted session file: ${file} (${stat.size} bytes)`);
-        }
-      } catch {}
-    }
-  } catch (err) {
-    console.warn('⚠️ Error purging closed sessions:', err?.message || err);
-  }
-  return purged;
+  return 0;
 }
 
 const recentBadMacPurges = new Map();
@@ -3898,7 +3881,7 @@ async function handleSlashCommand(sock, jid, msg, commandBody) {
 let activeSock = null;
 let reconnectTimer = null;
 let isStartingBot = false;
-const BOT_START_TIME_SEC = Math.floor(Date.now() / 1000);
+let BOT_START_TIME_SEC = Math.floor(Date.now() / 1000);
 let serverTimeOffsetSec = 0;
 let hasCalibratedClock = false;
 
@@ -3911,16 +3894,19 @@ async function syncNetworkClock() {
     const dateHeader = res.headers.get('date');
     if (dateHeader) {
       const networkTimeSec = Math.floor(new Date(dateHeader).getTime() / 1000);
-      serverTimeOffsetSec = Math.floor(Date.now() / 1000) - networkTimeSec;
-      hasCalibratedClock = true;
-      if (Math.abs(serverTimeOffsetSec) > 10) {
-        console.log(
-          `⏱️ Clock sync: Detected ${serverTimeOffsetSec}s skew between PC and WhatsApp server. Calibrated.`
-        );
+      const diff = Math.floor(Date.now() / 1000) - networkTimeSec;
+      if (Math.abs(diff) < 300) {
+        serverTimeOffsetSec = diff;
+        hasCalibratedClock = true;
+        if (Math.abs(serverTimeOffsetSec) > 5) {
+          console.log(
+            `⏱️ Clock sync: Detected ${serverTimeOffsetSec}s skew between PC and WhatsApp server. Calibrated.`
+          );
+        }
       }
     }
   } catch {
-    // Dynamic fallback on message arrival will calibrate if fetch is unreachable
+    // Dynamic fallback on message arrival will calibrate if within reasonable bounds
   }
 }
 
@@ -3931,12 +3917,19 @@ export async function startWhatsAppBot() {
   if (isStartingBot) return;
   isStartingBot = true;
 
+  BOT_START_TIME_SEC = Math.floor(Date.now() / 1000);
   syncNetworkClock().catch(() => {});
   purgeClosedSessions();
 
   if (activeSock) {
     try { activeSock.ev.removeAllListeners(); } catch {}
-    try { activeSock.ws?.close(); } catch {}
+    try {
+      if (typeof activeSock.end === 'function') {
+        activeSock.end(undefined);
+      } else {
+        activeSock.ws?.close();
+      }
+    } catch {}
     activeSock = null;
   }
 
@@ -3957,7 +3950,6 @@ export async function startWhatsAppBot() {
       printQRInTerminal: false,
       markOnlineOnConnect: true,
       syncFullHistory: false,
-      shouldSyncHistoryMessage: () => false,
       connectTimeoutMs: 60000,
       keepAliveIntervalMs: 25000,
       defaultQueryTimeoutMs: 60000,
@@ -4022,7 +4014,13 @@ export async function startWhatsAppBot() {
 
         if (activeSock === sock) {
           try { sock.ev.removeAllListeners(); } catch {}
-          try { sock.ws?.close(); } catch {}
+          try {
+            if (typeof sock.end === 'function') {
+              sock.end(undefined);
+            } else {
+              sock.ws?.close();
+            }
+          } catch {}
           activeSock = null;
         }
 
@@ -4080,12 +4078,12 @@ export async function startWhatsAppBot() {
           } catch {}
         }, 2000);
 
-        // Ensure server has fresh pre-keys so incoming messages from all group members decrypt cleanly
+        // Ensure server has sufficient pre-keys without blowing away existing ratchet state
         try {
-          await sock.uploadPreKeys(30);
-          console.log('🔑 Successfully refreshed & uploaded 30 pre-keys to WhatsApp server');
+          await sock.uploadPreKeysToServerIfRequired();
+          console.log('🔑 Verified & uploaded pre-keys if required');
         } catch (err) {
-          sock.uploadPreKeysToServerIfRequired(true).catch(() => {});
+          console.warn('⚠️ Pre-key verification note:', err?.message || err);
         }
         prewarmAllBoundProjects();
       }
@@ -4273,12 +4271,12 @@ async function handleIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfte
         }
       }
 
-      // Only ignore stale backlog messages from before this bot process was started (with 10-minute grace window)
       // Account for PC clock skew (e.g. dual-boot or RTC drift) by comparing against calibrated server time.
       const msgTime = Number(msg.messageTimestamp || 0);
       if (msgTime > 0) {
-        if (!hasCalibratedClock) {
-          const rawDiff = Math.floor(Date.now() / 1000) - msgTime;
+        const rawDiff = Math.floor(Date.now() / 1000) - msgTime;
+        // Only calibrate clock offset against recent messages (within 5 minutes), never against hour-old backlog
+        if (!hasCalibratedClock && Math.abs(rawDiff) < 300) {
           serverTimeOffsetSec = rawDiff;
           hasCalibratedClock = true;
           console.log(`⏱️ Calibrated clock offset against incoming message: ${rawDiff}s`);
@@ -4286,14 +4284,17 @@ async function handleIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfte
 
         const effectiveBotStartSec = BOT_START_TIME_SEC - serverTimeOffsetSec;
         if (effectiveBotStartSec > 0 && msgTime < effectiveBotStartSec - 600) {
-          console.log(`⏱️ [Stale Backlog Skipped] msgTime=${msgTime} effectiveBotStart=${effectiveBotStartSec}`);
+          console.log(`⏱️ [Stale Backlog Skipped] msgId=${msg.key?.id} msgTime=${msgTime} effectiveBotStart=${effectiveBotStartSec}`);
           return;
         }
       }
 
       // Never process messages sent by the bot itself or already processed / currently processing
       if (!msg.key?.id) return;
-      if (sentMessageIds.has(msg.key.id) || processedMessageIds.has(msg.key.id) || inFlightMessageIds.has(msg.key.id)) return;
+      if (sentMessageIds.has(msg.key.id) || processedMessageIds.has(msg.key.id) || inFlightMessageIds.has(msg.key.id)) {
+        console.log(`⏭️ [Duplicate/Self Message Skipped] id=${msg.key.id}`);
+        return;
+      }
       inFlightMessageIds.add(msg.key.id);
       recordProcessedMessageId(msg.key.id);
 
@@ -5104,6 +5105,227 @@ async function _processIncomingMessage(sock, msg, type, nowSec, acceptMessagesAf
               : `❓ Friend "${friendTarget}" was not found in your directory.`,
             msg
           );
+          return;
+        }
+      }
+
+      // 4. Intent Routing (Conversational AI Classifier)
+      if (!rawBody.startsWith('/')) {
+        const recentChat = (chatMessageHistory.get(jid) || []).slice(-5);
+        const routeResult = await routeAutopilotIntent({
+          prompt: rawBody,
+          groupJid: jid,
+          recentHistory: recentChat,
+        });
+
+        console.log(`✈️ [Autopilot Router] Intent=${routeResult.intent}`);
+
+        // Lane 1: system_command
+        if (routeResult.intent === 'system_command' && routeResult.systemCommand) {
+          const cmd = routeResult.systemCommand;
+          const projectName = routeResult.projectName;
+
+          if (cmd === 'list_projects') {
+            try {
+              const listInfo = listProjectsForGroup(jid);
+              await sendReply(
+                sock,
+                jid,
+                TEMPLATES.list_projects({
+                  projects: listInfo.projects,
+                  activeProject: listInfo.boundAlias,
+                }),
+                msg
+              );
+            } catch (err) {
+              await sendReply(sock, jid, `⚠️ ${err.message}`, msg);
+            }
+            return;
+          }
+
+          if (cmd === 'create_project') {
+            if (!owner) {
+              await sendReply(sock, jid, "Only the owner can do that.", msg);
+              return;
+            }
+            if (!projectName) {
+              await sendReply(sock, jid, TEMPLATES.missing_project_name({ action: 'create' }), msg);
+              return;
+            }
+            try {
+              const res = createProjectUnderMaster(projectName, jid);
+              await sendReply(
+                sock,
+                jid,
+                TEMPLATES.create_project({
+                  projectName: res.alias,
+                  folderPath: res.path,
+                }),
+                msg
+              );
+            } catch (err) {
+              await sendReply(sock, jid, `⚠️ ${err.message}`, msg);
+            }
+            return;
+          }
+
+          if (cmd === 'switch_project') {
+            if (!owner) {
+              await sendReply(sock, jid, "Only the owner can do that.", msg);
+              return;
+            }
+            if (!projectName) {
+              const listInfo = listProjectsForGroup(jid);
+              const choices = (listInfo.projects || []).filter((p) => p !== listInfo.boundAlias);
+              if (choices.length === 0) {
+                await sendReply(sock, jid, `no other projects in master dir to switch to.`, msg);
+                return;
+              }
+              await sendChoicePoll(sock, {
+                groupJid: jid,
+                allowedVoterJid: msg.key.participant || jid,
+                question: 'which project do you want to switch this group to?',
+                options: choices,
+                context: 'switch_project',
+                originalTask: rawBody,
+              });
+              return;
+            }
+            try {
+              const res = switchGroupProject(projectName, jid);
+              await sendReply(
+                sock,
+                jid,
+                TEMPLATES.switch_project({ projectName: res.alias }),
+                msg
+              );
+            } catch (err) {
+              const listInfo = listProjectsForGroup(jid);
+              await sendReply(
+                sock,
+                jid,
+                TEMPLATES.project_not_found({
+                  projectName,
+                  availableProjects: listInfo.projects,
+                }),
+                msg
+              );
+            }
+            return;
+          }
+
+          if (cmd === 'current_project') {
+            const st = getGroupProjectStatus(jid);
+            await sendReply(
+              sock,
+              jid,
+              TEMPLATES.current_project({
+                projectName: st.bound ? st.alias : null,
+                folderPath: st.path,
+              }),
+              msg
+            );
+            return;
+          }
+
+          if (cmd === 'unbind_project') {
+            if (!owner) {
+              await sendReply(sock, jid, "Only the owner can do that.", msg);
+              return;
+            }
+            const unb = unbindGroupProject(jid);
+            await sendReply(
+              sock,
+              jid,
+              TEMPLATES.unbind_project({ previousProject: unb.previous }),
+              msg
+            );
+            return;
+          }
+
+          if (cmd === 'view_access') {
+            await handleViewAccessCommand(sock, jid, msg, isGroup);
+            return;
+          }
+
+          if (cmd === 'manage_access') {
+            await handleManageAccessCommand(sock, jid, msg);
+            return;
+          }
+        }
+
+        // Lane 2: choice_needed
+        if (routeResult.intent === 'choice_needed' && routeResult.choiceQuestion) {
+          await sendChoicePoll(sock, {
+            groupJid: jid,
+            allowedVoterJid: msg.key.participant || jid,
+            question: routeResult.choiceQuestion,
+            options: routeResult.choiceOptions || ['yes', 'no'],
+            context: routeResult.choiceContext || 'user_choice',
+            originalTask: rawBody,
+          });
+          return;
+        }
+
+        // Lane 3: chat
+        if (routeResult.intent === 'chat' && routeResult.chatReplyText) {
+          await sendReply(sock, jid, routeResult.chatReplyText, msg);
+          return;
+        }
+
+        // Lane 4: laptop_task
+        if (routeResult.intent === 'laptop_task') {
+          if (routeResult.autoActivateProject && !getGroupActiveProject(jid)) {
+            try {
+              switchGroupProject(routeResult.autoActivateProject, jid);
+              console.log(`🚀 Auto-activated project "${routeResult.autoActivateProject}" for group ${jid} (inferred from prompt/single project).`);
+            } catch (err) {
+              console.warn(`⚠️ Failed to auto-activate project ${routeResult.autoActivateProject}:`, err.message);
+            }
+          }
+
+          const activeAlias = getGroupActiveProject(jid);
+          if (!activeAlias) {
+            const listInfo = listProjectsForGroup(jid);
+            if (listInfo.projects && listInfo.projects.length > 0) {
+              await sendChoicePoll(sock, {
+                groupJid: jid,
+                allowedVoterJid: msg.key.participant || jid,
+                question: 'no active project in this group rn. which one should we work on?',
+                options: listInfo.projects,
+                context: 'activate_project_for_task',
+                originalTask: rawBody,
+              });
+              return;
+            } else {
+              await sendReply(sock, jid, TEMPLATES.no_active_project(), msg);
+              return;
+            }
+          }
+
+          const state = loadProjectsState();
+          const projectDir = state.projects[activeAlias];
+          const taskInstructions = routeResult.laptopTaskInstructions || rawBody;
+
+          // Send immediate natural context-aware acknowledgement before Antigravity runs
+          if (routeResult.acknowledgementText) {
+            await sendReply(sock, jid, routeResult.acknowledgementText, msg);
+          }
+
+          await reactToMessage(sock, msg, '⚡');
+
+          taskQueue.push({
+            jid,
+            msg,
+            projectAlias: activeAlias,
+            projectDir,
+            taskPrompt: taskInstructions,
+            continueSession: true,
+          });
+
+          processQueue(sock).catch((err) => {
+            console.error('⚠️ processQueue failed:', err?.message || err);
+          });
           return;
         }
       }
