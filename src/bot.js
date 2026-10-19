@@ -4894,6 +4894,8 @@ async function _processIncomingMessage(sock, msg, type, nowSec, acceptMessagesAf
       const callsignNoAt = callsign.replace(/^@/, '');
 
       const isDeinitBody =
+        lowerRaw === 'deinitialize' ||
+        lowerRaw === 'deinit' ||
         lowerRaw === `${callsign} deinitialize` ||
         lowerRaw === `${callsign} deinit` ||
         lowerRaw === `@${callsignNoAt} deinitialize` ||
@@ -4928,6 +4930,8 @@ async function _processIncomingMessage(sock, msg, type, nowSec, acceptMessagesAf
       }
 
       const isInitBody =
+        lowerRaw === 'initialize' ||
+        lowerRaw === 'init' ||
         lowerRaw === `${callsign} initialize` ||
         lowerRaw === `${callsign} init` ||
         lowerRaw === `@${callsignNoAt} initialize` ||
@@ -5065,13 +5069,18 @@ async function _processIncomingMessage(sock, msg, type, nowSec, acceptMessagesAf
       }
 
       const isFullAutoCmd =
+        lowerRaw === 'fullauto' ||
+        lowerRaw === 'full auto' ||
+        lowerRaw === '/fullauto' ||
         lowerRaw === `${callsign} fullauto` ||
         lowerRaw === `${callsign} full auto` ||
         lowerRaw === `@${callsignNoAt} fullauto` ||
         lowerRaw === `@${callsignNoAt} full auto` ||
         (callsignNoAt && (lowerRaw === `${callsignNoAt} fullauto` || lowerRaw === `${callsignNoAt} full auto`)) ||
         lowerRaw === '@agent fullauto' ||
-        lowerRaw === '@agent full auto';
+        lowerRaw === '@agent full auto' ||
+        lowerRaw.endsWith(' fullauto') ||
+        lowerRaw.endsWith(' full auto');
 
       if (isFullAutoCmd) {
         if (!owner) {
