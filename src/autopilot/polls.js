@@ -28,8 +28,11 @@ export async function sendChoicePoll(sock, {
   }
 
   const normalizedVoter = jidNormalizedUser(allowedVoterJid);
-  const pollCreatorJid = sock.user?.id ? jidNormalizedUser(sock.user.id) : null;
-  const pollCreatorLid = sock.user?.lid ? jidNormalizedUser(sock.user.lid) : null;
+  const myCredsMe = sock.authState?.creds?.me || sock.user || {};
+  const pollCreatorJid = myCredsMe.id ? jidNormalizedUser(myCredsMe.id) : (sock.user?.id ? jidNormalizedUser(sock.user.id) : null);
+  const pollCreatorLid = myCredsMe.lid ? jidNormalizedUser(myCredsMe.lid) : (sock.user?.lid ? jidNormalizedUser(sock.user.lid) : null);
+  const pollCreatorRawId = myCredsMe.id || sock.user?.id || null;
+  const pollCreatorRawLid = myCredsMe.lid || sock.user?.lid || null;
 
   try {
     const sent = await sock.sendMessage(groupJid, {
@@ -59,8 +62,11 @@ export async function sendChoicePoll(sock, {
     savePendingPoll(pollMsgId, {
       pollMsgId,
       allowedVoterJid: normalizedVoter,
+      rawAllowedVoterJid: allowedVoterJid,
       pollCreatorJid,
       pollCreatorLid,
+      pollCreatorRawId,
+      pollCreatorRawLid,
       groupJid,
       question,
       options: cleanOptions,
@@ -174,27 +180,43 @@ export async function handlePollVote(sock, msg) {
     if (pollUpdate.vote?.encPayload && pending.messageSecret) {
       const pollEncKey = Buffer.from(pending.messageSecret, 'base64');
       
-      // WhatsApp GCM derivation depends on exact JID strings (phone vs LID) used by the client when creating/voting.
-      // NEVER include group JIDs (@g.us) as voter or creator candidate!
-      const creatorCandidates = [
+      // WhatsApp GCM derivation depends on exact JID strings (phone vs LID, raw with :device vs normalized)
+      // used by the client when creating/voting. NEVER include group JIDs (@g.us) as voter or creator candidate!
+      const myCredsMe = sock.authState?.creds?.me || sock.user || {};
+      const creatorCandidates = Array.from(new Set([
         pending.pollCreatorJid,
         pending.pollCreatorLid,
+        pending.pollCreatorRawId,
+        pending.pollCreatorRawLid,
         myNormalizedId,
         myNormalizedLid,
+        myCredsMe.id,
+        myCredsMe.lid,
+        myCredsMe.id ? jidNormalizedUser(myCredsMe.id) : null,
+        myCredsMe.lid ? jidNormalizedUser(myCredsMe.lid) : null,
+        sock.user?.id,
+        sock.user?.lid,
         sock.user?.id ? jidNormalizedUser(sock.user.id) : null,
         sock.user?.lid ? jidNormalizedUser(sock.user.lid) : null,
-      ].filter(Boolean).filter((j) => !j.endsWith('@g.us'));
+      ])).filter(Boolean).filter((j) => typeof j === 'string' && !j.endsWith('@g.us'));
 
-      const voterCandidates = [
-        msg.key.fromMe ? myNormalizedId : null,
-        msg.key.fromMe ? myNormalizedLid : null,
-        voterJid,
+      const voterCandidates = Array.from(new Set([
         rawVoter,
+        voterJid,
+        msg.key.participant,
+        msg.key.remoteJid,
         allowedVoter,
         pending.allowedVoterJid,
+        pending.rawAllowedVoterJid,
+        msg.key.fromMe ? myNormalizedId : null,
+        msg.key.fromMe ? myNormalizedLid : null,
+        msg.key.fromMe ? myCredsMe.id : null,
+        msg.key.fromMe ? myCredsMe.lid : null,
+        sock.user?.id,
+        sock.user?.lid,
         sock.user?.id ? jidNormalizedUser(sock.user.id) : null,
         sock.user?.lid ? jidNormalizedUser(sock.user.lid) : null,
-      ].filter(Boolean).filter((j) => !j.endsWith('@g.us'));
+      ])).filter(Boolean).filter((j) => typeof j === 'string' && !j.endsWith('@g.us'));
 
       let decrypted = null;
       let lastErr = null;
