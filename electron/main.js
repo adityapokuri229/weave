@@ -216,6 +216,7 @@ ipcMain.handle('weave:get-status', async () => {
     friends: state.friends || [],
     projectAccess: state.projectAccess || {},
     groupNames: state.groupNames || {},
+    groupAllowAll: state.groupAllowAll || {},
   };
 });
 
@@ -408,6 +409,16 @@ ipcMain.handle('weave:revoke-project-access', async (_event, payload) => {
     const phone = payload?.phoneNumber || payload?.userIdentifier;
     const ok = configMod.revokeProjectAccess(projectAlias, phone);
     return { success: ok, accessList: configMod.getProjectAccess(projectAlias) };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('weave:toggle-group-allow-all', async (_event, { groupJid, allowed }) => {
+  try {
+    const state = configMod.loadProjectsState();
+    const nextVal = configMod.setGroupAllowAll(groupJid, allowed);
+    return { success: true, groupAllowAll: state.groupAllowAll, allowed: nextVal };
   } catch (err) {
     return { success: false, error: err.message };
   }

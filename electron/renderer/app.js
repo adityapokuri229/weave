@@ -190,7 +190,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       .replace(/'/g, '&#39;');
   }
 
-  function renderProjectsList(projects, activeProject, groupBindings = {}, groupNames = {}, projectAccess = {}, friends = []) {
+  function renderProjectsList(projects, activeProject, groupBindings = {}, groupNames = {}, projectAccess = {}, friends = [], groupAllowAll = {}) {
     if (!projectsListContainer) return;
     const projectEntries = Object.entries(projects || {});
     if (projectEntries.length === 0) {
@@ -226,25 +226,50 @@ document.addEventListener('DOMContentLoaded', async () => {
               const cleanJid = escapeHtml(jid);
               const shortJid = escapeHtml(jid.replace('@g.us', ''));
               const realGroupName = groupNames[jid] ? escapeHtml(groupNames[jid]) : `Group ${shortJid}`;
+              const isAllowAll = Boolean(groupAllowAll[jid]);
 
               return `
-                <div class="flex items-center justify-between gap-1 text-[10px] font-mono bg-zinc-900/90 border border-zinc-800 rounded p-1.5 mt-1">
-                  <span class="flex items-center gap-1.5 text-emerald-400 truncate" title="${cleanJid}">
-                    <i class="fa-brands fa-whatsapp text-[12px] shrink-0 text-emerald-400"></i>
-                    <div class="flex flex-col truncate">
-                      <span class="text-zinc-200 font-semibold truncate text-[11px]">${realGroupName}</span>
-                      <span class="text-[9px] text-zinc-500 tracking-tight select-all"><sub>id: ${shortJid}</sub></span>
+                <div class="flex flex-col gap-1.5 text-[10px] font-mono bg-zinc-900/90 border border-zinc-800 rounded p-2 mt-1.5">
+                  <div class="flex items-center justify-between gap-1">
+                    <span class="flex items-center gap-1.5 text-emerald-400 truncate" title="${cleanJid}">
+                      <i class="fa-brands fa-whatsapp text-[12px] shrink-0 text-emerald-400"></i>
+                      <div class="flex flex-col truncate">
+                        <span class="text-zinc-200 font-semibold truncate text-[11px]">${realGroupName}</span>
+                        <span class="text-[9px] text-zinc-500 tracking-tight select-all"><sub>id: ${shortJid}</sub></span>
+                      </div>
+                    </span>
+                    <div class="flex items-center gap-1 shrink-0">
+                      <span class="text-[8px] px-1 py-0.5 bg-emerald-950/60 text-emerald-400 border border-emerald-800/50 rounded uppercase font-medium">Bound</span>
+                      <button
+                        class="btn-unbind-group text-[9px] text-zinc-400 hover:text-red-400 hover:bg-red-500/10 px-1.5 py-0.5 rounded border border-zinc-700/60 hover:border-red-500/30 transition cursor-pointer"
+                        data-jid="${cleanJid}"
+                        data-alias="${escapeHtml(alias)}"
+                        title="Unbind this group from project"
+                      >
+                        Unbind
+                      </button>
                     </div>
-                  </span>
-                  <div class="flex items-center gap-1 shrink-0">
-                    <span class="text-[8px] px-1 py-0.5 bg-emerald-950/60 text-emerald-400 border border-emerald-800/50 rounded uppercase font-medium">Bound</span>
+                  </div>
+
+                  <!-- Permission to All toggle for this group -->
+                  <div class="flex items-center justify-between pt-1 border-t border-zinc-800/80 text-[10px]">
+                    <div class="flex items-center gap-1.5 text-zinc-300">
+                      <i class="fa-solid fa-users text-[10px] ${isAllowAll ? 'text-emerald-400' : 'text-zinc-500'}"></i>
+                      <span class="${isAllowAll ? 'text-emerald-300 font-medium' : 'text-zinc-400'}">Give Permission to All</span>
+                    </div>
                     <button
-                      class="btn-unbind-group text-[9px] text-zinc-400 hover:text-red-400 hover:bg-red-500/10 px-1.5 py-0.5 rounded border border-zinc-700/60 hover:border-red-500/30 transition cursor-pointer"
+                      type="button"
+                      class="btn-toggle-group-allow-all px-2 py-0.5 rounded text-[9px] font-mono border transition cursor-pointer flex items-center gap-1.5 ${
+                        isAllowAll
+                          ? 'bg-emerald-950/60 text-emerald-300 border-emerald-500/50 hover:bg-emerald-900/60'
+                          : 'bg-zinc-800 text-zinc-400 border-zinc-700 hover:bg-zinc-700 hover:text-zinc-200'
+                      }"
                       data-jid="${cleanJid}"
-                      data-alias="${escapeHtml(alias)}"
-                      title="Unbind this group from project"
+                      data-allowed="${isAllowAll ? 'true' : 'false'}"
+                      title="${isAllowAll ? 'Click to restrict to specified numbers' : 'Click so anyone in this group can interact with the bot'}"
                     >
-                      Unbind
+                      <span class="w-1.5 h-1.5 rounded-full ${isAllowAll ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]' : 'bg-zinc-500'}"></span>
+                      <span>${isAllowAll ? 'ALL MEMBERS ON' : 'RESTRICTED'}</span>
                     </button>
                   </div>
                 </div>
@@ -607,7 +632,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         state.groupBindings || {},
         state.groupNames || {},
         state.projectAccess || {},
-        state.friends || []
+        state.friends || [],
+        state.groupAllowAll || {}
       );
     }
 
@@ -979,6 +1005,34 @@ document.addEventListener('DOMContentLoaded', async () => {
           appendLog('error', `Error unbinding group: ${err.message}`);
           unbindBtn.disabled = false;
           unbindBtn.textContent = 'Unbind';
+        }
+        return;
+      }
+
+      // 3b. Toggle Give Permission to All for Group
+      const toggleAllowAllBtn = e.target.closest('.btn-toggle-group-allow-all');
+      if (toggleAllowAllBtn && api?.toggleGroupAllowAll) {
+        const jid = toggleAllowAllBtn.dataset.jid;
+        const currentAllowed = toggleAllowAllBtn.dataset.allowed === 'true';
+        if (!jid) return;
+        toggleAllowAllBtn.disabled = true;
+        try {
+          const res = await api.toggleGroupAllowAll(jid, !currentAllowed);
+          if (res?.success) {
+            appendLog(
+              'info',
+              res.allowed
+                ? `👥 Enabled "Give Permission to All" for group ${jid}`
+                : `🔒 Disabled "Give Permission to All" (Restricted) for group ${jid}`
+            );
+            await syncStatus();
+          } else {
+            appendLog('error', `Failed to toggle group permissions: ${res?.error || 'Unknown error'}`);
+            toggleAllowAllBtn.disabled = false;
+          }
+        } catch (err) {
+          appendLog('error', `Error toggling group permissions: ${err.message}`);
+          toggleAllowAllBtn.disabled = false;
         }
         return;
       }

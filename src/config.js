@@ -391,6 +391,7 @@ export function loadProjectsState() {
       friends: [],
       projectAccess: {},
       groupNames: {},
+      groupAllowAll: {},
     };
     atomicWriteJson(PROJECTS_FILE, initial);
     return initial;
@@ -407,6 +408,7 @@ export function loadProjectsState() {
     saved.autopilot = saved.autopilot ?? true;
     saved.friends = Array.isArray(saved.friends) ? saved.friends : [];
     saved.groupNames = saved.groupNames || {};
+    saved.groupAllowAll = saved.groupAllowAll || {};
 
     // Ensure projectAccess is strictly per-project: alias (lowercase) -> array of normalized phone numbers (+<country><digits>)
     if (saved.projectAccess && typeof saved.projectAccess === 'object') {
@@ -459,6 +461,7 @@ export function loadProjectsState() {
       friends: [],
       projectAccess: {},
       groupNames: {},
+      groupAllowAll: {},
     };
   }
 }
@@ -634,6 +637,29 @@ export function getGroupName(groupJid) {
   if (!groupJid) return '';
   const state = loadProjectsState();
   return state.groupNames?.[groupJid] || '';
+}
+
+/**
+ * Checks if a group has "Give Permission to All" enabled.
+ */
+export function isGroupAllowAll(groupJid) {
+  if (!groupJid) return false;
+  const state = loadProjectsState();
+  return Boolean(state.groupAllowAll?.[groupJid]);
+}
+
+/**
+ * Sets or toggles "Give Permission to All" for a group.
+ */
+export function setGroupAllowAll(groupJid, allowed) {
+  if (!groupJid) return false;
+  const state = loadProjectsState();
+  state.groupAllowAll = state.groupAllowAll || {};
+  const current = Boolean(state.groupAllowAll[groupJid]);
+  const nextVal = allowed !== undefined ? Boolean(allowed) : !current;
+  state.groupAllowAll[groupJid] = nextVal;
+  saveProjectsState(state);
+  return nextVal;
 }
 
 /**
@@ -991,6 +1017,7 @@ export function getAllInitializedGroups() {
     list.push({
       jid,
       activeProject: state.groupBindings?.[jid] || null,
+      allowAll: Boolean(state.groupAllowAll?.[jid]),
       initializedAt: info.initializedAt,
       initializedBy: info.initializedBy,
     });
@@ -1076,6 +1103,9 @@ export function resetAllState({ preserveMasterDir = true } = {}) {
     conversations: {},
     autopilot: true,
     friends: [],
+    projectAccess: {},
+    groupNames: {},
+    groupAllowAll: {},
   };
 
   saveProjectsState(newState);

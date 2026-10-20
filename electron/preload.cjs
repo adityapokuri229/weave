@@ -50,6 +50,8 @@ contextBridge.exposeInMainWorld('weaveAPI', {
       projectAlias,
       phoneNumber: maybePhone || phoneOrGroup,
     }),
+  toggleGroupAllowAll: (groupJid, allowed) =>
+    ipcRenderer.invoke('weave:toggle-group-allow-all', { groupJid, allowed }),
 
   // Logs stream
   onLog: (callback) => {

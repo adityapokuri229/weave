@@ -40,6 +40,8 @@ import {
   revokeProjectAccess,
   setGroupName,
   getGroupName,
+  isGroupAllowAll,
+  setGroupAllowAll,
   addFriend,
   removeFriend,
   getFriends,
@@ -1029,10 +1031,17 @@ function resolveSenderPhoneNumber(rawJid, pushName = '') {
   const targetName = (directName || pushName || '').trim();
 
   if (targetName) {
+    const cleanTarget = targetName.toLowerCase().replace(/[^a-z0-9]/g, '');
     for (const [jid, name] of Object.entries(contacts)) {
-      if (jid.endsWith('@s.whatsapp.net') && name && name.trim().toLowerCase() === targetName.toLowerCase()) {
-        const phone = jid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
-        if (phone) return phone;
+      if (jid.endsWith('@s.whatsapp.net') && name) {
+        const cleanContact = String(name).trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (
+          cleanContact === cleanTarget ||
+          (cleanTarget.length >= 4 && (cleanContact.startsWith(cleanTarget) || cleanTarget.startsWith(cleanContact)))
+        ) {
+          const phone = jid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+          if (phone) return phone;
+        }
       }
     }
   }
@@ -1099,10 +1108,18 @@ function isSenderAuthorized(msg, targetProjectAlias = null) {
   if (isOwner(msg)) return true;
 
   const senderNum = getSenderNumber(msg);
+  const rawJid = msg.key.participant || msg.key.remoteJid || '';
+  const rawSenderDigits = rawJid.split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
   const jid = msg.key.remoteJid || '';
   const isGroup = Boolean(jid && jid.endsWith('@g.us'));
 
-  // In group chats: Access is strictly based on the group's currently active project.
+  // In group chats:
+  // 1. If "Give Permission to All" is toggled ON for this group, any group member is authorized!
+  if (isGroup && isGroupAllowAll(jid)) {
+    return true;
+  }
+
+  // 2. Otherwise access is strictly based on the group's currently active project.
   // Each project has its own list of allowed contacts (phone numbers in E.164 format).
   // By default, only the owner has permission.
   if (isGroup) {
@@ -1115,15 +1132,14 @@ function isSenderAuthorized(msg, targetProjectAlias = null) {
     if (!allowedList || allowedList.length === 0) {
       return false;
     }
-    if (!senderNum) return false;
+    if (!senderNum && !rawSenderDigits) return false;
 
     return allowedList.some((allowed) => {
       const allowedDigits = String(allowed).replace(/\D/g, '');
+      if (!allowedDigits) return false;
       return (
-        Boolean(allowedDigits) &&
-        (senderNum === allowedDigits ||
-          senderNum.endsWith(allowedDigits) ||
-          allowedDigits.endsWith(senderNum))
+        (senderNum && (senderNum === allowedDigits || senderNum.endsWith(allowedDigits) || allowedDigits.endsWith(senderNum))) ||
+        (rawSenderDigits && (rawSenderDigits === allowedDigits || rawSenderDigits.endsWith(allowedDigits) || allowedDigits.endsWith(rawSenderDigits)))
       );
     });
   }
@@ -1132,9 +1148,11 @@ function isSenderAuthorized(msg, targetProjectAlias = null) {
   if (CONFIG.allowedSenders.includes('*') || CONFIG.allowedSenders.length === 0) {
     return true;
   }
-  if (!senderNum) return false;
+  if (!senderNum && !rawSenderDigits) return false;
   return CONFIG.allowedSenders.some(
-    (allowed) => senderNum.endsWith(allowed) || allowed.endsWith(senderNum)
+    (allowed) =>
+      (senderNum && (senderNum.endsWith(allowed) || allowed.endsWith(senderNum))) ||
+      (rawSenderDigits && (rawSenderDigits.endsWith(allowed) || allowed.endsWith(rawSenderDigits)))
   );
 }
 
@@ -4170,6 +4188,15 @@ export async function startWhatsAppBot() {
                   setGroupName(gjid, meta.subject);
                   console.log(`🏷️ Discovered group name for ${gjid}: "${meta.subject}"`);
                 }
+                if (Array.isArray(meta?.participants)) {
+                  const discovered = [];
+                  for (const p of meta.participants) {
+                    if (p.jid && p.lid) {
+                      discovered.push({ id: p.jid, lid: p.lid });
+                    }
+                  }
+                  if (discovered.length > 0) saveContactsList(discovered);
+                }
               } catch {}
             }
           } catch {}
@@ -4358,12 +4385,21 @@ async function handleIncomingMessage(sock, msg, type, nowSec, acceptMessagesAfte
         }
       }
 
-      // If group message, cache group subject if not cached
+      // If group message, cache group subject & participant mappings if not cached
       if (msg.key.remoteJid.endsWith('@g.us')) {
         const groupJid = msg.key.remoteJid;
         if (!getGroupName(groupJid)) {
           sock.groupMetadata(groupJid).then((meta) => {
             if (meta?.subject) setGroupName(groupJid, meta.subject);
+            if (Array.isArray(meta?.participants)) {
+              const discovered = [];
+              for (const p of meta.participants) {
+                if (p.jid && p.lid) {
+                  discovered.push({ id: p.jid, lid: p.lid });
+                }
+              }
+              if (discovered.length > 0) saveContactsList(discovered);
+            }
           }).catch(() => {});
         }
       }
@@ -5006,12 +5042,13 @@ async function _processIncomingMessage(sock, msg, type, nowSec, acceptMessagesAf
       async function handleViewAccessCommand(sock, jid, msg, isGroup) {
         const stateNow = loadProjectsState();
         const activeAlias = isGroup ? stateNow.groupBindings?.[jid] : stateNow.activeProject;
+        const allowAll = isGroup && isGroupAllowAll(jid);
 
         if (!activeAlias) {
           await sendReply(
             sock,
             jid,
-            `🔒 *No active project bound to this chat.*\n\n👑 *Owner:* Full Access\nℹ️ Permissions can only be managed from the desktop app.`,
+            `🔒 *No active project bound to this chat.*\n\n👑 *Owner:* Full Access\n${allowAll ? '👥 *Group Access:* Give Permission to All is ON (anyone can chat)' : ''}\nℹ️ Permissions can only be managed from the desktop app.`,
             msg
           );
           return;
@@ -5028,6 +5065,7 @@ async function _processIncomingMessage(sock, msg, type, nowSec, acceptMessagesAf
           contactLines,
           '',
           `👑 *Owner:* Full Access`,
+          ...(allowAll ? ['👥 *Group Access:* Give Permission to All is *ON* (all group members can interact)'] : []),
           `ℹ️ Permissions can only be managed from the desktop app.`,
         ].join('\n');
 
