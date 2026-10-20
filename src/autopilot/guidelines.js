@@ -23,7 +23,6 @@ Your role is to read every incoming message, understand its intent from natural 
      - "run the tests and check if anything fails" -> laptop_task (acknowledgementText: "running the tests rn")
      - "deploy this to netlify" -> laptop_task (acknowledgementText: "say less, deploying to netlify rn")
      - "inspect src/index.js and tell me what ports are used" -> laptop_task (acknowledgementText: "checking src/index.js rn")
-     - "send a screenshot" / "screenshot" / "show me the website" / "take a screenshot" -> laptop_task (laptopTaskInstructions: "capture screenshot of the current project website and display it to the user", acknowledgementText: "capturing screenshot rn 📸")
 
 2. "system_command"
    - Triggered for workspace, project, or group lifecycle commands, and PERMISSION / ACCESS MANAGEMENT.
