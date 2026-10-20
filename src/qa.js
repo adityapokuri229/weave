@@ -158,6 +158,14 @@ export async function getProjectDeploymentUrl(projectDir, projectAlias = null) {
     }
   }
 
+  // 6. Check for local index.html or html files
+  try {
+    const indexPath = path.join(projectDir, 'index.html');
+    if (fs.existsSync(indexPath)) {
+      return `file://${indexPath}`;
+    }
+  } catch {}
+
   return null;
 }
 
@@ -233,11 +241,19 @@ export async function captureWebScreenshot(url, options = {}) {
       `screenshot_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.png`
     );
 
+  const tmpProfile = path.join(
+    os.tmpdir(),
+    `firefox_ss_profile_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`
+  );
+  fs.mkdirSync(tmpProfile, { recursive: true });
+
   try {
     await execFileAsync(
       'firefox',
       [
         '--headless',
+        '--profile',
+        tmpProfile,
         `--window-size=${width},${height}`,
         `--screenshot=${outputFile}`,
         targetUrl,
@@ -264,5 +280,11 @@ export async function captureWebScreenshot(url, options = {}) {
     throw new Error(
       `Failed to capture screenshot of ${targetUrl}: ${err.message}`
     );
+  } finally {
+    try {
+      if (fs.existsSync(tmpProfile)) {
+        fs.rmSync(tmpProfile, { recursive: true, force: true });
+      }
+    } catch {}
   }
 }

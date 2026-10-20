@@ -5271,6 +5271,68 @@ async function _processIncomingMessage(sock, msg, type, nowSec, acceptMessagesAf
         }
       }
 
+      // Fast-path: natural language screenshot / visual inspection requests
+      // (e.g. "take a screenshot of the current page", "send me a screenshot", "screenshot https://example.com mobile")
+      if (!rawBody.startsWith('/')) {
+        const lowerBody = rawBody.toLowerCase();
+        if (
+          lowerBody.includes('screenshot') ||
+          lowerBody.includes('screen shot') ||
+          /\bss\b/i.test(lowerBody) ||
+          lowerBody.includes('capture the page') ||
+          lowerBody.includes('capture page') ||
+          lowerBody.includes('visual test') ||
+          lowerBody.includes('qa test') ||
+          lowerBody.includes('landing page screenshot') ||
+          lowerBody.includes('visual preview')
+        ) {
+          // Check if there is an explicit URL or port
+          const urlMatch = rawBody.match(/(?:https?:\/\/[^\s]+|localhost:[0-9]+|:[0-9]{2,5}|\b[0-9]{4,5}\b)/i);
+          const isMobile = lowerBody.includes('mobile') || lowerBody.includes('phone');
+          let target = urlMatch ? urlMatch[0] : '';
+
+          // If no specific URL was given, check if project has a live Vercel/GitHub deployment URL or local index.html!
+          if (!target) {
+            let projectDir = CONFIG.defaultProjectDir;
+            let detectedAlias = null;
+            let resolved = null;
+            try {
+              resolved = resolveProjectAndTask(rawBody, jid);
+              if (resolved.projectDir) {
+                projectDir = resolved.projectDir;
+                detectedAlias = resolved.projectAlias;
+              }
+            } catch {
+              const boundProject = isGroup ? currentState.groupBindings?.[jid] : currentState.activeProject;
+              projectDir = (boundProject && currentState.projects?.[boundProject]) || CONFIG.defaultProjectDir;
+              detectedAlias = boundProject;
+            }
+
+            // 1. Try to discover live Vercel / GitHub Pages / deployment URL
+            const liveUrl = await getProjectDeploymentUrl(projectDir, detectedAlias);
+            if (liveUrl) {
+              target = liveUrl;
+            } else {
+              // 2. Fall back to local project index.html or dev server
+              const indexPath = path.join(projectDir, 'index.html');
+              if (fs.existsSync(indexPath)) {
+                target = `file://${indexPath}`;
+              } else {
+                target = 'http://localhost:3000';
+              }
+            }
+          }
+
+          rawBody = `/screenshot ${target}${isMobile ? ' mobile' : ''}`;
+        }
+      }
+
+      // Check if it's a slash command or control command
+      if (rawBody.startsWith('/')) {
+        const handled = await handleSlashCommand(sock, jid, msg, rawBody);
+        if (handled) return;
+      }
+
       // 4. Intent Routing (Conversational AI Classifier)
       if (!rawBody.startsWith('/')) {
         const recentChat = (chatMessageHistory.get(jid) || []).slice(-5);
@@ -5575,62 +5637,6 @@ async function _processIncomingMessage(sock, msg, type, nowSec, acceptMessagesAf
             );
             return;
           }
-        }
-      }
-
-      // Fast-path: natural language screenshot / visual inspection requests
-      // (e.g. "take a screenshot of the current page", "send me a screenshot of localhost 3000", "screenshot https://example.com mobile")
-      if (!rawBody.startsWith('/')) {
-        const lowerBody = rawBody.toLowerCase();
-        if (
-          lowerBody.includes('screenshot') ||
-          lowerBody.includes('screen shot') ||
-          /\bss\b/i.test(lowerBody) ||
-          lowerBody.includes('capture the page') ||
-          lowerBody.includes('capture page') ||
-          lowerBody.includes('visual test') ||
-          lowerBody.includes('qa test') ||
-          lowerBody.includes('landing page screenshot')
-        ) {
-          // Check if there is an explicit URL or port
-          const urlMatch = rawBody.match(/(?:https?:\/\/[^\s]+|localhost:[0-9]+|:[0-9]{2,5}|\b[0-9]{4,5}\b)/i);
-          const isMobile = lowerBody.includes('mobile') || lowerBody.includes('phone');
-          let target = urlMatch ? urlMatch[0] : '';
-
-          // If no specific URL was given, check if project has a live Vercel/GitHub deployment URL!
-          if (!target) {
-            let projectDir = CONFIG.defaultProjectDir;
-            let detectedAlias = null;
-            let resolved = null;
-            try {
-              resolved = resolveProjectAndTask(rawBody, jid);
-              if (resolved.projectDir) {
-                projectDir = resolved.projectDir;
-                detectedAlias = resolved.projectAlias;
-              }
-            } catch {
-              const boundProject = isGroup ? currentState.groupBindings?.[jid] : currentState.activeProject;
-              projectDir = (boundProject && currentState.projects?.[boundProject]) || CONFIG.defaultProjectDir;
-              detectedAlias = boundProject;
-            }
-
-
-            // 1. Try to discover live Vercel / GitHub Pages / deployment URL
-            const liveUrl = await getProjectDeploymentUrl(projectDir, detectedAlias);
-            if (liveUrl) {
-              target = liveUrl;
-            } else {
-              // 2. Fall back to local project index.html or dev server
-              const indexPath = path.join(projectDir, 'index.html');
-              if (fs.existsSync(indexPath)) {
-                target = `file://${indexPath}`;
-              } else {
-                target = 'http://localhost:3000';
-              }
-            }
-          }
-
-          rawBody = `/screenshot ${target}${isMobile ? ' mobile' : ''}`;
         }
       }
 
